@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON="python3"
+if command -v python >/dev/null 2>&1; then
+  PYTHON="python"
+fi
+if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+  PYTHON="$ROOT_DIR/.venv/bin/python"
+fi
+
+is_port_free() {
+  local port="$1"
+  "$PYTHON" - "$port" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind(("127.0.0.1", port))
+    except OSError:
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+
+pick_free_port() {
+  local start="$1"
+  local end="$2"
+  local port
+  for port in $(seq "$start" "$end"); do
+    if is_port_free "$port"; then
+      echo "$port"
+      return 0
+    fi
+  done
+  return 1
+}
+
+BACKEND_PORT="${AKUTWRITER_BACKEND_PORT:-}"
+if [[ -n "$BACKEND_PORT" ]]; then
+  if ! is_port_free "$BACKEND_PORT"; then
+    echo "Backend port $BACKEND_PORT is already in use. Set AKUTWRITER_BACKEND_PORT to a free port." >&2
+    exit 1
+  fi
+else
+  BACKEND_PORT="$(pick_free_port 8000 8099 || true)"
+fi
+
+FRONTEND_PORT="${AKUTWRITER_FRONTEND_PORT:-}"
+if [[ -n "$FRONTEND_PORT" ]]; then
+  if ! is_port_free "$FRONTEND_PORT"; then
+    echo "Frontend port $FRONTEND_PORT is already in use. Set AKUTWRITER_FRONTEND_PORT to a free port." >&2
+    exit 1
+  fi
+else
+  FRONTEND_PORT="$(pick_free_port 5173 5199 || true)"
+fi
+
+if [[ -z "$BACKEND_PORT" || -z "$FRONTEND_PORT" ]]; then
+  echo "Could not find free ports for backend/frontend." >&2
+  exit 1
+fi
+
+echo "Starting backend (FastAPI) on :$BACKEND_PORT and frontend (Vite) on :$FRONTEND_PORT..."
+
+(
+  cd "$ROOT_DIR/backend"
+  exec "$PYTHON" -m uvicorn akutwriter.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT"
+) &
+BACKEND_PID=$!
+
+for _ in $(seq 1 60); do
+  if curl -fsS "http://127.0.0.1:${BACKEND_PORT}/api/runs" >/dev/null 2>&1; then
+    break
+  fi
+  if ! kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
+    wait "$BACKEND_PID" || true
+    echo "Backend failed to start (port in use?)." >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+
+(
+  cd "$ROOT_DIR/frontend"
+  VITE_BACKEND_HOST="127.0.0.1" VITE_BACKEND_PORT="$BACKEND_PORT" exec npm run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT"
+) &
+FRONTEND_PID=$!
+
+cleanup() {
+  kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+echo "Backend:  http://127.0.0.1:${BACKEND_PORT}"
+echo "Frontend: http://127.0.0.1:${FRONTEND_PORT}"
+
+while true; do
+  if ! kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
+    wait "$BACKEND_PID" || true
+    echo "Backend stopped; shutting down frontend." >&2
+    kill "$FRONTEND_PID" 2>/dev/null || true
+    wait "$FRONTEND_PID" || true
+    exit 1
+  fi
+  if ! kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
+    wait "$FRONTEND_PID" || true
+    echo "Frontend stopped; shutting down backend." >&2
+    kill "$BACKEND_PID" 2>/dev/null || true
+    wait "$BACKEND_PID" || true
+    exit 1
+  fi
+  sleep 0.5
+done

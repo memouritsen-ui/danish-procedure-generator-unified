@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON="python3"
+if command -v python >/dev/null 2>&1; then
+  PYTHON="python"
+fi
+if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+  PYTHON="$ROOT_DIR/.venv/bin/python"
+fi
+
+echo "== Backend =="
+(
+  cd "$ROOT_DIR/backend"
+  "$PYTHON" -m ruff check .
+  "$PYTHON" -m mypy akutwriter
+  "$PYTHON" -m pytest
+)
+
+echo "== Frontend =="
+(
+  cd "$ROOT_DIR/frontend"
+  npm run lint
+  npm run build
+)
+
+echo "OK"

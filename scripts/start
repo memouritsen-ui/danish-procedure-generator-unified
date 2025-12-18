@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+PYTHON="python3"
+if command -v python >/dev/null 2>&1; then
+  PYTHON="python"
+fi
+if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+  PYTHON="$ROOT_DIR/.venv/bin/python"
+fi
+
+is_port_free() {
+  local port="$1"
+  "$PYTHON" - "$port" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind(("127.0.0.1", port))
+    except OSError:
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+
+pick_free_port() {
+  local start="$1"
+  local end="$2"
+  local port
+  for port in $(seq "$start" "$end"); do
+    if is_port_free "$port"; then
+      echo "$port"
+      return 0
+    fi
+  done
+  return 1
+}
+
+PORT="${AKUTWRITER_PORT:-${AKUTWRITER_BACKEND_PORT:-}}"
+if [[ -n "$PORT" ]]; then
+  if ! is_port_free "$PORT"; then
+    echo "Port $PORT is already in use. Set AKUTWRITER_PORT to a free port." >&2
+    exit 1
+  fi
+else
+  PORT="$(pick_free_port 8000 8099 || true)"
+fi
+
+if [[ -z "$PORT" ]]; then
+  echo "Could not find a free port in range 8000-8099." >&2
+  exit 1
+fi
+
+if [[ ! -f "$ROOT_DIR/backend/static/index.html" ]]; then
+  echo "Warning: frontend not built. Run 'make build' (or 'make check') to build UI into backend/static." >&2
+fi
+
+echo "Starting backend (serves UI if built) on http://127.0.0.1:${PORT}"
+UI_URL="http://127.0.0.1:${PORT}/"
+API_URL="http://127.0.0.1:${PORT}/api"
+
+(
+  cd "$ROOT_DIR/backend"
+  exec "$PYTHON" -m uvicorn akutwriter.main:app --host 127.0.0.1 --port "$PORT"
+) &
+PID=$!
+
+cleanup() {
+  kill "$PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+READY=0
+for _ in $(seq 1 80); do
+  if curl -fsS "${API_URL}/runs" >/dev/null 2>&1; then
+    READY=1
+    break
+  fi
+  if ! kill -0 "$PID" >/dev/null 2>&1; then
+    wait "$PID" || true
+    echo "Backend failed to start." >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+
+echo "UI:  ${UI_URL}"
+echo "API: ${API_URL}"
+if [[ "$READY" != "1" ]]; then
+  echo "Warning: backend not responding yet." >&2
+fi
+
+if [[ "${AKUTWRITER_OPEN_BROWSER:-}" = "1" ]] && command -v open >/dev/null 2>&1; then
+  open "$UI_URL" || true
+fi
+
+wait "$PID"

@@ -1,0 +1,14 @@
+# Tilladte URL-prefixes til ingest/fetch af guidelines og andre webkilder.
+# PubMed (NCBI) håndteres separat via E-utilities.
+version: 1
+allowed_url_prefixes:
+  - "https://www.nice.org.uk/"
+  - "https://www.who.int/"
+  - "https://www.cdc.gov/"
+  - "https://www.sst.dk/"
+  - "https://laegemiddelstyrelsen.dk/"
+  - "https://www.ncbi.nlm.nih.gov/books/"
+
+# Valgfrit: faste guideline-URL'er der kan hentes automatisk ved hver kørsel.
+# Brug dette til lokale/nationale retningslinjer der ellers er svære at finde via PubMed.
+seed_urls: []
