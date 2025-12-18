@@ -8,6 +8,34 @@
 
 ---
 
+## IMPORTANT: Orchestrator Integration Context
+
+**As of 2024-12-18**, the pipeline uses a multi-agent orchestrator with a WriterAgent.
+
+**Template integration approach**:
+Templates should be passed to the WriterAgent as part of its input configuration:
+
+```python
+# In run_pipeline() when creating orchestrator:
+pipeline_input = AgentPipelineInput(
+    procedure_title=procedure,
+    context=context,
+    template_config=template,  # Pass template sections/structure
+    max_iterations=3,
+    quality_threshold=8,
+)
+```
+
+The WriterAgent already accepts an optional `style_guide` and `outline` parameter. Templates can feed into these:
+- `outline`: Section headings from template
+- `style_guide`: Formatting instructions from template
+
+**Key files to modify**:
+- `backend/procedurewriter/agents/models.py` - Add template fields to WriterInput
+- `backend/procedurewriter/agents/writer.py` - Use template for section generation
+
+---
+
 ## SESSION START CHECKLIST
 
 Before implementing ANY part of this enhancement, execute:

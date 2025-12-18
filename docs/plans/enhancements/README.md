@@ -4,6 +4,42 @@
 
 This directory contains comprehensive build documentation for 5 significant enhancements to the Danish Procedure Generator. Each enhancement has:
 
+---
+
+## IMPORTANT: Multi-Agent Orchestrator Context
+
+**As of 2024-12-18**, the pipeline now uses a multi-agent orchestrator (`AgentOrchestrator`) that runs:
+
+```
+Source Gathering (Danish Library + PubMed)
+         ↓
+    WriterAgent → Generates procedure with citations
+         ↓
+  ValidatorAgent → Validates claims against sources
+         ↓
+    EditorAgent → Improves Danish prose quality
+         ↓
+   QualityAgent → Scores 1-10, triggers re-iteration if <8
+         ↓
+    Final Output
+```
+
+**Key files**:
+- `backend/procedurewriter/agents/orchestrator.py` - Agent coordination
+- `backend/procedurewriter/pipeline/run.py` - Pipeline integration (calls orchestrator)
+- `backend/procedurewriter/agents/models.py` - Agent input/output types
+
+**Impact on enhancements**:
+- **SSE Streaming**: Emit events from agent stages (natural boundaries)
+- **Source Scoring**: Feed composite scores into `SourceReference.relevance_score`
+- **Versioning**: Track `quality_score`, `iterations_used`, `total_cost_usd`
+- **Templates**: Pass to WriterAgent via `style_guide` and `outline`
+- **Protocol Validation**: Extend ValidatorAgent or add ProtocolValidatorAgent
+
+Each enhancement document includes specific orchestrator integration notes.
+
+---
+
 1. **Implementation Plan** (`ENHANCEMENT-X-*.md`) - Detailed build document
 2. **Test Specifications** - Required tests with no mocks allowed for integration
 3. **Cross-Session Reminders** - Skills and rules to enforce consistency
@@ -91,5 +127,5 @@ docs/plans/enhancements/
 
 ---
 
-**Last Updated**: 2024-12-18
+**Last Updated**: 2024-12-18 (Orchestrator integration notes added)
 **Author**: Claude Code Assistant

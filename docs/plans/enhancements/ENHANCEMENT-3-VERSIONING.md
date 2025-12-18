@@ -8,6 +8,22 @@
 
 ---
 
+## IMPORTANT: Orchestrator Integration Context
+
+**As of 2024-12-18**, the pipeline uses a multi-agent orchestrator that returns:
+- `quality_score`: 1-10 from QualityAgent
+- `iterations_used`: Number of quality loop iterations (1-3)
+- `total_cost_usd`: Combined cost from all agents
+
+**Versioning considerations**:
+- Version diffs should track `iterations_used` (more iterations = more refinement)
+- Quality scores can be compared across versions
+- Cost tracking per version helps identify expensive regenerations
+
+**No conflicts**: The orchestrator doesn't affect versioning logic - versions are still based on run_id linkage. The orchestrator provides additional metadata to track per version.
+
+---
+
 ## SESSION START CHECKLIST
 
 Before implementing ANY part of this enhancement, execute:

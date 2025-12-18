@@ -8,6 +8,22 @@
 
 ---
 
+## IMPORTANT: Orchestrator Integration Context
+
+**As of 2024-12-18**, the pipeline now uses a multi-agent orchestrator (`AgentOrchestrator`) that runs:
+1. **WriterAgent** - Generates procedure content
+2. **ValidatorAgent** - Validates claims against sources
+3. **EditorAgent** - Improves Danish prose
+4. **QualityAgent** - Scores 1-10, triggers re-iteration if <8
+
+This provides **natural event boundaries** for SSE streaming. Events should be emitted from within the orchestrator's `run()` method at each agent stage transition.
+
+**Key file**: `backend/procedurewriter/agents/orchestrator.py`
+
+The orchestrator replaces section-by-section writing with agent-by-agent execution. Update event emissions accordingly.
+
+---
+
 ## SESSION START CHECKLIST
 
 Before implementing ANY part of this enhancement, execute:
@@ -43,16 +59,30 @@ Replace HTTP polling with Server-Sent Events (SSE) to stream progress in real-ti
      ↓
 [SSE Connection Established]
      ↓
-[Stream: "Fetching sources..."] → User sees immediately
+[Stream: "Fetching sources..."] → Source gathering phase
      ↓
-[Stream: "Writing Indikationer..."] → User sees section progress
+[Stream: "Found 27 sources"]
      ↓
-[Stream: "Writing Kontraindikationer..."]
+[Stream: "Running WriterAgent..."] → Agent generates content
      ↓
-[Stream: "Quality check: 8/10"] → User sees quality
+[Stream: "Running ValidatorAgent..."] → Claims validated
+     ↓
+[Stream: "Running EditorAgent..."] → Danish prose improved
+     ↓
+[Stream: "Running QualityAgent... Score: 7/10"] → Below threshold
+     ↓
+[Stream: "Iteration 2/3 - Re-running WriterAgent..."] → Quality loop
+     ↓
+[Stream: "Quality check: 8/10 ✓"] → Threshold met
      ↓
 [Stream: "DONE" + full result]
 ```
+
+**Agent-based event flow** (with orchestrator):
+- `agent_start`: Agent begins execution
+- `agent_complete`: Agent finishes with result summary
+- `quality_check`: Quality score and pass/fail status
+- `iteration`: Re-iteration triggered if quality < threshold
 
 ---
 
@@ -112,11 +142,19 @@ import asyncio
 from collections.abc import AsyncGenerator
 
 class EventType(Enum):
+    # Source gathering phase
     PROGRESS = "progress"
-    SECTION_START = "section_start"
-    SECTION_COMPLETE = "section_complete"
+    SOURCES_FOUND = "sources_found"
+
+    # Agent execution (orchestrator)
+    AGENT_START = "agent_start"      # Agent begins
+    AGENT_COMPLETE = "agent_complete" # Agent finishes
+
+    # Quality loop
     QUALITY_CHECK = "quality_check"
-    ITERATION = "iteration"
+    ITERATION_START = "iteration_start"
+
+    # Completion
     COMPLETE = "complete"
     ERROR = "error"
     COST_UPDATE = "cost_update"
@@ -185,7 +223,7 @@ def remove_emitter(run_id: str) -> None:
 
 #### File: `backend/procedurewriter/pipeline/run.py` (MODIFY)
 
-Add event emissions at key points:
+Add event emissions for source gathering phase:
 
 ```python
 from procedurewriter.pipeline.events import get_emitter, remove_emitter, EventType
@@ -194,52 +232,28 @@ def run_pipeline(...):
     emitter = get_emitter(run_id)
 
     try:
-        # Source collection
+        # Source collection phase
         emitter.emit(EventType.PROGRESS, {
             "stage": "sources",
             "message": f"Collecting sources for {procedure}..."
         })
 
-        # ... existing source collection code ...
+        # ... existing source collection code (Danish library, PubMed) ...
 
-        emitter.emit(EventType.PROGRESS, {
-            "stage": "sources",
+        emitter.emit(EventType.SOURCES_FOUND, {
+            "count": len(sources),
             "message": f"Found {len(sources)} sources"
         })
 
-        # Section writing
-        for section in sections:
-            emitter.emit(EventType.SECTION_START, {
-                "name": section["heading"],
-                "index": section_index,
-                "total": len(sections)
-            })
-
-            # ... existing section writing code ...
-
-            emitter.emit(EventType.SECTION_COMPLETE, {
-                "name": section["heading"],
-                "preview": content[:200] + "..." if len(content) > 200 else content
-            })
-
-        # Quality check
-        emitter.emit(EventType.QUALITY_CHECK, {
-            "score": quality_score,
-            "iteration": iteration,
-            "max_iterations": 3
-        })
-
-        # Cost update
-        emitter.emit(EventType.COST_UPDATE, {
-            "total_cost_usd": tracker.total_cost,
-            "tokens_used": tracker.total_tokens
-        })
+        # Orchestrator handles agent execution (see orchestrator.py below)
+        # ...
 
         # Complete
         emitter.emit(EventType.COMPLETE, {
             "run_id": run_id,
             "quality_score": quality_score,
-            "total_cost_usd": tracker.total_cost
+            "iterations_used": orchestrator_iterations,
+            "total_cost_usd": total_cost
         })
 
     except Exception as e:
@@ -247,6 +261,75 @@ def run_pipeline(...):
         raise
     finally:
         remove_emitter(run_id)
+```
+
+#### File: `backend/procedurewriter/agents/orchestrator.py` (MODIFY)
+
+Add event emissions for agent execution:
+
+```python
+from procedurewriter.pipeline.events import EventEmitter, EventType
+
+class AgentOrchestrator:
+    def __init__(self, ..., emitter: EventEmitter | None = None):
+        self._emitter = emitter
+        # ... existing init ...
+
+    def _emit(self, event_type: EventType, data: dict) -> None:
+        """Emit event if emitter is configured."""
+        if self._emitter:
+            self._emitter.emit(event_type, data)
+
+    def run(self, input_data: PipelineInput, sources: list[SourceReference] | None = None) -> PipelineOutput:
+        # ... existing setup ...
+
+        for iteration in range(1, input_data.max_iterations + 1):
+            self._emit(EventType.ITERATION_START, {
+                "iteration": iteration,
+                "max_iterations": input_data.max_iterations
+            })
+
+            # Writer
+            self._emit(EventType.AGENT_START, {"agent": "WriterAgent"})
+            writer_result = self._writer.execute(...)
+            self._emit(EventType.AGENT_COMPLETE, {
+                "agent": "WriterAgent",
+                "word_count": writer_result.output.word_count
+            })
+
+            # Validator
+            self._emit(EventType.AGENT_START, {"agent": "ValidatorAgent"})
+            validator_result = self._validator.execute(...)
+            self._emit(EventType.AGENT_COMPLETE, {
+                "agent": "ValidatorAgent",
+                "claims_validated": len(validator_result.output.validations)
+            })
+
+            # Editor
+            self._emit(EventType.AGENT_START, {"agent": "EditorAgent"})
+            editor_result = self._editor.execute(...)
+            self._emit(EventType.AGENT_COMPLETE, {
+                "agent": "EditorAgent",
+                "suggestions_applied": len(editor_result.output.suggestions_applied)
+            })
+
+            # Quality
+            self._emit(EventType.AGENT_START, {"agent": "QualityAgent"})
+            quality_result = self._quality.execute(...)
+            self._emit(EventType.QUALITY_CHECK, {
+                "score": quality_result.output.overall_score,
+                "passes_threshold": quality_result.output.passes_threshold,
+                "iteration": iteration
+            })
+
+            if quality_result.output.passes_threshold:
+                break
+
+        # Cost update
+        self._emit(EventType.COST_UPDATE, {
+            "total_cost_usd": self._stats.total_cost_usd,
+            "tokens_used": self._stats.total_input_tokens + self._stats.total_output_tokens
+        })
 ```
 
 ### Frontend Changes
@@ -351,7 +434,7 @@ async function onGenerate() {
   }
 }
 
-// Handle SSE events:
+// Handle SSE events (agent-based flow):
 useEffect(() => {
   if (!lastEvent) return;
 
@@ -359,18 +442,24 @@ useEffect(() => {
     case "progress":
       setProgress(prev => [...prev, lastEvent.data.message as string]);
       break;
-    case "section_start":
-      setCurrentSection(lastEvent.data.name as string);
+    case "sources_found":
+      setSourceCount(lastEvent.data.count as number);
+      setProgress(prev => [...prev, `Found ${lastEvent.data.count} sources`]);
       break;
-    case "section_complete":
-      setSectionPreviews(prev => ({
-        ...prev,
-        [lastEvent.data.name as string]: lastEvent.data.preview as string
-      }));
+    case "iteration_start":
+      setIteration(lastEvent.data.iteration as number);
+      setMaxIterations(lastEvent.data.max_iterations as number);
+      break;
+    case "agent_start":
+      setCurrentAgent(lastEvent.data.agent as string);
+      setProgress(prev => [...prev, `Running ${lastEvent.data.agent}...`]);
+      break;
+    case "agent_complete":
+      setProgress(prev => [...prev, `✓ ${lastEvent.data.agent} complete`]);
       break;
     case "quality_check":
       setQualityScore(lastEvent.data.score as number);
-      setIteration(lastEvent.data.iteration as number);
+      setPassesThreshold(lastEvent.data.passes_threshold as boolean);
       break;
     case "cost_update":
       setCost(lastEvent.data.total_cost_usd as number);
@@ -395,56 +484,81 @@ useEffect(() => {
 ```typescript
 interface ProgressIndicatorProps {
   messages: string[];
-  currentSection: string | null;
-  sectionPreviews: Record<string, string>;
+  currentAgent: string | null;
+  sourceCount: number | null;
   qualityScore: number | null;
+  passesThreshold: boolean;
   iteration: number;
+  maxIterations: number;
   cost: number | null;
 }
 
 export function ProgressIndicator({
   messages,
-  currentSection,
-  sectionPreviews,
+  currentAgent,
+  sourceCount,
   qualityScore,
+  passesThreshold,
   iteration,
+  maxIterations,
   cost,
 }: ProgressIndicatorProps) {
+  // Map agent names to Danish labels
+  const agentLabels: Record<string, string> = {
+    WriterAgent: "Skriver procedure...",
+    ValidatorAgent: "Validerer påstande...",
+    EditorAgent: "Forbedrer dansk tekst...",
+    QualityAgent: "Kvalitetskontrol...",
+  };
+
   return (
     <div className="progress-indicator">
       <div className="progress-header">
-        {currentSection ? (
-          <span>Writing: <strong>{currentSection}</strong></span>
+        {currentAgent ? (
+          <span>{agentLabels[currentAgent] || currentAgent}</span>
         ) : (
-          <span>Preparing...</span>
+          <span>Forbereder...</span>
         )}
         {cost !== null && (
           <span className="cost-badge">${cost.toFixed(4)}</span>
         )}
       </div>
 
-      <div className="progress-messages">
-        {messages.map((msg, i) => (
-          <div key={i} className="progress-message">
-            <span className="checkmark">✓</span> {msg}
+      {/* Agent pipeline visualization */}
+      <div className="agent-pipeline">
+        {["WriterAgent", "ValidatorAgent", "EditorAgent", "QualityAgent"].map((agent) => (
+          <div
+            key={agent}
+            className={`agent-step ${currentAgent === agent ? "active" : ""}`}
+          >
+            {agent.replace("Agent", "")}
           </div>
         ))}
       </div>
 
-      {Object.entries(sectionPreviews).length > 0 && (
-        <div className="section-previews">
-          {Object.entries(sectionPreviews).map(([name, preview]) => (
-            <div key={name} className="section-preview">
-              <strong>{name}</strong>
-              <p className="muted">{preview}</p>
-            </div>
-          ))}
+      <div className="progress-messages">
+        {messages.map((msg, i) => (
+          <div key={i} className="progress-message">
+            {msg.startsWith("✓") ? msg : `• ${msg}`}
+          </div>
+        ))}
+      </div>
+
+      {qualityScore !== null && (
+        <div className={`quality-indicator ${passesThreshold ? "passed" : "failed"}`}>
+          Kvalitet: {qualityScore}/10
+          {!passesThreshold && iteration < maxIterations && (
+            <span className="iteration-note">
+              (Under tærskel - iteration {iteration}/{maxIterations})
+            </span>
+          )}
+          {passesThreshold && <span className="passed-badge">✓ Godkendt</span>}
         </div>
       )}
 
-      {qualityScore !== null && (
-        <div className="quality-indicator">
-          Quality: {qualityScore}/10 (Iteration {iteration}/3)
+      {sourceCount !== null && (
+        <div className="source-count">
+          {sourceCount} kilder fundet
         </div>
       )}
     </div>
@@ -625,18 +739,28 @@ describe("useSSE", () => {
 
 - [ ] Create `backend/procedurewriter/pipeline/events.py`
 - [ ] Add EventEmitter class with subscribe/emit/close
-- [ ] Add global emitter registry
+- [ ] Add global emitter registry by run_id
+- [ ] Add agent-specific event types (AGENT_START, AGENT_COMPLETE, etc.)
 - [ ] Write unit tests for EventEmitter
 - [ ] Run tests: `pytest backend/tests/test_sse_streaming.py -v`
 
-### Phase 2: Pipeline Integration (Day 1-2)
+### Phase 2: Orchestrator Integration (Day 1-2)
+
+- [ ] Modify `backend/procedurewriter/agents/orchestrator.py`
+- [ ] Add optional `emitter` parameter to `__init__`
+- [ ] Add `_emit()` helper method
+- [ ] Emit AGENT_START before each agent execution
+- [ ] Emit AGENT_COMPLETE after each agent execution
+- [ ] Emit QUALITY_CHECK with score and pass/fail
+- [ ] Emit ITERATION_START for quality loop iterations
+- [ ] Emit COST_UPDATE with running totals
+
+### Phase 2b: Pipeline Integration (Day 1-2)
 
 - [ ] Modify `backend/procedurewriter/pipeline/run.py`
-- [ ] Add event emissions at source collection
-- [ ] Add event emissions at section writing
-- [ ] Add event emissions at quality check
-- [ ] Add event emissions at cost updates
-- [ ] Add event emissions at completion/error
+- [ ] Add event emissions for source gathering phase
+- [ ] Pass emitter to AgentOrchestrator
+- [ ] Emit COMPLETE/ERROR at pipeline end
 - [ ] Test with real pipeline execution
 
 ### Phase 3: SSE Endpoint (Day 2)
@@ -644,15 +768,16 @@ describe("useSSE", () => {
 - [ ] Add `/api/runs/{run_id}/stream` endpoint to `main.py`
 - [ ] Implement async generator for event streaming
 - [ ] Add proper SSE headers
-- [ ] Test endpoint with curl: `curl -N http://localhost:8000/api/runs/{id}/stream`
+- [ ] Test endpoint with curl: `curl -N http://localhost:8002/api/runs/{id}/stream`
 
 ### Phase 4: Frontend (Day 2-3)
 
 - [ ] Create `frontend/src/hooks/useSSE.ts`
-- [ ] Create `frontend/src/components/ProgressIndicator.tsx`
+- [ ] Create `frontend/src/components/ProgressIndicator.tsx` with agent pipeline viz
 - [ ] Modify `frontend/src/pages/WritePage.tsx`
 - [ ] Replace polling with SSE connection
-- [ ] Add progress UI components
+- [ ] Add agent progress UI (Writer → Validator → Editor → Quality)
+- [ ] Show quality score and iteration status
 - [ ] Test in browser with real generation
 
 ### Phase 5: Polish & Test (Day 3)
@@ -661,6 +786,7 @@ describe("useSSE", () => {
 - [ ] Add reconnection logic if needed
 - [ ] Test with slow network simulation
 - [ ] Test concurrent runs
+- [ ] Test quality loop iterations (score < 8)
 - [ ] Run full test suite: `pytest`
 - [ ] Manual E2E testing
 

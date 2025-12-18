@@ -8,6 +8,38 @@
 
 ---
 
+## IMPORTANT: Orchestrator Integration Context
+
+**As of 2024-12-18**, the pipeline uses a multi-agent orchestrator with a ValidatorAgent.
+
+**The ValidatorAgent already validates claims against sources.** This enhancement extends validation to include hospital protocols:
+
+**Two integration approaches**:
+
+1. **Extend ValidatorAgent** (recommended):
+   ```python
+   class ValidatorInput(AgentInput):
+       claims: list[str]
+       sources: list[SourceReference]
+       hospital_protocols: list[ProtocolReference]  # NEW
+   ```
+   The validator would check claims against BOTH published sources AND hospital protocols.
+
+2. **Add ProtocolValidatorAgent** (alternative):
+   Add a new agent to the orchestrator pipeline that runs after the standard validation:
+   ```
+   Writer → Validator → Editor → ProtocolValidator → Quality
+   ```
+
+**Key consideration**: Protocol conflicts should be surfaced BEFORE the QualityAgent scores, so quality score reflects protocol compliance.
+
+**Files to modify**:
+- `backend/procedurewriter/agents/validator.py` - Add protocol comparison
+- `backend/procedurewriter/agents/models.py` - Add ProtocolReference model
+- `backend/procedurewriter/agents/orchestrator.py` - Wire up protocol validation
+
+---
+
 ## SESSION START CHECKLIST
 
 Before implementing ANY part of this enhancement, execute:

@@ -8,6 +8,29 @@
 
 ---
 
+## IMPORTANT: Orchestrator Integration Context
+
+**As of 2024-12-18**, the pipeline uses a multi-agent orchestrator that consumes `SourceReference` objects with a `relevance_score` field (0.0-1.0).
+
+**Key integration point**: `backend/procedurewriter/pipeline/run.py` contains the adapter function:
+```python
+def source_record_to_reference(source: SourceRecord) -> SourceReference:
+    # Currently maps evidence_priority → relevance_score
+    relevance_score = min(1.0, evidence_priority / 1000.0)
+```
+
+This enhancement's `composite_score` (0-100) should replace this simple mapping:
+```python
+def source_record_to_reference(source: SourceRecord) -> SourceReference:
+    # After Enhancement 2: Use composite score from source_scoring.py
+    score = score_source(source_as_dict(source))
+    relevance_score = score.composite_score / 100.0  # Normalize to 0-1
+```
+
+The agents (WriterAgent, ValidatorAgent) will use this improved relevance_score for source prioritization.
+
+---
+
 ## SESSION START CHECKLIST
 
 Before implementing ANY part of this enhancement, execute:
