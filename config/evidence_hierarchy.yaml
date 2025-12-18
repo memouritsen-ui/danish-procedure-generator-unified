@@ -102,9 +102,30 @@ evidence_levels:
       - "cohort study"
       - "case-control study"
 
+  # Level 8b: Peer-reviewed journal articles (general)
+  peer_reviewed_journal:
+    priority: 250
+    badge: "Journal"
+    badge_color: "#a855f7"  # purple
+    description: "Peer-reviewed tidsskriftsartikel"
+    url_patterns:
+      - "pubmed.ncbi.nlm.nih.gov"
+      - "ncbi.nlm.nih.gov/pmc"
+      - "doi.org"
+      - "sciencedirect.com"
+      - "bmj.com"
+      - "thelancet.com"
+      - "nejm.org"
+      - "jamanetwork.com"
+      - "nature.com"
+      - "springer.com"
+      - "wiley.com"
+      - "ugeskriftet.dk"
+      - "bibliotek.dk"
+
   # Level 9: Case Reports / Expert Opinion
   case_report:
-    priority: 100
+    priority: 150
     badge: "Case/Expert"
     badge_color: "#9ca3af"  # light gray
     description: "Case report eller ekspertudtalelse"
@@ -113,9 +134,16 @@ evidence_levels:
       - "comment"
       - "editorial"
 
-  # Default for unclassified sources
+  # Level 10: Uploaded library documents (hospital procedures, etc.)
+  library_document:
+    priority: 200
+    badge: "Bibliotek"
+    badge_color: "#f59e0b"  # amber
+    description: "Uploadet dokument fra bibliotek"
+
+  # Default for unclassified sources - now with reasonable baseline
   unclassified:
-    priority: 50
+    priority: 100
     badge: "Kilde"
     badge_color: "#d1d5db"  # very light gray
     description: "Uklassificeret kilde"

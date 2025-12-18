@@ -1,15 +1,23 @@
 """
 Source quality scoring system.
 
-Combines evidence level, recency, and optional quality indicators
+Combines evidence level, recency, content quality, and relevance
 to produce a composite trust score.
+
+Multi-signal scoring approach:
+- Provenance (evidence hierarchy): 35%
+- Content quality (structure, refs): 25%
+- Recency: 20%
+- Relevance (to procedure topic): 20%
 
 NO MOCKS - All scoring uses real source metadata.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from procedurewriter.pipeline.evidence_hierarchy import EvidenceLevel, classify_source
@@ -132,17 +140,151 @@ def calculate_quality_indicators(source: dict[str, Any]) -> tuple[float, list[st
     return min(1.0, score), reasons
 
 
+def assess_content_quality(content: str | None) -> tuple[float, list[str]]:
+    """
+    Assess content quality based on structural signals.
+
+    Looks for indicators of professional, well-structured content:
+    - Has methodology/methods section
+    - Has references/bibliography
+    - Professional length (not too short)
+    - Contains clinical/medical terminology
+    - Has numbered lists or tables
+
+    Returns (score 0-1, list of reasoning strings)
+    """
+    if not content:
+        return 0.5, ["No content available (default score)"]
+
+    score = 0.0
+    reasons: list[str] = []
+    content_lower = content.lower()
+
+    # Has structured sections (methods, background, etc.)
+    structure_keywords = [
+        "methods", "metode", "metodologi",
+        "baggrund", "background", "introduction", "indledning",
+        "results", "resultater", "diskussion", "discussion",
+        "konklusion", "conclusion",
+    ]
+    if any(kw in content_lower for kw in structure_keywords):
+        score += 0.2
+        reasons.append("Has structured sections (+0.2)")
+
+    # Has references/bibliography
+    reference_keywords = ["references", "litteratur", "kilder", "bibliography", "citations"]
+    if any(kw in content_lower for kw in reference_keywords):
+        score += 0.2
+        reasons.append("Has references (+0.2)")
+
+    # Professional length (not too short, not just a paragraph)
+    if 500 < len(content) < 100000:
+        score += 0.2
+        reasons.append("Appropriate length (+0.2)")
+    elif len(content) >= 100000:
+        score += 0.15
+        reasons.append("Very long document (+0.15)")
+    else:
+        reasons.append("Short content (no bonus)")
+
+    # Contains clinical/medical terminology
+    medical_terms = [
+        "behandling", "diagnose", "patient", "dosis", "mg", "ml",
+        "indikation", "kontraindikation", "bivirkninger", "symptom",
+        "klinisk", "evidens", "anbefaling", "guideline", "retningslinje",
+    ]
+    term_count = sum(1 for t in medical_terms if t in content_lower)
+    if term_count >= 5:
+        score += 0.2
+        reasons.append(f"Rich medical terminology ({term_count} terms, +0.2)")
+    elif term_count >= 3:
+        score += 0.1
+        reasons.append(f"Some medical terminology ({term_count} terms, +0.1)")
+
+    # Has numbered lists or tables (suggests structured content)
+    if re.search(r'\d+\.\s+\w+', content) or '|' in content or re.search(r'^\s*[-•]\s+', content, re.MULTILINE):
+        score += 0.2
+        reasons.append("Has lists/tables (+0.2)")
+
+    # Cap at 1.0
+    return min(1.0, score), reasons
+
+
+def assess_relevance(
+    source: dict[str, Any],
+    procedure_topic: str | None,
+    content: str | None = None,
+) -> tuple[float, list[str]]:
+    """
+    Assess how relevant the source is to the procedure topic.
+
+    Uses keyword overlap between topic and source title/content.
+
+    Returns (score 0-1, list of reasoning strings)
+    """
+    if not procedure_topic:
+        return 0.5, ["No topic provided (default score)"]
+
+    topic_words = set(procedure_topic.lower().split())
+    # Remove common Danish stop words
+    stop_words = {"og", "i", "på", "til", "med", "af", "for", "ved", "en", "et", "den", "det"}
+    topic_words = topic_words - stop_words
+
+    if not topic_words:
+        return 0.5, ["No significant topic words (default score)"]
+
+    score = 0.0
+    reasons: list[str] = []
+
+    # Check title match
+    title = (source.get("title") or "").lower()
+    title_matches = sum(1 for w in topic_words if w in title)
+    if title_matches > 0:
+        title_score = min(0.5, title_matches / len(topic_words) * 0.5)
+        score += title_score
+        reasons.append(f"Title matches ({title_matches} words, +{title_score:.2f})")
+
+    # Check content match (if available)
+    if content:
+        content_lower = content.lower()
+        content_matches = sum(1 for w in topic_words if w in content_lower)
+        if content_matches > 0:
+            content_score = min(0.5, content_matches / len(topic_words) * 0.5)
+            score += content_score
+            reasons.append(f"Content matches ({content_matches} words, +{content_score:.2f})")
+
+    if not reasons:
+        reasons.append("No topic matches found")
+
+    return min(1.0, score), reasons
+
+
+def read_source_content(normalized_path: str | None) -> str | None:
+    """Read source content from file if available."""
+    if not normalized_path:
+        return None
+    try:
+        path = Path(normalized_path)
+        if path.exists() and path.is_file():
+            return path.read_text(encoding="utf-8", errors="replace")[:50000]  # Limit to 50KB
+    except (OSError, UnicodeDecodeError):
+        pass
+    return None
+
+
 def score_source(
     source: dict[str, Any],
     evidence_level: EvidenceLevel | None = None,
+    procedure_topic: str | None = None,
 ) -> SourceScore:
     """
     Calculate composite trust score for a source.
 
-    Weighting:
-    - Evidence level: 60%
-    - Recency: 25%
-    - Quality indicators: 15%
+    Multi-signal weighting:
+    - Provenance (evidence hierarchy): 35%
+    - Content quality: 25%
+    - Recency: 20%
+    - Relevance to topic: 20%
 
     Returns SourceScore with full breakdown.
     """
@@ -164,25 +306,43 @@ def score_source(
             kind=source.get("kind"),
         )
 
+    # Try to read source content for content analysis
+    normalized_path = source.get("normalized_path")
+    content = read_source_content(normalized_path)
+
     # Calculate components
     recency_score, recency_reason = calculate_recency_score(year)
-    quality_score, quality_reasons = calculate_quality_indicators(source)
+    metadata_quality, metadata_reasons = calculate_quality_indicators(source)
+    content_quality, content_reasons = assess_content_quality(content)
+    relevance_score, relevance_reasons = assess_relevance(source, procedure_topic, content)
+
+    # Combined quality score (average of metadata and content quality)
+    combined_quality = (metadata_quality + content_quality) / 2
 
     # Normalize evidence priority to 0-1 scale (1000 max)
-    evidence_normalized = min(1.0, evidence_level.priority / 1000.0)
+    provenance = min(1.0, evidence_level.priority / 1000.0)
 
-    # Calculate composite score (0-100)
+    # Calculate composite score (0-100) with new balanced weights
     composite = (
-        evidence_normalized * 60 + recency_score * 25 + quality_score * 15
+        provenance * 35 +          # Provenance from evidence hierarchy
+        combined_quality * 25 +     # Content + metadata quality
+        recency_score * 20 +        # Recency
+        relevance_score * 20        # Relevance to topic
     )
 
     # Build reasoning
     reasoning = [
-        f"Evidence level: {evidence_level.badge} (priority {evidence_level.priority}, {evidence_normalized*60:.1f} pts)",
-        f"Recency: {recency_reason} ({recency_score*25:.1f} pts)",
+        f"Provenance: {evidence_level.badge} (priority {evidence_level.priority}, {provenance*35:.1f} pts)",
+        f"Recency: {recency_reason} ({recency_score*20:.1f} pts)",
     ]
-    for qr in quality_reasons:
-        reasoning.append(f"Quality: {qr}")
+    for mr in metadata_reasons:
+        reasoning.append(f"Metadata: {mr}")
+    for cr in content_reasons:
+        reasoning.append(f"Content: {cr}")
+    reasoning.append(f"Combined quality: {combined_quality:.2f} ({combined_quality*25:.1f} pts)")
+    for rr in relevance_reasons:
+        reasoning.append(f"Relevance: {rr}")
+    reasoning.append(f"Relevance score: {relevance_score:.2f} ({relevance_score*20:.1f} pts)")
     reasoning.append(f"Total: {composite:.1f}/100")
 
     return SourceScore(
@@ -191,20 +351,56 @@ def score_source(
         evidence_priority=evidence_level.priority,
         recency_score=recency_score,
         recency_year=year,
-        quality_score=quality_score,
+        quality_score=combined_quality,
         composite_score=round(composite, 1),
         reasoning=reasoning,
     )
 
 
-def rank_sources(sources: list[dict[str, Any]]) -> list[SourceScore]:
+def rank_sources(
+    sources: list[dict[str, Any]],
+    procedure_topic: str | None = None,
+) -> list[SourceScore]:
     """
     Score and rank all sources by composite trust score.
 
+    Args:
+        sources: List of source dictionaries
+        procedure_topic: Optional procedure name for relevance scoring
+
     Returns list of SourceScore sorted by composite_score descending.
     """
-    scored = [score_source(s) for s in sources]
+    scored = [score_source(s, procedure_topic=procedure_topic) for s in sources]
     return sorted(scored, key=lambda x: x.composite_score, reverse=True)
+
+
+def get_trust_level(score: float) -> str:
+    """
+    Map composite score to Danish trust level label.
+
+    Thresholds:
+    - >= 70: Høj tillid (High trust)
+    - >= 45: Middel tillid (Medium trust)
+    - < 45: Lav tillid (Low trust)
+    """
+    if score >= 70:
+        return "Høj tillid"
+    elif score >= 45:
+        return "Middel tillid"
+    else:
+        return "Lav tillid"
+
+
+def get_trust_color(score: float) -> str:
+    """
+    Map composite score to CSS color for UI display.
+    """
+    if score >= 70:
+        return "#22c55e"  # green
+    elif score >= 45:
+        return "#f59e0b"  # amber
+    else:
+        return "#ef4444"  # red
 
 
 def source_to_dict(source: Any) -> dict[str, Any]:
@@ -227,6 +423,7 @@ def source_to_dict(source: Any) -> dict[str, Any]:
             "doi": getattr(source, "doi", None),
             "pmid": getattr(source, "pmid", None),
             "extra": getattr(source, "extra", {}),
+            "normalized_path": getattr(source, "normalized_path", None),
         }
 
     return {}

@@ -64,7 +64,7 @@ _DEFAULT_LEVELS: dict[str, dict[str, Any]] = {
         "description": "Randomiseret kontrolleret forsøg",
     },
     "unclassified": {
-        "priority": 50,
+        "priority": 100,  # Raised from 50 for more balanced scoring
         "badge": "Kilde",
         "badge_color": "#d1d5db",
         "description": "Uklassificeret kilde",

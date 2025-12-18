@@ -194,12 +194,11 @@ class TestCompositeScoring:
         }
         result = score_source(source)
 
-        # Quality indicators should be applied correctly:
-        # - sst.dk domain bonus
-        # - DOI bonus
-        # - abstract bonus
-        # - danish_guideline kind bonus
-        assert result.quality_score >= 0.85
+        # Quality score is now combined (metadata + content) / 2
+        # Metadata: base 0.5 + sst.dk 0.2 + DOI 0.1 + abstract 0.05 + kind 0.1 = 0.95
+        # Content: 0.5 (no content available)
+        # Combined: (0.95 + 0.5) / 2 = 0.725
+        assert result.quality_score >= 0.70
         assert "sst.dk" in str(result.reasoning)
         assert "DOI" in str(result.reasoning)
         # Recency should be max since current year
@@ -214,11 +213,13 @@ class TestCompositeScoring:
         }
         result = score_source(source)
 
-        # Evidence: unclassified (50 priority) → ~3 pts
-        # Recency: ~0.25 (20 years old) → ~6.25 pts
-        # Quality: 0.5 base → 7.5 pts
-        # Total: ~16.75
-        assert result.composite_score < 25
+        # New formula with weights:
+        # Provenance: 100/1000 * 35 = 3.5 pts (unclassified is now priority 100)
+        # Recency: ~0.25 (20 years old) * 20 = 5 pts
+        # Quality: 0.5 * 25 = 12.5 pts
+        # Relevance: 0.5 * 20 = 10 pts
+        # Total: ~31 pts
+        assert result.composite_score < 35
         assert result.evidence_level == "unclassified"
 
     def test_pubmed_systematic_review(self):
@@ -233,11 +234,11 @@ class TestCompositeScoring:
         }
         result = score_source(source)
 
-        # Quality indicators should be applied correctly:
-        # - DOI bonus (+0.1)
-        # - PubMed indexed bonus (+0.05)
-        # Base 0.5 + 0.1 + 0.05 = 0.65
-        assert result.quality_score >= 0.65
+        # Quality is now combined (metadata + content) / 2
+        # Metadata: base 0.5 + DOI 0.1 + PubMed 0.05 = 0.65
+        # Content: 0.5 (no content)
+        # Combined: (0.65 + 0.5) / 2 = 0.575
+        assert result.quality_score >= 0.55
         assert "DOI" in str(result.reasoning)
         assert "PubMed" in str(result.reasoning)
         # Recency should be 0.90 (2 years old)
@@ -245,7 +246,7 @@ class TestCompositeScoring:
         assert result.composite_score > 0
 
     def test_reasoning_includes_all_components(self):
-        """Reasoning includes evidence, recency, and quality components."""
+        """Reasoning includes provenance, recency, and quality components."""
         source = {
             "source_id": "SRC004",
             "url": "https://nice.org.uk/guidance",
@@ -255,9 +256,9 @@ class TestCompositeScoring:
         result = score_source(source)
 
         reasoning_text = " ".join(result.reasoning)
-        assert "Evidence level" in reasoning_text
+        assert "Provenance" in reasoning_text  # Changed from "Evidence level"
         assert "Recency" in reasoning_text
-        assert "Quality" in reasoning_text
+        assert "quality" in reasoning_text.lower()  # Combined quality
         assert "Total" in reasoning_text
 
     def test_score_without_year(self):

@@ -96,7 +96,7 @@ class TestEvidenceHierarchy:
         hierarchy = EvidenceHierarchy()
         level = hierarchy.classify_source(url="https://example.com/random")
         assert level.level_id == "unclassified"
-        assert level.priority == 50
+        assert level.priority == 100  # Updated from 50 to 100 for more balanced scoring
 
     def test_classify_library_danish_keywords(self) -> None:
         config = {
@@ -166,8 +166,15 @@ class TestConvenienceFunctions:
     """Tests for module-level convenience functions."""
 
     def test_classify_source_function(self) -> None:
+        # Reset global hierarchy to ensure config_path is used
+        import procedurewriter.pipeline.evidence_hierarchy as eh
+        eh._hierarchy = None
+
         level = classify_source(url="https://sst.dk/test", config_path=CONFIG_PATH)
         assert level.level_id == "danish_guideline"
+
+        # Reset again for other tests
+        eh._hierarchy = None
 
     def test_get_evidence_hierarchy_returns_instance(self) -> None:
         hierarchy = get_evidence_hierarchy()

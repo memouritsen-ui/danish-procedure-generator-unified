@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import logging
 import re
 import shutil
 import sqlite3
@@ -22,6 +23,8 @@ from pathlib import Path
 from typing import Any
 
 from procedurewriter.db import utc_now_iso
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -713,6 +716,74 @@ def delete_validation_result(db_path: Path, validation_id: str) -> bool:
 
 # --- LLM-Based Validation ---
 
+
+def _extract_json_from_llm_response(response_text: str) -> dict[str, Any] | None:
+    """
+    Robustly extract JSON from LLM response.
+
+    Handles:
+    - Pure JSON responses
+    - JSON wrapped in markdown code blocks (```json ... ```)
+    - JSON embedded in explanatory text
+    - Multiple JSON objects (takes first valid one)
+
+    Returns None if no valid JSON found.
+    """
+    text = response_text.strip()
+
+    # Strategy 1: Try parsing as pure JSON first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 2: Extract from markdown code block
+    code_block_pattern = r"```(?:json)?\s*\n?(.*?)\n?```"
+    matches = re.findall(code_block_pattern, text, re.DOTALL)
+    for match in matches:
+        try:
+            return json.loads(match.strip())
+        except json.JSONDecodeError:
+            continue
+
+    # Strategy 3: Find JSON object boundaries (first { to matching })
+    first_brace = text.find("{")
+    if first_brace != -1:
+        # Count braces to find matching closing brace
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i, char in enumerate(text[first_brace:], start=first_brace):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == "\\":
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    json_str = text[first_brace : i + 1]
+                    try:
+                        return json.loads(json_str)
+                    except json.JSONDecodeError:
+                        break  # Found balanced braces but invalid JSON
+
+    # Log the failed response for debugging
+    logger.warning(
+        "Failed to extract JSON from LLM response (first 500 chars): %s",
+        text[:500],
+    )
+    return None
+
+
 _LLM_VALIDATION_PROMPT = """You are a medical protocol validator. Compare a generated procedure against an approved hospital protocol and identify clinically significant conflicts.
 
 APPROVED PROTOCOL:
@@ -797,38 +868,29 @@ async def validate_run_against_protocol_llm(
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
 
-        # Parse response
+        # Parse response using robust JSON extraction
         response_text = response.content[0].text.strip()
+        result_data = _extract_json_from_llm_response(response_text)
 
-        # Try to extract JSON if wrapped in markdown
-        if response_text.startswith("```"):
-            # Remove markdown code block
-            lines = response_text.split("\n")
-            json_lines = []
-            in_block = False
-            for line in lines:
-                if line.startswith("```"):
-                    in_block = not in_block
-                    continue
-                if in_block or not line.startswith("```"):
-                    json_lines.append(line)
-            response_text = "\n".join(json_lines)
-
-        result_data = json.loads(response_text)
-
-    except json.JSONDecodeError:
-        # LLM returned invalid JSON
-        return ValidationResult(
-            protocol_id=protocol_id,
-            protocol_name=protocol_name,
-            similarity_score=0.0,
-            conflicts=[],
-            sections_compared=0,
-            sections_matched=0,
-            compatibility_score=None,
-            summary="Validering fejlede - kunne ikke parse LLM-svar",
-            validation_cost_usd=_calculate_haiku_cost(input_tokens, output_tokens),
-        )
+        if result_data is None:
+            # Log the full response for debugging
+            logger.error(
+                "Protocol validation failed to parse LLM response for %s. "
+                "Full response:\n%s",
+                protocol_id,
+                response_text,
+            )
+            return ValidationResult(
+                protocol_id=protocol_id,
+                protocol_name=protocol_name,
+                similarity_score=0.0,
+                conflicts=[],
+                sections_compared=0,
+                sections_matched=0,
+                compatibility_score=None,
+                summary="Validering fejlede - kunne ikke parse LLM-svar. Se server log for detaljer.",
+                validation_cost_usd=_calculate_haiku_cost(input_tokens, output_tokens),
+            )
     except anthropic.APIError as e:
         return ValidationResult(
             protocol_id=protocol_id,
