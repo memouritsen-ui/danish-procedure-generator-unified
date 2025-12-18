@@ -22,6 +22,7 @@ from procedurewriter.pipeline.retrieve import build_snippets, retrieve
 from procedurewriter.pipeline.sources import make_source_id, to_jsonl_record, write_source_files
 from procedurewriter.pipeline.types import SourceRecord
 from procedurewriter.pipeline.writer import write_procedure_markdown
+from procedurewriter.pipeline.library_search import LibrarySearchProvider
 from procedurewriter.settings import Settings
 
 
@@ -172,6 +173,88 @@ def run_pipeline(
                 )
             )
 
+        # Search Danish guideline library FIRST (priority 1000 - highest)
+        if not settings.dummy_mode:
+            library_provider = LibrarySearchProvider(settings.resolved_guideline_library_path)
+            if library_provider.available():
+                query_text = " ".join([procedure, context or ""]).strip()
+                library_results = library_provider.search(query_text, limit=15)
+
+                for lib_result in library_results:
+                    source_id = make_source_id(source_n)
+                    source_n += 1
+
+                    # Get extracted text content
+                    text_content = lib_result.get_text_content()
+                    if not text_content:
+                        continue  # Skip documents without extracted text
+
+                    # Read raw content (HTML or PDF)
+                    raw_path = lib_result.local_path / "original.html"
+                    if not raw_path.exists():
+                        raw_path = lib_result.local_path / "original.pdf"
+                    if not raw_path.exists():
+                        # Use extracted text as raw
+                        raw_bytes = text_content.encode("utf-8")
+                        raw_suffix = ".txt"
+                    else:
+                        raw_bytes = raw_path.read_bytes()
+                        raw_suffix = raw_path.suffix
+
+                    written = write_source_files(
+                        run_dir=run_dir,
+                        source_id=source_id,
+                        raw_bytes=raw_bytes,
+                        raw_suffix=raw_suffix,
+                        normalized_text=text_content,
+                    )
+
+                    # Parse year from publish_year field
+                    year_val = lib_result.publish_year
+                    year: int | None = None
+                    if year_val:
+                        try:
+                            year = int(year_val[:4]) if len(year_val) >= 4 else int(year_val)
+                        except ValueError:
+                            pass
+
+                    # Classify evidence level - Danish guidelines get priority 1000
+                    library_evidence_level = evidence_hierarchy.classify_source(
+                        url=lib_result.url,
+                        kind="danish_guideline",
+                        title=lib_result.title,
+                    )
+
+                    sources.append(
+                        SourceRecord(
+                            source_id=source_id,
+                            fetched_at_utc=_utc_now_iso(),
+                            kind="danish_guideline",
+                            title=lib_result.title,
+                            year=year,
+                            url=lib_result.url,
+                            doi=None,
+                            pmid=None,
+                            raw_path=str(written.raw_path),
+                            normalized_path=str(written.normalized_path),
+                            raw_sha256=written.raw_sha256,
+                            normalized_sha256=written.normalized_sha256,
+                            extraction_notes=f"Danish guideline library: {lib_result.source_name} (doc_id={lib_result.doc_id})",
+                            terms_licence_note="Danish regional/national clinical guideline. Respect source terms.",
+                            extra={
+                                "library_source_id": lib_result.source_id,
+                                "library_doc_id": lib_result.doc_id,
+                                "category": lib_result.category,
+                                "relevance_score": lib_result.relevance_score,
+                                "evidence_level": library_evidence_level.level_id,
+                                "evidence_badge": library_evidence_level.badge,
+                                "evidence_badge_color": library_evidence_level.badge_color,
+                                "evidence_priority": library_evidence_level.priority,
+                            },
+                        )
+                    )
+
+        # Search PubMed (priority 100 - fallback for international research)
         if not settings.dummy_mode:
             pubmed = PubMedClient(
                 http,
@@ -394,6 +477,8 @@ def run_pipeline(
             output_path=docx_path,
             run_id=run_id,
             manifest_hash=manifest_hash,
+            template_path=settings.docx_template_path,
+            quality_score=quality_score,
         )
 
         write_json(

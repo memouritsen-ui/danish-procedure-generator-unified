@@ -117,14 +117,14 @@ export async function apiSources(runId: string): Promise<SourcesResponse> {
   return (await resp.json()) as SourcesResponse;
 }
 
-export async function apiGetConfig(name: "author_guide" | "source_allowlist"): Promise<string> {
+export async function apiGetConfig(name: "author_guide" | "source_allowlist" | "docx_template"): Promise<string> {
   const resp = await fetch(`/api/config/${name}`);
   if (!resp.ok) throw new Error(await resp.text());
   const json = (await resp.json()) as { text: string };
   return json.text;
 }
 
-export async function apiSetConfig(name: "author_guide" | "source_allowlist", text: string): Promise<void> {
+export async function apiSetConfig(name: "author_guide" | "source_allowlist" | "docx_template", text: string): Promise<void> {
   const resp = await fetch(`/api/config/${name}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -256,4 +256,41 @@ export async function apiIngestDocx(file: File): Promise<string> {
   if (!resp.ok) throw new Error(await resp.text());
   const json = (await resp.json()) as { source_id: string };
   return json.source_id;
+}
+
+// Library stats and search
+export type LibraryStats = {
+  available: boolean;
+  document_count: number;
+  source_stats: Record<string, number>;
+  library_path: string;
+};
+
+export type LibrarySearchResult = {
+  doc_id: string;
+  source_id: string;
+  source_name: string;
+  title: string;
+  url: string;
+  publish_year?: string | null;
+  category?: string | null;
+  relevance_score: number;
+};
+
+export type LibrarySearchResponse = {
+  query: string;
+  count: number;
+  results: LibrarySearchResult[];
+};
+
+export async function apiLibraryStats(): Promise<LibraryStats> {
+  const resp = await fetch("/api/library/stats");
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as LibraryStats;
+}
+
+export async function apiLibrarySearch(query: string, limit: number = 20): Promise<LibrarySearchResponse> {
+  const resp = await fetch(`/api/library/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as LibrarySearchResponse;
 }

@@ -91,3 +91,17 @@ class Settings(BaseSettings):
     @property
     def evidence_hierarchy_path(self) -> Path:
         return self.resolved_config_dir / "evidence_hierarchy.yaml"
+
+    @property
+    def docx_template_path(self) -> Path:
+        return self.resolved_config_dir / "docx_template.yaml"
+
+    # Danish Guideline Library settings
+    guideline_library_path: Path | None = None
+
+    @property
+    def resolved_guideline_library_path(self) -> Path:
+        """Path to the guideline_harvester library root."""
+        if self.guideline_library_path:
+            return self.guideline_library_path
+        return Path.home() / "guideline_harvester" / "library"

@@ -644,6 +644,70 @@ def api_set_allowlist(cfg: ConfigText) -> ConfigText:
     return cfg
 
 
+@app.get("/api/config/docx_template", response_model=ConfigText)
+def api_get_docx_template() -> ConfigText:
+    """Get the DOCX template configuration."""
+    return ConfigText(text=config_store.read_text(settings.docx_template_path))
+
+
+@app.put("/api/config/docx_template", response_model=ConfigText)
+def api_set_docx_template(cfg: ConfigText) -> ConfigText:
+    """Update the DOCX template configuration."""
+    config_store.write_text_validated_yaml(settings.docx_template_path, cfg.text)
+    return cfg
+
+
+@app.get("/api/library/stats")
+def api_library_stats() -> dict[str, Any]:
+    """Get statistics about the Danish guideline library."""
+    from procedurewriter.pipeline.library_search import LibrarySearchProvider
+
+    provider = LibrarySearchProvider(settings.resolved_guideline_library_path)
+    if not provider.available():
+        return {
+            "available": False,
+            "document_count": 0,
+            "source_stats": {},
+            "library_path": str(settings.resolved_guideline_library_path),
+        }
+
+    return {
+        "available": True,
+        "document_count": provider.get_document_count(),
+        "source_stats": provider.get_source_stats(),
+        "library_path": str(settings.resolved_guideline_library_path),
+    }
+
+
+@app.get("/api/library/search")
+def api_library_search(q: str, limit: int = 20) -> dict[str, Any]:
+    """Search the Danish guideline library."""
+    from procedurewriter.pipeline.library_search import LibrarySearchProvider
+
+    provider = LibrarySearchProvider(settings.resolved_guideline_library_path)
+    if not provider.available():
+        raise HTTPException(status_code=503, detail="Guideline library not available")
+
+    results = provider.search(q, limit=limit)
+    return {
+        "query": q,
+        "count": len(results),
+        "results": [
+            {
+                "doc_id": r.doc_id,
+                "source_id": r.source_id,
+                "source_name": r.source_name,
+                "title": r.title,
+                "url": r.url,
+                "publish_year": r.publish_year,
+                "category": r.category,
+                "relevance_score": r.relevance_score,
+            }
+            for r in results
+        ],
+    }
+
+
 @app.get("/{full_path:path}")
 def serve_frontend(full_path: str) -> FileResponse:
     static_dir = Path(__file__).resolve().parents[1] / "static"

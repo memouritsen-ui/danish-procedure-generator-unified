@@ -3,6 +3,7 @@ import {
   ApiKeyInfo,
   ApiKeyStatus,
   AppStatus,
+  LibraryStats,
   apiAnthropicStatus,
   apiDeleteAnthropicKey,
   apiDeleteNcbiKey,
@@ -11,6 +12,7 @@ import {
   apiGetConfig,
   apiGetNcbiKey,
   apiGetOpenAiKey,
+  apiLibraryStats,
   apiNcbiStatus,
   apiOpenAiStatus,
   apiSetAnthropicKey,
@@ -23,9 +25,11 @@ import {
 export default function SettingsPage() {
   const [authorGuide, setAuthorGuide] = useState("");
   const [allowlist, setAllowlist] = useState("");
+  const [docxTemplate, setDocxTemplate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [statusInfo, setStatusInfo] = useState<AppStatus | null>(null);
+  const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
   const [openAiInfo, setOpenAiInfo] = useState<ApiKeyInfo | null>(null);
   const [openAiKey, setOpenAiKey] = useState("");
   const [openAiStatus, setOpenAiStatus] = useState<ApiKeyStatus | null>(null);
@@ -43,21 +47,25 @@ export default function SettingsPage() {
     let cancelled = false;
     async function load() {
       try {
-        const [ag, al, keyInfo, st, ninfo, ainfo] = await Promise.all([
+        const [ag, al, dt, keyInfo, st, ninfo, ainfo, libStats] = await Promise.all([
           apiGetConfig("author_guide"),
           apiGetConfig("source_allowlist"),
+          apiGetConfig("docx_template").catch(() => ""),
           apiGetOpenAiKey(),
           apiStatus(),
           apiGetNcbiKey(),
           apiGetAnthropicKey(),
+          apiLibraryStats().catch(() => null),
         ]);
         if (!cancelled) {
           setAuthorGuide(ag);
           setAllowlist(al);
+          setDocxTemplate(dt);
           setOpenAiInfo(keyInfo);
           setStatusInfo(st);
           setNcbiInfo(ninfo);
           setAnthropicInfo(ainfo);
+          setLibraryStats(libStats);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -75,6 +83,9 @@ export default function SettingsPage() {
     try {
       await apiSetConfig("author_guide", authorGuide);
       await apiSetConfig("source_allowlist", allowlist);
+      if (docxTemplate) {
+        await apiSetConfig("docx_template", docxTemplate);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -224,14 +235,18 @@ export default function SettingsPage() {
       <h2>Indstillinger</h2>
       <p className="muted">Redigér YAML direkte og gem via API.</p>
       {error && <p className="muted">{error}</p>}
-      <div className="split">
+      <div className="split" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
         <div>
           <h3>author_guide.yaml</h3>
-          <textarea value={authorGuide} onChange={(e) => setAuthorGuide(e.target.value)} rows={22} />
+          <textarea value={authorGuide} onChange={(e) => setAuthorGuide(e.target.value)} rows={18} />
         </div>
         <div>
           <h3>source_allowlist.yaml</h3>
-          <textarea value={allowlist} onChange={(e) => setAllowlist(e.target.value)} rows={22} />
+          <textarea value={allowlist} onChange={(e) => setAllowlist(e.target.value)} rows={18} />
+        </div>
+        <div>
+          <h3>docx_template.yaml</h3>
+          <textarea value={docxTemplate} onChange={(e) => setDocxTemplate(e.target.value)} rows={18} placeholder="DOCX output template configuration..." />
         </div>
       </div>
       <div style={{ marginTop: 12 }}>
@@ -263,6 +278,34 @@ export default function SettingsPage() {
             NCBI tool: <code>{statusInfo.ncbi_tool}</code> · email: <code>{statusInfo.ncbi_email ?? "-"}</code> · API
             key source: <code>{statusInfo.ncbi_api_key_source}</code>
           </p>
+        </div>
+      )}
+
+      {libraryStats && (
+        <div style={{ marginTop: 18 }} className="card">
+          <h3>Danish Guideline Library</h3>
+          <p className="muted">
+            Status: <code>{libraryStats.available ? "tilgængelig" : "ikke tilgængelig"}</code> · Dokumenter:{" "}
+            <code>{libraryStats.document_count.toLocaleString()}</code>
+          </p>
+          {libraryStats.available && Object.keys(libraryStats.source_stats).length > 0 && (
+            <>
+              <p className="muted" style={{ marginTop: 8 }}>Kilder:</p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px", marginTop: 4 }}>
+                {Object.entries(libraryStats.source_stats)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 12)
+                  .map(([source, count]) => (
+                    <span key={source} className="muted" style={{ fontSize: "0.85em" }}>
+                      <code>{source}</code>: {count.toLocaleString()}
+                    </span>
+                  ))}
+              </div>
+              <p className="muted" style={{ marginTop: 8, fontSize: "0.85em" }}>
+                Sti: <code>{libraryStats.library_path}</code>
+              </p>
+            </>
+          )}
         </div>
       )}
 
