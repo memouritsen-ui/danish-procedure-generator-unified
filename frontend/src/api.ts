@@ -317,3 +317,86 @@ export async function apiLibrarySearch(query: string, limit: number = 20): Promi
   if (!resp.ok) throw new Error(await resp.text());
   return (await resp.json()) as LibrarySearchResponse;
 }
+
+// --- Versioning API ---
+
+export type ProceduresResponse = {
+  procedures: string[];
+  count: number;
+};
+
+export type VersionInfo = {
+  run_id: string;
+  version_number: number;
+  created_at_utc: string;
+  parent_run_id: string | null;
+  version_note: string | null;
+  quality_score: number | null;
+  status: string;
+};
+
+export type ProcedureVersionsResponse = {
+  procedure: string;
+  count: number;
+  versions: VersionInfo[];
+};
+
+export type VersionChainResponse = {
+  run_id: string;
+  chain_length: number;
+  chain: VersionInfo[];
+};
+
+export type SectionDiff = {
+  heading: string;
+  change_type: "added" | "removed" | "modified" | "unchanged";
+  old_content: string | null;
+  new_content: string | null;
+  unified_diff: string | null;
+  similarity: number;
+};
+
+export type SourceDiff = {
+  added: string[];
+  removed: string[];
+  unchanged: string[];
+};
+
+export type VersionDiff = {
+  old_run_id: string;
+  new_run_id: string;
+  old_version: number;
+  new_version: number;
+  procedure: string;
+  has_changes: boolean;
+  summary: string;
+  sections_added: number;
+  sections_removed: number;
+  sections_modified: number;
+  section_diffs: SectionDiff[];
+  source_diff: SourceDiff | null;
+};
+
+export async function apiProcedures(): Promise<ProceduresResponse> {
+  const resp = await fetch("/api/procedures");
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ProceduresResponse;
+}
+
+export async function apiProcedureVersions(procedure: string): Promise<ProcedureVersionsResponse> {
+  const resp = await fetch(`/api/procedures/${encodeURIComponent(procedure)}/versions`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ProcedureVersionsResponse;
+}
+
+export async function apiVersionChain(runId: string): Promise<VersionChainResponse> {
+  const resp = await fetch(`/api/runs/${encodeURIComponent(runId)}/version-chain`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as VersionChainResponse;
+}
+
+export async function apiDiff(runId: string, otherRunId: string): Promise<VersionDiff> {
+  const resp = await fetch(`/api/runs/${encodeURIComponent(runId)}/diff/${encodeURIComponent(otherRunId)}`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as VersionDiff;
+}

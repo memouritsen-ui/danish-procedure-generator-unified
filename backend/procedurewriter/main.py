@@ -20,10 +20,13 @@ from procedurewriter.db import (
     delete_secret,
     get_run,
     get_secret,
+    get_version_chain,
     init_db,
     iter_jsonl,
     list_library_sources,
+    list_procedure_versions,
     list_runs,
+    list_unique_procedures,
     mask_secret,
     set_secret,
     update_run_status,
@@ -41,6 +44,12 @@ from procedurewriter.pipeline.normalize import (
 )
 from procedurewriter.pipeline.events import get_emitter_if_exists
 from procedurewriter.pipeline.run import run_pipeline
+from procedurewriter.pipeline.versioning import (
+    create_version_diff,
+    diff_to_dict,
+    load_procedure_markdown,
+    load_source_ids,
+)
 from procedurewriter.run_bundle import build_run_bundle_zip, read_run_manifest
 from procedurewriter.schemas import (
     ApiKeyInfo,
@@ -801,6 +810,107 @@ def api_library_search(q: str, limit: int = 20) -> dict[str, Any]:
             for r in results
         ],
     }
+
+
+# --- Versioning API Endpoints ---
+
+
+@app.get("/api/procedures")
+def api_list_procedures() -> dict[str, Any]:
+    """List all unique procedures with completed runs."""
+    procedures = list_unique_procedures(settings.db_path)
+    return {"procedures": procedures, "count": len(procedures)}
+
+
+@app.get("/api/procedures/{procedure}/versions")
+def api_procedure_versions(procedure: str) -> dict[str, Any]:
+    """List all versions of a procedure."""
+    versions = list_procedure_versions(settings.db_path, procedure)
+    return {
+        "procedure": procedure,
+        "count": len(versions),
+        "versions": [
+            {
+                "run_id": v.run_id,
+                "version_number": v.version_number,
+                "created_at_utc": v.created_at_utc,
+                "parent_run_id": v.parent_run_id,
+                "version_note": v.version_note,
+                "quality_score": v.quality_score,
+                "status": v.status,
+            }
+            for v in versions
+        ],
+    }
+
+
+@app.get("/api/runs/{run_id}/version-chain")
+def api_version_chain(run_id: str) -> dict[str, Any]:
+    """Get the complete version chain for a run."""
+    chain = get_version_chain(settings.db_path, run_id)
+    if not chain:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {
+        "run_id": run_id,
+        "chain_length": len(chain),
+        "chain": [
+            {
+                "run_id": v.run_id,
+                "version_number": v.version_number,
+                "created_at_utc": v.created_at_utc,
+                "parent_run_id": v.parent_run_id,
+                "version_note": v.version_note,
+                "quality_score": v.quality_score,
+            }
+            for v in chain
+        ],
+    }
+
+
+@app.get("/api/runs/{run_id}/diff/{other_run_id}")
+def api_diff_runs(run_id: str, other_run_id: str) -> dict[str, Any]:
+    """Generate a diff between two runs.
+
+    Compares `other_run_id` (older) to `run_id` (newer).
+    """
+    run = get_run(settings.db_path, run_id)
+    other_run = get_run(settings.db_path, other_run_id)
+
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    if other_run is None:
+        raise HTTPException(status_code=404, detail=f"Run {other_run_id} not found")
+
+    # Load markdown content
+    run_dir = Path(run.run_dir)
+    other_run_dir = Path(other_run.run_dir)
+
+    run_md = load_procedure_markdown(run_dir)
+    other_md = load_procedure_markdown(other_run_dir)
+
+    if run_md is None:
+        raise HTTPException(status_code=404, detail=f"Procedure markdown not found for {run_id}")
+    if other_md is None:
+        raise HTTPException(status_code=404, detail=f"Procedure markdown not found for {other_run_id}")
+
+    # Load source IDs
+    run_sources = load_source_ids(run_dir)
+    other_sources = load_source_ids(other_run_dir)
+
+    # Create diff (other is old, run is new)
+    diff = create_version_diff(
+        old_run_id=other_run_id,
+        new_run_id=run_id,
+        old_version=other_run.version_number,
+        new_version=run.version_number,
+        procedure=run.procedure,
+        old_markdown=other_md,
+        new_markdown=run_md,
+        old_source_ids=other_sources,
+        new_source_ids=run_sources,
+    )
+
+    return diff_to_dict(diff)
 
 
 @app.get("/{full_path:path}")

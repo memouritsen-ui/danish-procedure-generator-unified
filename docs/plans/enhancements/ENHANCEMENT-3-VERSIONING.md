@@ -1,10 +1,42 @@
 # Enhancement 3: Structured Procedure Versioning & Diff System
 
-## Status: NOT STARTED
+## Status: COMPLETED (2024-12-18)
 
 **Priority**: 3
 **Estimated Effort**: 2-3 days
 **Dependencies**: None
+
+### Implementation Summary
+
+Implemented full versioning and diff system:
+
+**Database (`db.py`)**:
+- Added `parent_run_id`, `version_number`, `version_note`, `procedure_normalized` columns
+- Auto-migration for existing databases
+- `normalize_procedure_name()` for matching versions across runs
+- `list_procedure_versions()`, `get_latest_version()`, `list_unique_procedures()`, `get_version_chain()`
+- Indexes for efficient version queries
+
+**Versioning Module (`pipeline/versioning.py`)**:
+- `parse_markdown_sections()` - parse procedure into sections
+- `diff_sections()` - compare sections between versions
+- `diff_sources()` - track added/removed sources
+- `create_version_diff()` - generate complete diff
+- `diff_to_dict()` - JSON serialization for API
+
+**API Endpoints (`main.py`)**:
+- `GET /api/procedures` - list all unique procedures
+- `GET /api/procedures/{procedure}/versions` - list versions
+- `GET /api/runs/{run_id}/version-chain` - get ancestry chain
+- `GET /api/runs/{run_id}/diff/{other_run_id}` - generate diff
+
+**Frontend**:
+- `VersionHistoryPage.tsx` - browse procedures and versions
+- `DiffPage.tsx` - visual diff with section comparison
+- Navigation link in Layout
+- API types in `api.ts`
+
+**Tests**: 35 tests for versioning module
 
 ---
 

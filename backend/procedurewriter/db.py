@@ -39,7 +39,11 @@ def init_db(db_path: Path) -> None:
               iterations_used INTEGER,
               total_cost_usd REAL,
               total_input_tokens INTEGER,
-              total_output_tokens INTEGER
+              total_output_tokens INTEGER,
+              parent_run_id TEXT,
+              version_number INTEGER DEFAULT 1,
+              version_note TEXT,
+              procedure_normalized TEXT
             )
             """
         )
@@ -50,11 +54,22 @@ def init_db(db_path: Path) -> None:
             ("total_cost_usd", "REAL"),
             ("total_input_tokens", "INTEGER"),
             ("total_output_tokens", "INTEGER"),
+            ("parent_run_id", "TEXT"),
+            ("version_number", "INTEGER DEFAULT 1"),
+            ("version_note", "TEXT"),
+            ("procedure_normalized", "TEXT"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {col_type}")
             except sqlite3.OperationalError:
                 pass  # Column already exists
+
+        # Create indexes for version queries
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_procedure_normalized ON runs(procedure_normalized)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_parent_run_id ON runs(parent_run_id)")
+        except sqlite3.OperationalError:
+            pass
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS library_sources (
@@ -131,17 +146,79 @@ class RunRow:
     total_cost_usd: float | None
     total_input_tokens: int | None
     total_output_tokens: int | None
+    # Versioning fields
+    parent_run_id: str | None = None
+    version_number: int = 1
+    version_note: str | None = None
+    procedure_normalized: str | None = None
 
 
-def create_run(db_path: Path, *, run_id: str, procedure: str, context: str | None, run_dir: Path) -> None:
+def normalize_procedure_name(name: str) -> str:
+    """Normalize procedure name for matching versions across runs.
+
+    Lowercases, strips, and removes punctuation/special chars.
+    """
+    import re
+    normalized = name.lower().strip()
+    # Remove punctuation and special chars, keep only alphanumeric and spaces
+    normalized = re.sub(r"[^\w\s]", "", normalized)
+    # Collapse whitespace
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized
+
+
+def create_run(
+    db_path: Path,
+    *,
+    run_id: str,
+    procedure: str,
+    context: str | None,
+    run_dir: Path,
+    parent_run_id: str | None = None,
+    version_note: str | None = None,
+) -> None:
     now = utc_now_iso()
+    procedure_normalized = normalize_procedure_name(procedure)
+
+    # Calculate version number
+    version_number = 1
+    if parent_run_id:
+        # Get parent's version and increment
+        with _connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT version_number FROM runs WHERE run_id = ?",
+                (parent_run_id,),
+            ).fetchone()
+            if row and row["version_number"]:
+                version_number = row["version_number"] + 1
+    else:
+        # Check for existing versions with same normalized procedure name
+        with _connect(db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT MAX(version_number) as max_version FROM runs
+                WHERE procedure_normalized = ? AND status = 'DONE'
+                """,
+                (procedure_normalized,),
+            ).fetchone()
+            if row and row["max_version"]:
+                version_number = row["max_version"] + 1
+
     with _connect(db_path) as conn:
         conn.execute(
             """
-            INSERT INTO runs(run_id, created_at_utc, updated_at_utc, procedure, context, status, error, run_dir)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO runs(
+                run_id, created_at_utc, updated_at_utc, procedure, context,
+                status, error, run_dir, parent_run_id, version_number,
+                version_note, procedure_normalized
+            )
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (run_id, now, now, procedure, context, "QUEUED", None, str(run_dir)),
+            (
+                run_id, now, now, procedure, context, "QUEUED", None,
+                str(run_dir), parent_run_id, version_number, version_note,
+                procedure_normalized,
+            ),
         )
 
 
@@ -193,6 +270,8 @@ def update_run_status(
 
 
 def _row_to_run(row: sqlite3.Row) -> RunRow:
+    # Handle both old DBs (without versioning columns) and new DBs
+    keys = row.keys()
     return RunRow(
         run_id=row["run_id"],
         created_at_utc=row["created_at_utc"],
@@ -209,6 +288,10 @@ def _row_to_run(row: sqlite3.Row) -> RunRow:
         total_cost_usd=row["total_cost_usd"],
         total_input_tokens=row["total_input_tokens"],
         total_output_tokens=row["total_output_tokens"],
+        parent_run_id=row["parent_run_id"] if "parent_run_id" in keys else None,
+        version_number=row["version_number"] if "version_number" in keys and row["version_number"] else 1,
+        version_note=row["version_note"] if "version_note" in keys else None,
+        procedure_normalized=row["procedure_normalized"] if "procedure_normalized" in keys else None,
     )
 
 
@@ -308,3 +391,69 @@ def iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
             if not line:
                 continue
             yield json.loads(line)
+
+
+# --- Versioning query functions ---
+
+
+def list_procedure_versions(db_path: Path, procedure: str) -> list[RunRow]:
+    """List all versions of a procedure, ordered by version number descending."""
+    procedure_normalized = normalize_procedure_name(procedure)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM runs
+            WHERE procedure_normalized = ? AND status = 'DONE'
+            ORDER BY version_number DESC
+            """,
+            (procedure_normalized,),
+        ).fetchall()
+    return [_row_to_run(r) for r in rows]
+
+
+def get_latest_version(db_path: Path, procedure: str) -> RunRow | None:
+    """Get the latest version of a procedure."""
+    procedure_normalized = normalize_procedure_name(procedure)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM runs
+            WHERE procedure_normalized = ? AND status = 'DONE'
+            ORDER BY version_number DESC
+            LIMIT 1
+            """,
+            (procedure_normalized,),
+        ).fetchone()
+    return _row_to_run(row) if row else None
+
+
+def list_unique_procedures(db_path: Path) -> list[str]:
+    """List all unique procedure names that have completed runs."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT procedure FROM runs
+            WHERE status = 'DONE'
+            ORDER BY procedure
+            """
+        ).fetchall()
+    return [str(r["procedure"]) for r in rows]
+
+
+def get_version_chain(db_path: Path, run_id: str) -> list[RunRow]:
+    """Get the complete version chain for a run (ancestors + self).
+
+    Returns list ordered from oldest ancestor to the given run.
+    """
+    chain: list[RunRow] = []
+    current_id: str | None = run_id
+
+    while current_id:
+        run = get_run(db_path, current_id)
+        if not run:
+            break
+        chain.append(run)
+        current_id = run.parent_run_id
+
+    # Reverse to get oldest first
+    return list(reversed(chain))
