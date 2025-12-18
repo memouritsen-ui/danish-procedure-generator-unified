@@ -1,0 +1,148 @@
+# Danish Evidence Hierarchy Configuration
+# Defines priority levels for medical evidence sources.
+# Danish/Nordic sources are prioritized for clinical relevance in Danish healthcare.
+version: 1
+
+# Evidence levels from highest (1) to lowest (9)
+# Each level has: priority score, badge label, and description
+evidence_levels:
+  # Level 1: Danish National Guidelines
+  danish_guideline:
+    priority: 1000
+    badge: "DK Guideline"
+    badge_color: "#22c55e"  # green
+    description: "Dansk national retningslinje (SST, DSAM, specialeselskaber)"
+    url_patterns:
+      - "sst.dk"
+      - "dsam.dk"
+      - "sundhed.dk"
+      - "laegemiddelstyrelsen.dk"
+      - "regionh.dk"
+      - "regionsjaelland.dk"
+      - "regionsyddanmark.dk"
+      - "rm.dk"
+      - "rn.dk"
+
+  # Level 2: Nordic Guidelines
+  nordic_guideline:
+    priority: 900
+    badge: "Nordic"
+    badge_color: "#3b82f6"  # blue
+    description: "Nordisk retningslinje (Sverige, Norge, Finland)"
+    url_patterns:
+      - "socialstyrelsen.se"
+      - "helsedirektoratet.no"
+      - "fhi.no"
+      - "thl.fi"
+      - "kaypahoito.fi"
+
+  # Level 3: European Guidelines
+  european_guideline:
+    priority: 850
+    badge: "EU Guideline"
+    badge_color: "#8b5cf6"  # purple
+    description: "Europæisk retningslinje (ESC, ERS, ESMO, etc.)"
+    url_patterns:
+      - "escardio.org"
+      - "ersnet.org"
+      - "esmo.org"
+      - "uroweb.org"
+      - "ecdc.europa.eu"
+
+  # Level 4: International Guidelines (high authority)
+  international_guideline:
+    priority: 800
+    badge: "Intl Guideline"
+    badge_color: "#06b6d4"  # cyan
+    description: "International retningslinje (NICE, WHO, CDC)"
+    url_patterns:
+      - "nice.org.uk"
+      - "who.int"
+      - "cdc.gov"
+      - "ahrq.gov"
+
+  # Level 5: Systematic Reviews & Meta-analyses (PubMed)
+  systematic_review:
+    priority: 700
+    badge: "Syst Review"
+    badge_color: "#f59e0b"  # amber
+    description: "Systematisk review eller meta-analyse"
+    pubmed_types:
+      - "systematic review"
+      - "meta-analysis"
+
+  # Level 6: Practice Guidelines (PubMed)
+  practice_guideline:
+    priority: 650
+    badge: "Practice GL"
+    badge_color: "#84cc16"  # lime
+    description: "Practice guideline (fra PubMed)"
+    pubmed_types:
+      - "practice guideline"
+      - "guideline"
+
+  # Level 7: Randomized Controlled Trials
+  rct:
+    priority: 500
+    badge: "RCT"
+    badge_color: "#ec4899"  # pink
+    description: "Randomiseret kontrolleret forsøg"
+    pubmed_types:
+      - "randomized controlled trial"
+      - "clinical trial"
+
+  # Level 8: Observational Studies
+  observational:
+    priority: 300
+    badge: "Observational"
+    badge_color: "#6b7280"  # gray
+    description: "Observationel studie (cohort, case-control)"
+    pubmed_types:
+      - "observational study"
+      - "cohort study"
+      - "case-control study"
+
+  # Level 9: Case Reports / Expert Opinion
+  case_report:
+    priority: 100
+    badge: "Case/Expert"
+    badge_color: "#9ca3af"  # light gray
+    description: "Case report eller ekspertudtalelse"
+    pubmed_types:
+      - "case reports"
+      - "comment"
+      - "editorial"
+
+  # Default for unclassified sources
+  unclassified:
+    priority: 50
+    badge: "Kilde"
+    badge_color: "#d1d5db"  # very light gray
+    description: "Uklassificeret kilde"
+
+# Special handling for library sources (uploaded PDFs/docs)
+library_source_rules:
+  # If title/filename contains these patterns, boost priority
+  danish_keywords:
+    - "retningslinje"
+    - "vejledning"
+    - "instruks"
+    - "NKR"
+    - "SST"
+    - "DSAM"
+  nordic_keywords:
+    - "riktlinje"
+    - "veileder"
+    - "handlingsplan"
+
+# Search order configuration
+search_order:
+  # When searching, try these source types first
+  priority_sources:
+    - danish_guideline
+    - nordic_guideline
+    - european_guideline
+  # Minimum sources to include from each priority level (if available)
+  min_per_level: 2
+  # Maximum total sources per category
+  max_per_category: 5

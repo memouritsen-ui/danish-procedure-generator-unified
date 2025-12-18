@@ -87,3 +87,7 @@ class Settings(BaseSettings):
     @property
     def allowlist_path(self) -> Path:
         return self.resolved_config_dir / "source_allowlist.yaml"
+
+    @property
+    def evidence_hierarchy_path(self) -> Path:
+        return self.resolved_config_dir / "evidence_hierarchy.yaml"

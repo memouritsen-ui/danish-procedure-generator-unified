@@ -9,6 +9,7 @@ from procedurewriter.config_store import load_yaml
 from procedurewriter.db import LibrarySourceRow
 from procedurewriter.llm import get_session_tracker, reset_session_tracker
 from procedurewriter.pipeline.citations import validate_citations
+from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
 from procedurewriter.pipeline.docx_writer import write_procedure_docx
 from procedurewriter.pipeline.evidence import build_evidence_report, enforce_evidence_policy
 from procedurewriter.pipeline.fetcher import CachedHttpClient
@@ -46,6 +47,7 @@ def run_pipeline(
 
     author_guide = load_yaml(settings.author_guide_path)
     allowlist = load_yaml(settings.allowlist_path)
+    evidence_hierarchy = EvidenceHierarchy.from_config(settings.evidence_hierarchy_path)
 
     http = CachedHttpClient(cache_dir=settings.cache_dir)
     try:
@@ -94,6 +96,17 @@ def run_pipeline(
             else:
                 year = None
 
+            # Classify evidence level for library source
+            evidence_level = evidence_hierarchy.classify_source(
+                url=lib.url,
+                kind="library",
+                title=lib.title,
+            )
+            extra["evidence_level"] = evidence_level.level_id
+            extra["evidence_badge"] = evidence_level.badge
+            extra["evidence_badge_color"] = evidence_level.badge_color
+            extra["evidence_priority"] = evidence_level.priority
+
             sources.append(
                 SourceRecord(
                     source_id=source_id,
@@ -122,6 +135,7 @@ def run_pipeline(
                 source_n=source_n,
                 sources=sources,
                 warnings=warnings,
+                evidence_hierarchy=evidence_hierarchy,
             )
 
         if settings.dummy_mode:
@@ -189,16 +203,21 @@ def run_pipeline(
                     if art.pmid in seen_pmids:
                         continue
                     seen_pmids.add(art.pmid)
+                    # Get evidence hierarchy boost for this publication
+                    hierarchy_boost = evidence_hierarchy.get_priority_boost(
+                        publication_types=art.publication_types
+                    )
                     candidates.append(
                         {
                             "fetched": fetched,
                             "fetch_resp": fetch_resp,
                             "search_query": q,
                             "search_cache_path": search_resp.cache_path,
-                            "score": _pubmed_evidence_score(art.publication_types),
+                            "score": _pubmed_evidence_score(art.publication_types) + hierarchy_boost,
                             "relevance": _pubmed_relevance_score(query_tokens, art.title, art.abstract),
                             "has_abstract": bool(art.abstract),
                             "year": art.year or 0,
+                            "hierarchy_boost": hierarchy_boost,
                         }
                     )
                 if len(candidates) >= 40:
@@ -224,6 +243,10 @@ def run_pipeline(
                     raw_suffix=".xml",
                     normalized_text=normalized,
                 )
+                # Classify evidence level for PubMed source
+                pubmed_evidence_level = evidence_hierarchy.classify_source(
+                    publication_types=art.publication_types
+                )
                 sources.append(
                     SourceRecord(
                         source_id=source_id,
@@ -243,6 +266,10 @@ def run_pipeline(
                         extra={
                             "search_query": q,
                             "publication_types": art.publication_types,
+                            "evidence_level": pubmed_evidence_level.level_id,
+                            "evidence_badge": pubmed_evidence_level.badge,
+                            "evidence_badge_color": pubmed_evidence_level.badge_color,
+                            "evidence_priority": pubmed_evidence_level.priority,
                         },
                     )
                 )
@@ -479,6 +506,7 @@ def _append_seed_url_sources(
     source_n: int,
     sources: list[SourceRecord],
     warnings: list[str],
+    evidence_hierarchy: EvidenceHierarchy,
 ) -> int:
     prefixes = _allowlist_prefixes(allowlist)
     urls = _seed_urls(allowlist)
@@ -510,6 +538,12 @@ def _append_seed_url_sources(
         )
 
         title = _extract_html_title(resp.content) or url
+        # Classify evidence level for seed URL source
+        seed_evidence_level = evidence_hierarchy.classify_source(
+            url=url,
+            kind="guideline_url",
+            title=title,
+        )
         sources.append(
             SourceRecord(
                 source_id=source_id,
@@ -526,7 +560,13 @@ def _append_seed_url_sources(
                 normalized_sha256=written.normalized_sha256,
                 extraction_notes=f"Fetched from allowlist seed_urls. Cache: {resp.cache_path}",
                 terms_licence_note="Respektér source terms/licence. Ingen paywall scraping.",
-                extra={"final_url": resp.url},
+                extra={
+                    "final_url": resp.url,
+                    "evidence_level": seed_evidence_level.level_id,
+                    "evidence_badge": seed_evidence_level.badge,
+                    "evidence_badge_color": seed_evidence_level.badge_color,
+                    "evidence_priority": seed_evidence_level.priority,
+                },
             )
         )
 

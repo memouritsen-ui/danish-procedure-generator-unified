@@ -85,7 +85,7 @@ def write_procedure_markdown(
     has_api_key = bool(openai_api_key or anthropic_api_key or provider == "ollama")
 
     if dummy_mode or not use_llm or not has_api_key:
-        return _write_template(procedure=procedure, context=context, author_guide=author_guide, citations=citation_pool)
+        return _write_template(procedure=procedure, context=context, author_guide=author_guide, citations=citation_pool, sources=sources)
 
     try:
         return _write_llm_sectioned(
@@ -117,7 +117,7 @@ def write_procedure_markdown(
                 ollama_base_url=ollama_base_url,
             )
         except Exception:
-            return _write_template(procedure=procedure, context=context, author_guide=author_guide, citations=citation_pool)
+            return _write_template(procedure=procedure, context=context, author_guide=author_guide, citations=citation_pool, sources=sources)
 
 
 def _citation_pool(snippets: list[Snippet], sources: list[SourceRecord]) -> list[str]:
@@ -132,7 +132,14 @@ def _citation_pool(snippets: list[Snippet], sources: list[SourceRecord]) -> list
     return ["SRC0000"]
 
 
-def _write_template(*, procedure: str, context: str | None, author_guide: dict[str, Any], citations: list[str]) -> str:
+def _write_template(
+    *,
+    procedure: str,
+    context: str | None,
+    author_guide: dict[str, Any],
+    citations: list[str],
+    sources: list[SourceRecord] | None = None,
+) -> str:
     title_prefix = (
         ((author_guide.get("structure") or {}).get("title_prefix")) if isinstance(author_guide, dict) else None
     )
@@ -165,6 +172,10 @@ def _write_template(*, procedure: str, context: str | None, author_guide: dict[s
             lines.append("")
             lines.append(f"Hvis de indsamlede kilder ikke dækker centrale spørgsmål, skal det stå eksplicit her. {cite}")
         lines.append("")
+
+    # Add references section with evidence badges if sources available
+    if sources:
+        lines.extend(_format_references_section(sources, citations))
 
     return "\n".join(lines).strip() + "\n"
 
@@ -207,6 +218,8 @@ def _write_llm_sectioned(
         lines.append(f"**Kontekst (input):** {context.strip()} [S:{cid}]")
         lines.append("")
 
+    all_used_ids: list[str] = []
+
     for sec in sections:
         heading = sec["heading"]
         fmt = sec["format"]
@@ -220,6 +233,11 @@ def _write_llm_sectioned(
                 allowed_ids.append(sn.source_id)
         if not allowed_ids:
             allowed_ids = citations[:1] or ([sources[0].source_id] if sources else ["SRC0000"])
+
+        # Track all used source IDs for references section
+        for sid in allowed_ids:
+            if sid not in all_used_ids:
+                all_used_ids.append(sid)
 
         body = _write_llm_section_body(
             client=client,
@@ -237,6 +255,9 @@ def _write_llm_sectioned(
         lines.append(f"## {heading}")
         lines.extend(body)
         lines.append("")
+
+    # Add references section with evidence badges
+    lines.extend(_format_references_section(sources, all_used_ids))
 
     return "\n".join(lines).strip() + "\n"
 
@@ -268,17 +289,21 @@ def _write_llm_section_body(
         src = source_by_id.get(sid)
         if not src:
             continue
-        pub_types = (src.extra or {}).get("publication_types") if isinstance(src.extra, dict) else None
+        extra = src.extra if isinstance(src.extra, dict) else {}
+        pub_types = extra.get("publication_types")
         pub_types_text = ""
         if isinstance(pub_types, list) and pub_types:
             pub_types_text = f" | PT: {', '.join(str(x) for x in pub_types if x)}"
+        # Add evidence badge if available
+        evidence_badge = extra.get("evidence_badge")
+        evidence_text = f" | [{evidence_badge}]" if evidence_badge else ""
         title = (src.title or "").strip()
         year = f"{src.year}" if src.year else ""
         url = (src.url or "").strip()
         doi = f"DOI: {src.doi}" if src.doi else ""
         pmid = f"PMID: {src.pmid}" if src.pmid else ""
         meta = " — ".join(p for p in [title, year, url, doi, pmid] if p)
-        source_lines.append(f"- [S:{sid}] {meta}{pub_types_text}".strip())
+        source_lines.append(f"- [S:{sid}] {meta}{pub_types_text}{evidence_text}".strip())
     sources_text = "\n".join(source_lines) if source_lines else "(ingen)"
 
     fmt_hint = {
@@ -395,6 +420,51 @@ def _dedupe_preserve(items: list[str]) -> list[str]:
     return out
 
 
+def _format_references_section(sources: list[SourceRecord], used_ids: list[str]) -> list[str]:
+    """
+    Generate a references section with evidence badges.
+
+    Returns markdown lines for a "Referencer" section showing all used sources
+    with their evidence level badges.
+    """
+    if not sources or not used_ids:
+        return []
+
+    used_set = set(used_ids)
+    source_by_id = {s.source_id: s for s in sources}
+
+    lines: list[str] = ["", "## Referencer", ""]
+
+    for sid in used_ids:
+        src = source_by_id.get(sid)
+        if not src:
+            continue
+
+        extra = src.extra if isinstance(src.extra, dict) else {}
+        evidence_badge = extra.get("evidence_badge", "Kilde")
+        evidence_color = extra.get("evidence_badge_color", "#d1d5db")
+
+        # Build reference line
+        title = (src.title or "Unavngiven kilde").strip()
+        year = f" ({src.year})" if src.year else ""
+        url = src.url or ""
+        doi_str = f" DOI: {src.doi}" if src.doi else ""
+        pmid_str = f" PMID: {src.pmid}" if src.pmid else ""
+
+        # Format: [badge] **[S:ID]** Title (Year) - URL/DOI/PMID
+        # Note: badge_color is for frontend rendering; in markdown we just show text
+        badge_text = f"`{evidence_badge}`"
+        ref_parts = [f"- {badge_text} **[S:{sid}]** {title}{year}"]
+        if url:
+            ref_parts.append(f"  {url}")
+        if doi_str or pmid_str:
+            ref_parts.append(f" {doi_str}{pmid_str}".strip())
+
+        lines.append("".join(ref_parts))
+
+    return lines
+
+
 def _write_llm(
     *,
     procedure: str,
@@ -432,17 +502,21 @@ def _write_llm(
     for src in sources:
         if src.source_id not in allowed_set:
             continue
-        pub_types = (src.extra or {}).get("publication_types") if isinstance(src.extra, dict) else None
+        extra = src.extra if isinstance(src.extra, dict) else {}
+        pub_types = extra.get("publication_types")
         pub_types_text = ""
         if isinstance(pub_types, list) and pub_types:
             pub_types_text = f" | PT: {', '.join(str(x) for x in pub_types if x)}"
+        # Add evidence badge if available
+        evidence_badge = extra.get("evidence_badge")
+        evidence_text = f" | [{evidence_badge}]" if evidence_badge else ""
         title = (src.title or "").strip()
         year = f"{src.year}" if src.year else ""
         url = (src.url or "").strip()
         doi = f"DOI: {src.doi}" if src.doi else ""
         pmid = f"PMID: {src.pmid}" if src.pmid else ""
         meta = " — ".join(p for p in [title, year, url, doi, pmid] if p)
-        source_lines.append(f"- [S:{src.source_id}] {meta}{pub_types_text}".strip())
+        source_lines.append(f"- [S:{src.source_id}] {meta}{pub_types_text}{evidence_text}".strip())
     sources_text = "\n".join(source_lines) if source_lines else "(ingen)"
 
     system = (

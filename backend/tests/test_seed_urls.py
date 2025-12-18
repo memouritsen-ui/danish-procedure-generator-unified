@@ -1,6 +1,7 @@
 import httpx
 import respx
 
+from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
 from procedurewriter.pipeline.fetcher import CachedHttpClient
 from procedurewriter.pipeline.run import _append_seed_url_sources
 
@@ -11,6 +12,7 @@ def test_seed_urls_are_fetched_and_written(tmp_path):
     respx.get(url).mock(return_value=httpx.Response(200, content=b"<html><head><title>T</title></head><body>Hi</body></html>"))
 
     http = CachedHttpClient(cache_dir=tmp_path, per_host_min_interval_s={}, backoff_s=0.0, sleep_fn=lambda _s: None)
+    hierarchy = EvidenceHierarchy()  # Use default config
     try:
         run_dir = tmp_path / "run"
         sources = []
@@ -22,11 +24,15 @@ def test_seed_urls_are_fetched_and_written(tmp_path):
             source_n=1,
             sources=sources,
             warnings=warnings,
+            evidence_hierarchy=hierarchy,
         )
         assert next_n == 2
         assert len(sources) == 1
         assert sources[0].kind == "guideline_url"
         assert sources[0].title == "T"
+        # Check evidence level is added
+        assert sources[0].extra.get("evidence_level") is not None
+        assert sources[0].extra.get("evidence_badge") is not None
         assert not warnings
     finally:
         http.close()
@@ -34,6 +40,7 @@ def test_seed_urls_are_fetched_and_written(tmp_path):
 
 def test_seed_urls_respect_allowlist(tmp_path):
     http = CachedHttpClient(cache_dir=tmp_path, per_host_min_interval_s={}, backoff_s=0.0, sleep_fn=lambda _s: None)
+    hierarchy = EvidenceHierarchy()  # Use default config
     try:
         run_dir = tmp_path / "run"
         sources = []
@@ -45,6 +52,7 @@ def test_seed_urls_respect_allowlist(tmp_path):
             source_n=1,
             sources=sources,
             warnings=warnings,
+            evidence_hierarchy=hierarchy,
         )
         assert next_n == 1
         assert sources == []
