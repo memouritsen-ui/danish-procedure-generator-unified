@@ -490,3 +490,135 @@ export async function apiSetDefaultTemplate(templateId: string): Promise<void> {
   });
   if (!resp.ok) throw new Error(await resp.text());
 }
+
+// --- Protocol API ---
+
+export type Protocol = {
+  protocol_id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  version: string | null;
+  approved_by: string | null;
+  created_at_utc: string;
+};
+
+export type ProtocolsResponse = {
+  protocols: Protocol[];
+};
+
+export type ProtocolSearchResult = {
+  protocol_id: string;
+  name: string;
+  similarity: number;
+};
+
+export type ProtocolSearchResponse = {
+  query: string;
+  results: ProtocolSearchResult[];
+};
+
+export async function apiListProtocols(status: string = "active"): Promise<ProtocolsResponse> {
+  const resp = await fetch(`/api/protocols?status=${encodeURIComponent(status)}`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ProtocolsResponse;
+}
+
+export async function apiGetProtocol(protocolId: string): Promise<Protocol & { has_text: boolean }> {
+  const resp = await fetch(`/api/protocols/${encodeURIComponent(protocolId)}`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as Protocol & { has_text: boolean };
+}
+
+export async function apiUploadProtocol(
+  file: File,
+  name: string,
+  description?: string,
+  version?: string,
+  approvedBy?: string
+): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("name", name);
+  if (description) form.append("description", description);
+  if (version) form.append("version", version);
+  if (approvedBy) form.append("approved_by", approvedBy);
+
+  const resp = await fetch("/api/protocols/upload", { method: "POST", body: form });
+  if (!resp.ok) throw new Error(await resp.text());
+  const json = (await resp.json()) as { protocol_id: string };
+  return json.protocol_id;
+}
+
+export async function apiUpdateProtocol(
+  protocolId: string,
+  updates: {
+    name?: string;
+    description?: string;
+    status?: string;
+    version?: string;
+    approved_by?: string;
+  }
+): Promise<void> {
+  const resp = await fetch(`/api/protocols/${encodeURIComponent(protocolId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+}
+
+export async function apiDeleteProtocol(protocolId: string): Promise<void> {
+  const resp = await fetch(`/api/protocols/${encodeURIComponent(protocolId)}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+}
+
+export async function apiSearchProtocols(query: string, threshold: number = 0.5): Promise<ProtocolSearchResponse> {
+  const resp = await fetch(`/api/protocols/search?q=${encodeURIComponent(query)}&threshold=${threshold}`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ProtocolSearchResponse;
+}
+
+// --- Validation API ---
+
+export type Conflict = {
+  section: string;
+  type: string;
+  severity: "critical" | "warning" | "info";
+  explanation: string;
+  generated_text: string;
+  approved_text: string;
+};
+
+export type ValidationResult = {
+  validation_id: string;
+  protocol_id: string;
+  protocol_name: string;
+  name_similarity: number;
+  content_similarity: number;
+  conflict_count: number;
+  conflicts: Conflict[];
+};
+
+export type ValidationsResponse = {
+  run_id: string;
+  validations: ValidationResult[];
+};
+
+export async function apiValidateRun(runId: string, protocolId?: string): Promise<ValidationsResponse> {
+  const url = protocolId
+    ? `/api/runs/${encodeURIComponent(runId)}/validate?protocol_id=${encodeURIComponent(protocolId)}`
+    : `/api/runs/${encodeURIComponent(runId)}/validate`;
+
+  const resp = await fetch(url, { method: "POST" });
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ValidationsResponse;
+}
+
+export async function apiGetValidations(runId: string): Promise<ValidationsResponse> {
+  const resp = await fetch(`/api/runs/${encodeURIComponent(runId)}/validations`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ValidationsResponse;
+}

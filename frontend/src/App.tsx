@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import DiffPage from "./pages/DiffPage";
 import IngestPage from "./pages/IngestPage";
+import ProtocolsPage from "./pages/ProtocolsPage";
 import RunPage from "./pages/RunPage";
 import RunsPage from "./pages/RunsPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/diff/:runId/:otherRunId" element={<DiffPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/templates/:templateId" element={<TemplateEditorPage />} />
+        <Route path="/protocols" element={<ProtocolsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/ingest" element={<IngestPage />} />
         <Route path="*" element={<Navigate to="/write" replace />} />

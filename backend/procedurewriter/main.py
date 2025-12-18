@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -81,6 +81,17 @@ from procedurewriter.templates import (
     TemplateConfig,
     SectionConfig,
     Template,
+)
+from procedurewriter.protocols import (
+    list_protocols,
+    get_protocol,
+    upload_protocol,
+    update_protocol,
+    delete_protocol,
+    find_similar_protocols,
+    validate_run_against_protocol,
+    save_validation_result,
+    get_validation_results,
 )
 
 settings = Settings()
@@ -976,6 +987,226 @@ def api_set_default_template(template_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Template not found")
 
     return {"status": "default_set"}
+
+
+# --- Protocol API Endpoints ---
+
+
+@app.get("/api/protocols")
+def api_list_protocols(status: str = "active") -> dict[str, Any]:
+    """List all protocols, optionally filtered by status."""
+    protocols = list_protocols(settings.db_path, status if status != "all" else None)
+    return {
+        "protocols": [
+            {
+                "protocol_id": p.protocol_id,
+                "name": p.name,
+                "description": p.description,
+                "status": p.status,
+                "version": p.version,
+                "approved_by": p.approved_by,
+                "created_at_utc": p.created_at_utc,
+            }
+            for p in protocols
+        ]
+    }
+
+
+@app.get("/api/protocols/search")
+def api_search_protocols(q: str, threshold: float = 0.5) -> dict[str, Any]:
+    """Search for protocols similar to a query."""
+    results = find_similar_protocols(settings.db_path, q, threshold)
+    return {
+        "query": q,
+        "results": [
+            {
+                "protocol_id": p.protocol_id,
+                "name": p.name,
+                "similarity": score,
+            }
+            for p, score in results
+        ],
+    }
+
+
+@app.get("/api/protocols/{protocol_id}")
+def api_get_protocol(protocol_id: str) -> dict[str, Any]:
+    """Get a specific protocol."""
+    protocol = get_protocol(settings.db_path, protocol_id, load_text=True)
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    return {
+        "protocol_id": protocol.protocol_id,
+        "name": protocol.name,
+        "description": protocol.description,
+        "status": protocol.status,
+        "version": protocol.version,
+        "approved_by": protocol.approved_by,
+        "approved_at_utc": protocol.approved_at_utc,
+        "created_at_utc": protocol.created_at_utc,
+        "has_text": protocol.normalized_text is not None,
+    }
+
+
+@app.post("/api/protocols/upload")
+async def api_upload_protocol(
+    file: UploadFile,
+    name: str = Form(...),
+    description: str = Form(None),
+    version: str = Form(None),
+    approved_by: str = Form(None),
+) -> dict[str, Any]:
+    """Upload a new protocol file (PDF, DOCX, or TXT)."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in (".pdf", ".docx", ".doc", ".txt"):
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {suffix}")
+
+    # Save uploaded file temporarily
+    upload_dir = settings.uploads_dir
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = upload_dir / f"temp_{uuid.uuid4().hex}{suffix}"
+
+    try:
+        content = await file.read()
+        temp_path.write_bytes(content)
+
+        protocol_id = upload_protocol(
+            settings.db_path,
+            temp_path,
+            name=name,
+            description=description,
+            version=version,
+            approved_by=approved_by,
+            storage_dir=Path("data/protocols"),
+        )
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    return {"protocol_id": protocol_id}
+
+
+class UpdateProtocolRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None
+    version: str | None = None
+    approved_by: str | None = None
+
+
+@app.put("/api/protocols/{protocol_id}")
+def api_update_protocol(protocol_id: str, request: UpdateProtocolRequest) -> dict[str, Any]:
+    """Update protocol metadata."""
+    success = update_protocol(
+        settings.db_path,
+        protocol_id,
+        name=request.name,
+        description=request.description,
+        status=request.status,
+        version=request.version,
+        approved_by=request.approved_by,
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    return {"status": "updated"}
+
+
+@app.delete("/api/protocols/{protocol_id}")
+def api_delete_protocol(protocol_id: str) -> dict[str, Any]:
+    """Delete a protocol."""
+    success = delete_protocol(settings.db_path, protocol_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    return {"status": "deleted"}
+
+
+# --- Validation API Endpoints ---
+
+
+@app.post("/api/runs/{run_id}/validate")
+def api_validate_run(run_id: str, protocol_id: str | None = None) -> dict[str, Any]:
+    """
+    Validate a run against protocols.
+
+    If protocol_id is provided, validates against that protocol.
+    Otherwise, finds similar protocols automatically.
+    """
+    run = get_run(settings.db_path, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run_md_path = Path(run.run_dir) / "procedure.md"
+    if not run_md_path.exists():
+        raise HTTPException(status_code=400, detail="Run has no procedure output")
+
+    run_markdown = run_md_path.read_text(encoding="utf-8")
+
+    # Find protocols to validate against
+    if protocol_id:
+        protocol = get_protocol(settings.db_path, protocol_id, load_text=True)
+        if not protocol:
+            raise HTTPException(status_code=404, detail="Protocol not found")
+        protocols_to_check = [(protocol, 1.0)]
+    else:
+        # Find similar protocols automatically
+        similar = find_similar_protocols(settings.db_path, run.procedure, threshold=0.3)
+        # Load text for each
+        protocols_to_check = [
+            (get_protocol(settings.db_path, p.protocol_id, load_text=True), score)
+            for p, score in similar[:5]  # Limit to top 5
+        ]
+
+    results = []
+    for protocol, name_similarity in protocols_to_check:
+        if not protocol or not protocol.normalized_text:
+            continue
+
+        result = validate_run_against_protocol(
+            run_markdown=run_markdown,
+            protocol_text=protocol.normalized_text,
+            protocol_id=protocol.protocol_id,
+            protocol_name=protocol.name,
+        )
+
+        validation_id = save_validation_result(settings.db_path, run_id, result)
+
+        results.append({
+            "validation_id": validation_id,
+            "protocol_id": protocol.protocol_id,
+            "protocol_name": protocol.name,
+            "name_similarity": name_similarity,
+            "content_similarity": result.similarity_score,
+            "conflict_count": len(result.conflicts),
+            "conflicts": [
+                {
+                    "section": c.section,
+                    "type": c.conflict_type,
+                    "severity": c.severity,
+                    "explanation": c.explanation,
+                    "generated_text": c.generated_text,
+                    "approved_text": c.approved_text,
+                }
+                for c in result.conflicts
+            ],
+        })
+
+    return {"run_id": run_id, "validations": results}
+
+
+@app.get("/api/runs/{run_id}/validations")
+def api_get_validations(run_id: str) -> dict[str, Any]:
+    """Get validation results for a run."""
+    run = get_run(settings.db_path, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    results = get_validation_results(settings.db_path, run_id)
+    return {"run_id": run_id, "validations": results}
 
 
 # --- Versioning API Endpoints ---

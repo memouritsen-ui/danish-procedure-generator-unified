@@ -222,6 +222,52 @@ def init_db(db_path: Path) -> None:
         # Seed default templates if table is empty
         _seed_default_templates(conn)
 
+        # Hospital protocol library for validation
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS protocols (
+              protocol_id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              name_normalized TEXT NOT NULL,
+              description TEXT,
+              created_at_utc TEXT NOT NULL,
+              updated_at_utc TEXT NOT NULL,
+              status TEXT DEFAULT 'active',
+              version TEXT,
+              approved_by TEXT,
+              approved_at_utc TEXT,
+              raw_path TEXT,
+              normalized_path TEXT,
+              raw_sha256 TEXT,
+              normalized_sha256 TEXT,
+              meta_json TEXT
+            )
+            """
+        )
+
+        # Protocol indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_protocols_name ON protocols(name_normalized)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_protocols_status ON protocols(status)")
+
+        # Validation results table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS validation_results (
+              validation_id TEXT PRIMARY KEY,
+              run_id TEXT NOT NULL,
+              protocol_id TEXT NOT NULL,
+              created_at_utc TEXT NOT NULL,
+              similarity_score REAL,
+              conflict_count INTEGER,
+              result_json TEXT NOT NULL
+            )
+            """
+        )
+
+        # Validation indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_validation_run ON validation_results(run_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_validation_protocol ON validation_results(protocol_id)")
+
 
 def set_secret(db_path: Path, *, name: str, value: str) -> None:
     now = utc_now_iso()

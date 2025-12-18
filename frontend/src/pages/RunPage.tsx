@@ -1,13 +1,25 @@
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useParams } from "react-router-dom";
-import { apiEvidence, apiRun, apiSources, EvidenceReport, RunDetail, SourceRecord } from "../api";
+import {
+  apiEvidence,
+  apiRun,
+  apiSources,
+  apiGetValidations,
+  apiValidateRun,
+  EvidenceReport,
+  RunDetail,
+  SourceRecord,
+  ValidationResult,
+} from "../api";
 
 export default function RunPage() {
   const { runId } = useParams();
   const [run, setRun] = useState<RunDetail | null>(null);
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [evidence, setEvidence] = useState<EvidenceReport | null>(null);
+  const [validations, setValidations] = useState<ValidationResult[]>([]);
+  const [validating, setValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -18,10 +30,12 @@ export default function RunPage() {
         const r = await apiRun(id);
         const s = await apiSources(id);
         const ev = await apiEvidence(id).catch(() => null);
+        const v = await apiGetValidations(id).catch(() => ({ validations: [] }));
         if (!cancelled) {
           setRun(r);
           setSources(s.sources);
           setEvidence(ev);
+          setValidations(v.validations);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -32,6 +46,20 @@ export default function RunPage() {
       cancelled = true;
     };
   }, [runId]);
+
+  async function handleValidate() {
+    if (!runId) return;
+    setValidating(true);
+    setError(null);
+    try {
+      const result = await apiValidateRun(runId);
+      setValidations(result.validations);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setValidating(false);
+    }
+  }
 
   if (!runId) return <div className="card">Missing run_id</div>;
 
@@ -190,6 +218,88 @@ export default function RunPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        <h3 style={{ marginTop: 18 }}>Protokol-validering</h3>
+        <p className="muted" style={{ marginBottom: "0.5rem" }}>
+          Valider mod godkendte hospitalsprotokoller for at opdage konflikter.
+        </p>
+        {validations.length === 0 ? (
+          <div>
+            <p className="muted">Ingen validering foretaget.</p>
+            <button onClick={handleValidate} disabled={validating || run?.status !== "DONE"}>
+              {validating ? "Validerer..." : "Valider mod protokoller"}
+            </button>
+          </div>
+        ) : (
+          <div style={{ maxHeight: 300, overflow: "auto" }}>
+            {validations.map((v) => (
+              <div
+                key={v.validation_id}
+                style={{
+                  padding: "0.75rem",
+                  marginBottom: "0.5rem",
+                  background: v.conflict_count > 0 ? "#451a03" : "#14532d",
+                  border: v.conflict_count > 0 ? "1px solid #78350f" : "1px solid #166534",
+                  borderRadius: "6px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <strong>{v.protocol_name}</strong>
+                  <span
+                    style={{
+                      fontSize: "0.8rem",
+                      padding: "0.2rem 0.5rem",
+                      borderRadius: "9999px",
+                      background: v.content_similarity >= 0.7 ? "#166534" : v.content_similarity >= 0.4 ? "#854d0e" : "#7f1d1d",
+                      color: "#fff",
+                    }}
+                  >
+                    {(v.content_similarity * 100).toFixed(0)}% match
+                  </span>
+                </div>
+
+                {v.conflict_count > 0 ? (
+                  <div>
+                    <strong style={{ color: "#fca5a5" }}>
+                      {v.conflict_count} konflikt{v.conflict_count !== 1 ? "er" : ""} fundet
+                    </strong>
+                    <ul style={{ margin: "0.5rem 0", paddingLeft: "1.25rem" }}>
+                      {v.conflicts.map((c, i) => (
+                        <li
+                          key={i}
+                          style={{
+                            marginBottom: "0.5rem",
+                            color: c.severity === "critical" ? "#fca5a5" : c.severity === "warning" ? "#fcd34d" : "#94a3b8",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: "0.7rem",
+                              fontWeight: "600",
+                              textTransform: "uppercase",
+                              marginRight: "0.5rem",
+                              padding: "0.1rem 0.3rem",
+                              borderRadius: "4px",
+                              background: c.severity === "critical" ? "#7f1d1d" : c.severity === "warning" ? "#78350f" : "#334155",
+                            }}
+                          >
+                            {c.type}
+                          </span>
+                          <span className="muted">{c.section}:</span> {c.explanation}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p style={{ color: "#86efac", margin: 0 }}>Ingen konflikter fundet</p>
+                )}
+              </div>
+            ))}
+            <button onClick={handleValidate} disabled={validating} style={{ marginTop: "0.5rem" }}>
+              {validating ? "Validerer..." : "Valider igen"}
+            </button>
           </div>
         )}
       </div>

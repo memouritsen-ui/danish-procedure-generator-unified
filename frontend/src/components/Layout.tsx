@@ -20,6 +20,9 @@ export default function Layout({ children }: PropsWithChildren) {
         <NavLink to="/templates" className={({ isActive }) => (isActive ? "active" : "")}>
           Skabeloner
         </NavLink>
+        <NavLink to="/protocols" className={({ isActive }) => (isActive ? "active" : "")}>
+          Protokoller
+        </NavLink>
         <NavLink to="/ingest" className={({ isActive }) => (isActive ? "active" : "")}>
           Ingest
         </NavLink>
