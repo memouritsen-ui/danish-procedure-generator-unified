@@ -62,6 +62,7 @@ settings = Settings()
 app = FastAPI(title="Akut procedure writer", version="0.1.0")
 
 _OPENAI_SECRET_NAME = "openai_api_key"
+_ANTHROPIC_SECRET_NAME = "anthropic_api_key"
 _NCBI_SECRET_NAME = "ncbi_api_key"
 
 app.add_middleware(
@@ -136,6 +137,7 @@ async def _run_background(run_id: str) -> None:
     try:
         libs = list_library_sources(settings.db_path)
         openai_api_key = _effective_openai_api_key()
+        anthropic_api_key = _effective_anthropic_api_key()
         ncbi_api_key = _effective_ncbi_api_key()
         job = partial(
             run_pipeline,
@@ -146,6 +148,8 @@ async def _run_background(run_id: str) -> None:
             settings=settings,
             library_sources=libs,
             openai_api_key=openai_api_key,
+            anthropic_api_key=anthropic_api_key,
+            ollama_base_url=settings.ollama_base_url,
             ncbi_api_key=ncbi_api_key,
         )
         result = await anyio.to_thread.run_sync(job)
@@ -330,6 +334,10 @@ def _effective_openai_api_key() -> str | None:
 
 def _effective_ncbi_api_key() -> str | None:
     return get_secret(settings.db_path, name=_NCBI_SECRET_NAME) or settings.ncbi_api_key
+
+
+def _effective_anthropic_api_key() -> str | None:
+    return get_secret(settings.db_path, name=_ANTHROPIC_SECRET_NAME) or os.getenv("ANTHROPIC_API_KEY")
 
 
 @app.get("/api/keys/openai", response_model=ApiKeyInfo)

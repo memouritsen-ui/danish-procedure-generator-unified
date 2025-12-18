@@ -31,6 +31,8 @@ def run_pipeline(
     settings: Settings,
     library_sources: list[LibrarySourceRow],
     openai_api_key: str | None = None,
+    anthropic_api_key: str | None = None,
+    ollama_base_url: str | None = None,
     ncbi_api_key: str | None = None,
 ) -> dict[str, str]:
     run_dir = settings.runs_dir / run_id
@@ -298,7 +300,10 @@ def run_pipeline(
             dummy_mode=settings.dummy_mode,
             use_llm=settings.use_llm,
             llm_model=settings.llm_model,
+            llm_provider=settings.llm_provider.value,
             openai_api_key=openai_api_key,
+            anthropic_api_key=anthropic_api_key,
+            ollama_base_url=ollama_base_url or settings.ollama_base_url,
         )
         validate_citations(md, valid_source_ids={s.source_id for s in sources})
 

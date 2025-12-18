@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,6 +10,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 def _default_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+class LLMProviderEnum(str, Enum):
+    """Supported LLM providers."""
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    OLLAMA = "ollama"
 
 
 class Settings(BaseSettings):
@@ -19,14 +28,33 @@ class Settings(BaseSettings):
 
     dummy_mode: bool = False
 
+    # LLM Provider Configuration
+    llm_provider: LLMProviderEnum = LLMProviderEnum.OPENAI
     use_llm: bool = True
     llm_model: str = "gpt-4o-mini"
 
+    # Provider-specific settings (read from env without prefix)
+    # These are typically set as OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
+
+    # OpenAI settings
     openai_embeddings_model: str = "text-embedding-3-small"
 
+    # Ollama settings
+    ollama_base_url: str = "http://localhost:11434"
+
+    # NCBI/PubMed settings
     ncbi_email: str | None = None
     ncbi_tool: str = "danish-procedure-generator"
     ncbi_api_key: str | None = None
+
+    def get_default_model_for_provider(self) -> str:
+        """Get the default model name for the configured provider."""
+        defaults = {
+            LLMProviderEnum.OPENAI: "gpt-4o-mini",
+            LLMProviderEnum.ANTHROPIC: "claude-3-5-sonnet-20241022",
+            LLMProviderEnum.OLLAMA: "llama3.1",
+        }
+        return defaults.get(self.llm_provider, "gpt-4o-mini")
 
     @property
     def resolved_data_dir(self) -> Path:

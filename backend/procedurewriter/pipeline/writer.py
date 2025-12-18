@@ -57,9 +57,34 @@ def write_procedure_markdown(
     use_llm: bool,
     llm_model: str,
     openai_api_key: str | None = None,
+    llm_provider: str | None = None,
+    anthropic_api_key: str | None = None,
+    ollama_base_url: str | None = None,
 ) -> str:
+    """
+    Generate procedure markdown using LLM or template.
+
+    Args:
+        procedure: Procedure name
+        context: Optional context
+        author_guide: Author guide configuration
+        snippets: Retrieved snippets
+        sources: Source records
+        dummy_mode: Skip LLM, use template
+        use_llm: Whether to use LLM
+        llm_model: Model name
+        openai_api_key: OpenAI API key (for openai provider)
+        llm_provider: Provider type (openai, anthropic, ollama)
+        anthropic_api_key: Anthropic API key (for anthropic provider)
+        ollama_base_url: Ollama server URL (for ollama provider)
+    """
     citation_pool = _citation_pool(snippets, sources)
-    if dummy_mode or not use_llm or not openai_api_key:
+
+    # Check if we should skip LLM
+    provider = llm_provider or "openai"
+    has_api_key = bool(openai_api_key or anthropic_api_key or provider == "ollama")
+
+    if dummy_mode or not use_llm or not has_api_key:
         return _write_template(procedure=procedure, context=context, author_guide=author_guide, citations=citation_pool)
 
     try:
@@ -71,7 +96,10 @@ def write_procedure_markdown(
             sources=sources,
             citations=citation_pool,
             llm_model=llm_model,
+            llm_provider=provider,
             openai_api_key=openai_api_key,
+            anthropic_api_key=anthropic_api_key,
+            ollama_base_url=ollama_base_url,
         )
     except Exception:
         try:
@@ -83,7 +111,10 @@ def write_procedure_markdown(
                 sources=sources,
                 citations=citation_pool,
                 llm_model=llm_model,
+                llm_provider=provider,
                 openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key,
+                ollama_base_url=ollama_base_url,
             )
         except Exception:
             return _write_template(procedure=procedure, context=context, author_guide=author_guide, citations=citation_pool)
@@ -147,13 +178,20 @@ def _write_llm_sectioned(
     sources: list[SourceRecord],
     citations: list[str],
     llm_model: str,
-    openai_api_key: str,
+    llm_provider: str = "openai",
+    openai_api_key: str | None = None,
+    anthropic_api_key: str | None = None,
+    ollama_base_url: str | None = None,
 ) -> str:
-    from openai import OpenAI
-
+    from procedurewriter.llm import get_llm_client
     from procedurewriter.pipeline.retrieve import retrieve
 
-    client = OpenAI(api_key=openai_api_key, timeout=20.0, max_retries=0)
+    client = get_llm_client(
+        provider=llm_provider,
+        openai_api_key=openai_api_key,
+        anthropic_api_key=anthropic_api_key,
+        ollama_base_url=ollama_base_url,
+    )
 
     title_prefix = (
         ((author_guide.get("structure") or {}).get("title_prefix")) if isinstance(author_guide, dict) else None
@@ -205,7 +243,7 @@ def _write_llm_sectioned(
 
 def _write_llm_section_body(
     *,
-    client: Any,
+    client: Any,  # LLMProvider
     llm_model: str,
     procedure: str,
     context: str | None,
@@ -216,6 +254,7 @@ def _write_llm_section_body(
     allowed_source_ids: list[str],
     source_by_id: dict[str, SourceRecord],
 ) -> list[str]:
+    """Generate content for a single section using the LLM provider."""
     snippet_lines: list[str] = []
     for s in section_snippets:
         snippet_body = s.text.replace("\n", " ").strip()
@@ -275,12 +314,12 @@ def _write_llm_section_body(
         f"SNIPPETS:\n{snippets_text}\n"
     )
 
-    resp = client.chat.completions.create(
-        model=llm_model,
+    resp = client.chat_completion(
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        model=llm_model,
         temperature=0.15,
     )
-    raw = (resp.choices[0].message.content or "").strip()
+    raw = resp.content.strip()
     return _normalize_section_lines(raw, fmt=fmt, fallback_citation=allowed_source_ids[0])
 
 
@@ -358,11 +397,19 @@ def _write_llm(
     sources: list[SourceRecord],
     citations: list[str],
     llm_model: str,
-    openai_api_key: str,
+    llm_provider: str = "openai",
+    openai_api_key: str | None = None,
+    anthropic_api_key: str | None = None,
+    ollama_base_url: str | None = None,
 ) -> str:
-    from openai import OpenAI
+    from procedurewriter.llm import get_llm_client
 
-    client = OpenAI(api_key=openai_api_key, timeout=20.0, max_retries=0)
+    client = get_llm_client(
+        provider=llm_provider,
+        openai_api_key=openai_api_key,
+        anthropic_api_key=anthropic_api_key,
+        ollama_base_url=ollama_base_url,
+    )
 
     guide_text = _yaml_like_compact(author_guide)
     snippet_lines: list[str] = []
@@ -421,13 +468,12 @@ def _write_llm(
         "- Ingen forord, ingen forklaring af regler, ingen kilde-URLs i brødteksten (kun i referencer senere).\n"
     )
 
-    resp = client.chat.completions.create(
-        model=llm_model,
+    resp = client.chat_completion(
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        model=llm_model,
         temperature=0.2,
     )
-    text = resp.choices[0].message.content or ""
-    return text.strip() + "\n"
+    return resp.content.strip() + "\n"
 
 
 def _yaml_like_compact(obj: Any) -> str:
