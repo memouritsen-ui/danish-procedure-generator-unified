@@ -363,9 +363,11 @@ def _parse_protocol_sections(text: str) -> dict[str, str]:
     current_content: list[str] = []
 
     # Common section headers in Danish protocols
+    # Note: longer patterns must come first to avoid substring matching issues
+    # (e.g., "kontraindikation" contains "indikation")
     section_patterns = [
+        "kontraindikation",  # Must be before "indikation"
         "indikation",
-        "kontraindikation",
         "forberedelse",
         "fremgangsmåde",
         "procedure",
@@ -409,19 +411,24 @@ def _find_matching_section(run_section: str, protocol_sections: dict[str, str]) 
     """Find matching protocol section for a run section."""
     run_lower = run_section.lower()
 
-    # Direct match
-    for key, content in protocol_sections.items():
+    # Sort keys by length descending to match longer/more specific patterns first
+    # This prevents "indikation" from matching "kontraindikationer"
+    sorted_keys = sorted(protocol_sections.keys(), key=len, reverse=True)
+
+    # Direct match - check longer keys first
+    for key in sorted_keys:
         if key in run_lower or run_lower in key:
-            return content
+            return protocol_sections[key]
 
     # Mapping common variations
     mappings = {
         "indikationer": ["indikation"],
         "kontraindikationer": ["kontraindikation"],
-        "fremgangsmåde": ["procedure", "fremgangsmåde"],
+        "fremgangsmåde": ["procedure", "fremgangsmåde", "dosering", "behandling"],
         "sikkerhedsboks": ["sikkerhed"],
         "komplikationer": ["komplikation"],
         "behandling": ["behandling", "dosering"],
+        "disposition": ["opfølgning", "monitorering", "observation"],
     }
 
     for run_key, protocol_keys in mappings.items():
