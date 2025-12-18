@@ -17,7 +17,7 @@ from procedurewriter.agents.base import AgentResult, BaseAgent
 from procedurewriter.agents.models import ClaimValidation, ValidatorInput, ValidatorOutput
 
 if TYPE_CHECKING:
-    from procedurewriter.llm.providers import LLMProvider
+    pass
 
 
 SYSTEM_PROMPT = """You are a medical fact-checker specializing in validating clinical claims against source literature.

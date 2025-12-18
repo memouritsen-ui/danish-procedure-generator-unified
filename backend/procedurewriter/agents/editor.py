@@ -15,10 +15,10 @@ import re
 from typing import TYPE_CHECKING
 
 from procedurewriter.agents.base import AgentResult, BaseAgent
-from procedurewriter.agents.models import EditSuggestion, EditorInput, EditorOutput
+from procedurewriter.agents.models import EditorInput, EditorOutput, EditSuggestion
 
 if TYPE_CHECKING:
-    from procedurewriter.llm.providers import LLMProvider
+    pass
 
 
 SYSTEM_PROMPT = """Du er en medicinsk redaktør med speciale i dansk fagsprog og kliniske procedurer.

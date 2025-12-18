@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from procedurewriter.agents.base import AgentStats
-from procedurewriter.pipeline.events import EventEmitter, EventType
 from procedurewriter.agents.editor import EditorAgent
 from procedurewriter.agents.models import (
     EditorInput,
@@ -32,6 +31,7 @@ from procedurewriter.agents.quality import QualityAgent
 from procedurewriter.agents.researcher import ResearcherAgent
 from procedurewriter.agents.validator import ValidatorAgent
 from procedurewriter.agents.writer import WriterAgent
+from procedurewriter.pipeline.events import EventEmitter, EventType
 
 if TYPE_CHECKING:
     from procedurewriter.llm.providers import LLMProvider
@@ -73,7 +73,7 @@ class AgentOrchestrator:
 
     def __init__(
         self,
-        llm: "LLMProvider",
+        llm: LLMProvider,
         model: str | None = None,
         pubmed_client: object | None = None,
         emitter: EventEmitter | None = None,

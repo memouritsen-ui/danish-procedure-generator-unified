@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Generator
+from typing import Any
 
 
 @dataclass
@@ -73,14 +74,14 @@ class PipelineProfile:
         """Print a formatted summary to stdout."""
         summary = self.summary()
         print(f"\n{'='*60}")
-        print(f"Pipeline Performance Profile")
+        print("Pipeline Performance Profile")
         print(f"{'='*60}")
         print(f"Total time: {summary['total_ms']:.0f}ms")
-        print(f"\nBy Category:")
+        print("\nBy Category:")
         for cat, ms in summary["by_category"].items():
             pct = ms / summary["total_ms"] * 100 if summary["total_ms"] > 0 else 0
             print(f"  {cat:<25} {ms:>8.0f}ms ({pct:>5.1f}%)")
-        print(f"\nSlowest Operations:")
+        print("\nSlowest Operations:")
         for i, entry in enumerate(summary["entries"][:10], 1):
             print(f"  {i}. {entry['name']:<35} {entry['duration_ms']:>8.0f}ms ({entry['pct']:>5.1f}%)")
         print(f"{'='*60}\n")

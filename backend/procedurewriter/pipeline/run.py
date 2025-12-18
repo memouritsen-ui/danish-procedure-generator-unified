@@ -1,34 +1,35 @@
 from __future__ import annotations
 
+import contextlib
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from procedurewriter.agents.models import PipelineInput as AgentPipelineInput
+from procedurewriter.agents.models import SourceReference
+from procedurewriter.agents.orchestrator import AgentOrchestrator
 from procedurewriter.config_store import load_yaml
 from procedurewriter.db import LibrarySourceRow
 from procedurewriter.llm import get_session_tracker, reset_session_tracker
+from procedurewriter.llm.providers import get_llm_client
 from procedurewriter.pipeline.citations import validate_citations
-from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
-from procedurewriter.pipeline.source_scoring import rank_sources, score_source, SourceScore
-from procedurewriter.pipeline.profiler import profile_section, start_profiling, stop_profiling
 from procedurewriter.pipeline.docx_writer import write_procedure_docx
+from procedurewriter.pipeline.events import EventType, get_emitter, remove_emitter
 from procedurewriter.pipeline.evidence import build_evidence_report, enforce_evidence_policy
+from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
 from procedurewriter.pipeline.fetcher import CachedHttpClient
 from procedurewriter.pipeline.io import write_json, write_jsonl, write_text
+from procedurewriter.pipeline.library_search import LibrarySearchProvider
 from procedurewriter.pipeline.manifest import write_manifest
 from procedurewriter.pipeline.normalize import normalize_html, normalize_pubmed
 from procedurewriter.pipeline.pubmed import PubMedClient
 from procedurewriter.pipeline.retrieve import build_snippets, retrieve
+from procedurewriter.pipeline.source_scoring import SourceScore, rank_sources
 from procedurewriter.pipeline.sources import make_source_id, to_jsonl_record, write_source_files
 from procedurewriter.pipeline.types import SourceRecord
 from procedurewriter.pipeline.writer import write_procedure_markdown
-from procedurewriter.pipeline.library_search import LibrarySearchProvider
 from procedurewriter.settings import Settings
-from procedurewriter.agents.orchestrator import AgentOrchestrator
-from procedurewriter.agents.models import PipelineInput as AgentPipelineInput, SourceReference
-from procedurewriter.llm.providers import get_llm_client
-from procedurewriter.pipeline.events import EventType, get_emitter, remove_emitter
 
 
 def source_record_to_reference(
@@ -52,10 +53,7 @@ def source_record_to_reference(
         if relevance is not None:
             # relevance_score in source.extra may be on 0-10 scale; normalize to 0-1
             raw_score = float(relevance)
-            if raw_score > 1.0:
-                relevance_score = min(1.0, raw_score / 10.0)
-            else:
-                relevance_score = raw_score
+            relevance_score = min(1.0, raw_score / 10.0) if raw_score > 1.0 else raw_score
         elif evidence_priority:
             # Map priority 0-1000 to 0.0-1.0
             relevance_score = min(1.0, evidence_priority / 1000.0)
@@ -294,10 +292,8 @@ def run_pipeline(
                     year_val = lib_result.publish_year
                     year: int | None = None
                     if year_val:
-                        try:
+                        with contextlib.suppress(ValueError):
                             year = int(year_val[:4]) if len(year_val) >= 4 else int(year_val)
-                        except ValueError:
-                            pass
 
                     # Classify evidence level - Danish guidelines get priority 1000
                     library_evidence_level = evidence_hierarchy.classify_source(

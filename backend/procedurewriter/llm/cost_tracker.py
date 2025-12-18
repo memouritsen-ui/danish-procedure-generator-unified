@@ -74,7 +74,7 @@ class CostTracker:
     def __init__(self):
         self._summary = CostSummary()
 
-    def track(self, response: "LLMResponse", operation: str = "unknown") -> CostEntry:
+    def track(self, response: LLMResponse, operation: str = "unknown") -> CostEntry:
         """
         Track an LLM response.
 

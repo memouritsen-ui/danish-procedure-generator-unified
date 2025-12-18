@@ -88,7 +88,7 @@ class EvidenceHierarchy:
         self._library_rules = self._config.get("library_source_rules", {})
 
     @classmethod
-    def from_config(cls, config_path: Path | str | None) -> "EvidenceHierarchy":
+    def from_config(cls, config_path: Path | str | None) -> EvidenceHierarchy:
         """Load hierarchy from YAML config file."""
         if config_path is None:
             return cls(None)

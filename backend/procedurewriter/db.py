@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from collections.abc import Iterable
@@ -156,10 +157,8 @@ def init_db(db_path: Path) -> None:
             ("version_note", "TEXT"),
             ("procedure_normalized", "TEXT"),
         ]:
-            try:
+            with contextlib.suppress(sqlite3.OperationalError):
                 conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {col_type}")
-            except sqlite3.OperationalError:
-                pass  # Column already exists
 
         # Create indexes for version queries
         try:
@@ -211,10 +210,8 @@ def init_db(db_path: Path) -> None:
         )
 
         # Add template_id to runs if not exists
-        try:
+        with contextlib.suppress(sqlite3.OperationalError):
             conn.execute("ALTER TABLE runs ADD COLUMN template_id TEXT")
-        except sqlite3.OperationalError:
-            pass
 
         # Create template indexes
         conn.execute("CREATE INDEX IF NOT EXISTS idx_templates_default ON templates(is_default)")

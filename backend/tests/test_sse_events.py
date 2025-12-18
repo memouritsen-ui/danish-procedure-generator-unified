@@ -3,7 +3,6 @@ Tests for SSE event system.
 
 Tests the EventEmitter and event management functions.
 """
-import pytest
 
 from procedurewriter.pipeline.events import (
     EventEmitter,
@@ -11,8 +10,8 @@ from procedurewriter.pipeline.events import (
     PipelineEvent,
     get_emitter,
     get_emitter_if_exists,
-    remove_emitter,
     list_active_runs,
+    remove_emitter,
 )
 
 

@@ -17,7 +17,7 @@ from procedurewriter.agents.base import AgentResult, BaseAgent
 from procedurewriter.agents.models import QualityCriterion, QualityInput, QualityOutput
 
 if TYPE_CHECKING:
-    from procedurewriter.llm.providers import LLMProvider
+    pass
 
 
 SYSTEM_PROMPT = """Du er en kvalitetskontrollør for kliniske procedurer med fokus på dansk akutmedicin.

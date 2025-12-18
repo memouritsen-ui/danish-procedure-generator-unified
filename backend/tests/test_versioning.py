@@ -1,5 +1,4 @@
 """Tests for the versioning module."""
-import pytest
 
 from procedurewriter.pipeline.versioning import (
     ChangeType,

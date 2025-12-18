@@ -51,7 +51,7 @@ class TestEvidenceHierarchy:
         levels = hierarchy.get_all_levels()
         assert len(levels) > 0
         # Should have at least danish_guideline and unclassified
-        level_ids = [l.level_id for l in levels]
+        level_ids = [lvl.level_id for lvl in levels]
         assert "danish_guideline" in level_ids
         assert "unclassified" in level_ids
 
@@ -158,7 +158,7 @@ class TestEvidenceHierarchy:
     def test_get_all_levels_sorted_by_priority(self) -> None:
         hierarchy = EvidenceHierarchy()
         levels = hierarchy.get_all_levels()
-        priorities = [l.priority for l in levels]
+        priorities = [lvl.priority for lvl in levels]
         assert priorities == sorted(priorities, reverse=True)
 
 

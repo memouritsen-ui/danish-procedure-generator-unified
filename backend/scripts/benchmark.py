@@ -58,7 +58,7 @@ def run_benchmark(
             with profile.time("pipeline:initialization"):
                 pass  # Settings already loaded
 
-            result = run_pipeline(
+            run_pipeline(
                 run_id=run_id,
                 created_at_utc=created_at,
                 procedure=procedure,
@@ -131,11 +131,11 @@ def profile_components():
             split_sentences(sample_text)
 
     # Profile snippet building
-    from procedurewriter.pipeline.types import SourceRecord
-    from procedurewriter.pipeline.retrieve import build_snippets
-
     # Create temp files for snippets
     import tempfile
+
+    from procedurewriter.pipeline.retrieve import build_snippets
+    from procedurewriter.pipeline.types import SourceRecord
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create sources with correct paths
         dummy_sources = []

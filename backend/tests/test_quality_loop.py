@@ -9,8 +9,6 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from procedurewriter.db import (
     RunRow,
     create_run,
@@ -191,10 +189,7 @@ class TestQualityScoreCalculation:
         unsupported = 0
         total = supported + unsupported
 
-        if total > 0:
-            expected_score = 5 + int((supported / total) * 5)
-        else:
-            expected_score = 5  # Default
+        expected_score = 5 + int(supported / total * 5) if total > 0 else 5
 
         assert expected_score == 5
 

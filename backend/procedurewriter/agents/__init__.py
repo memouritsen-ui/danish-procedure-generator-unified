@@ -37,12 +37,15 @@ from procedurewriter.agents.base import (
     BaseAgent,
 )
 
+# Agents
+from procedurewriter.agents.editor import EditorAgent
+
 # Models
 from procedurewriter.agents.models import (
     ClaimValidation,
-    EditSuggestion,
     EditorInput,
     EditorOutput,
+    EditSuggestion,
     PipelineInput,
     PipelineOutput,
     QualityCriterion,
@@ -57,15 +60,12 @@ from procedurewriter.agents.models import (
     WriterOutput,
 )
 
-# Agents
-from procedurewriter.agents.editor import EditorAgent
+# Orchestrator
+from procedurewriter.agents.orchestrator import AgentOrchestrator, OrchestratorStats
 from procedurewriter.agents.quality import QualityAgent
 from procedurewriter.agents.researcher import ResearcherAgent
 from procedurewriter.agents.validator import ValidatorAgent
 from procedurewriter.agents.writer import WriterAgent
-
-# Orchestrator
-from procedurewriter.agents.orchestrator import AgentOrchestrator, OrchestratorStats
 
 __all__ = [
     # Base

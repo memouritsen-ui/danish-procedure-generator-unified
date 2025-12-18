@@ -12,6 +12,7 @@ import anyio
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 
 from procedurewriter import config_store
 from procedurewriter.db import (
@@ -33,6 +34,7 @@ from procedurewriter.db import (
 )
 from procedurewriter.file_utils import UnsafePathError, safe_path_within
 from procedurewriter.ncbi_status import check_ncbi_status
+from procedurewriter.pipeline.events import get_emitter_if_exists
 from procedurewriter.pipeline.hashing import sha256_bytes, sha256_text
 from procedurewriter.pipeline.io import write_bytes, write_json, write_text
 from procedurewriter.pipeline.normalize import (
@@ -42,7 +44,6 @@ from procedurewriter.pipeline.normalize import (
     normalize_html,
     normalize_pdf_pages,
 )
-from procedurewriter.pipeline.events import get_emitter_if_exists
 from procedurewriter.pipeline.run import run_pipeline
 from procedurewriter.pipeline.versioning import (
     create_version_diff,
@@ -50,8 +51,19 @@ from procedurewriter.pipeline.versioning import (
     load_procedure_markdown,
     load_source_ids,
 )
+from procedurewriter.protocols import (
+    delete_protocol,
+    find_similar_protocols,
+    get_protocol,
+    get_validation_results,
+    list_protocols,
+    save_validation_result,
+    update_protocol,
+    upload_protocol,
+    validate_run_against_protocol,
+    validate_run_against_protocol_llm,
+)
 from procedurewriter.run_bundle import build_run_bundle_zip, read_run_manifest
-from pydantic import BaseModel
 from procedurewriter.schemas import (
     ApiKeyInfo,
     ApiKeySetRequest,
@@ -70,29 +82,14 @@ from procedurewriter.schemas import (
 )
 from procedurewriter.settings import Settings
 from procedurewriter.templates import (
-    list_templates,
-    get_template,
-    get_default_template,
-    create_template,
-    update_template,
-    delete_template,
-    set_default_template,
-    get_template_for_run,
-    TemplateConfig,
     SectionConfig,
-    Template,
-)
-from procedurewriter.protocols import (
-    list_protocols,
-    get_protocol,
-    upload_protocol,
-    update_protocol,
-    delete_protocol,
-    find_similar_protocols,
-    validate_run_against_protocol,
-    validate_run_against_protocol_llm,
-    save_validation_result,
-    get_validation_results,
+    TemplateConfig,
+    create_template,
+    delete_template,
+    get_template,
+    list_templates,
+    set_default_template,
+    update_template,
 )
 
 settings = Settings()
@@ -413,7 +410,7 @@ def api_source_scores(run_id: str) -> dict[str, Any]:
         scores = json.loads(scores_path.read_text(encoding="utf-8"))
         return {"run_id": run_id, "count": len(scores), "scores": scores}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read scores: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to read scores: {e}") from e
 
 
 @app.get("/api/runs/{run_id}/events")
@@ -633,8 +630,7 @@ def api_anthropic_status() -> ApiKeyStatus:
         return ApiKeyStatus(present=False, ok=False, message="No Anthropic API key configured.")
     try:
         from anthropic import Anthropic
-        client = Anthropic(api_key=key)
-        # Simple test - just instantiate (full test would require an API call)
+        Anthropic(api_key=key)  # Validate key format by instantiating
         return ApiKeyStatus(present=True, ok=True, message="OK (key format valid)")
     except ImportError:
         return ApiKeyStatus(present=True, ok=False, message="anthropic package not installed")
@@ -958,7 +954,7 @@ def api_update_template(template_id: str, request: UpdateTemplateRequest) -> dic
             config=config,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     if not success:
         raise HTTPException(status_code=404, detail="Template not found")
@@ -972,7 +968,7 @@ def api_delete_template(template_id: str) -> dict[str, Any]:
     try:
         success = delete_template(settings.db_path, template_id)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     if not success:
         raise HTTPException(status_code=404, detail="Template not found")
@@ -1361,8 +1357,8 @@ def serve_frontend(full_path: str) -> FileResponse:
     # Prevent path traversal attacks
     try:
         path = safe_path_within(path, root_dir=static_dir)
-    except UnsafePathError:
-        raise HTTPException(status_code=404, detail="Not found")
+    except UnsafePathError as e:
+        raise HTTPException(status_code=404, detail="Not found") from e
     if path.exists():
         return FileResponse(str(path))
     index = static_dir / "index.html"

@@ -6,8 +6,6 @@ NO MOCKS for external data.
 """
 from datetime import datetime
 
-import pytest
-
 from procedurewriter.pipeline.source_scoring import (
     SourceScore,
     calculate_quality_indicators,

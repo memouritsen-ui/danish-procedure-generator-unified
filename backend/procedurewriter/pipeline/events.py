@@ -8,6 +8,7 @@ NO MOCKS - This integrates with real pipeline execution.
 """
 from __future__ import annotations
 
+import contextlib
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -96,20 +97,15 @@ class EventEmitter:
         event = PipelineEvent(event_type=event_type, data=data)
 
         for queue in self._subscribers:
-            try:
+            with contextlib.suppress(Full):
                 queue.put_nowait(event)
-            except Full:
-                # Skip if queue is full (slow consumer)
-                pass
 
     def close(self) -> None:
         """Signal end of events to all subscribers."""
         self._closed = True
         for queue in self._subscribers:
-            try:
+            with contextlib.suppress(Full):
                 queue.put_nowait(None)  # Sentinel value
-            except Full:
-                pass
 
     @property
     def has_subscribers(self) -> bool:

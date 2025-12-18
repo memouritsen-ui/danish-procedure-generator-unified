@@ -26,6 +26,13 @@ Usage:
     print(f"Cost: ${response.cost_usd:.4f}")
 """
 
+from procedurewriter.llm.cost_tracker import (
+    CostEntry,
+    CostSummary,
+    CostTracker,
+    get_session_tracker,
+    reset_session_tracker,
+)
 from procedurewriter.llm.providers import (
     DEFAULT_MODELS,
     AnthropicProvider,
@@ -36,13 +43,6 @@ from procedurewriter.llm.providers import (
     OpenAIProvider,
     get_default_model,
     get_llm_client,
-)
-from procedurewriter.llm.cost_tracker import (
-    CostEntry,
-    CostSummary,
-    CostTracker,
-    get_session_tracker,
-    reset_session_tracker,
 )
 
 __all__ = [

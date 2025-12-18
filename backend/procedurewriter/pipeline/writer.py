@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from procedurewriter.pipeline.text_units import split_sentences
 from procedurewriter.pipeline.types import Snippet, SourceRecord
 
 _citation_id_re = re.compile(r"\[S:([^\]]+)\]")
@@ -431,7 +430,6 @@ def _format_references_section(sources: list[SourceRecord], used_ids: list[str])
     if not sources or not used_ids:
         return []
 
-    used_set = set(used_ids)
     source_by_id = {s.source_id: s for s in sources}
 
     lines: list[str] = ["", "## Referencer", ""]
@@ -443,7 +441,6 @@ def _format_references_section(sources: list[SourceRecord], used_ids: list[str])
 
         extra = src.extra if isinstance(src.extra, dict) else {}
         evidence_badge = extra.get("evidence_badge", "Kilde")
-        evidence_color = extra.get("evidence_badge_color", "#d1d5db")
 
         # Build reference line
         title = (src.title or "Unavngiven kilde").strip()

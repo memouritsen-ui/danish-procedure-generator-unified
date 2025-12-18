@@ -13,7 +13,7 @@ import json
 import re
 from typing import TYPE_CHECKING
 
-from procedurewriter.agents.base import AgentResult, AgentStats, BaseAgent
+from procedurewriter.agents.base import AgentResult, BaseAgent
 from procedurewriter.agents.models import ResearcherInput, ResearcherOutput, SourceReference
 
 if TYPE_CHECKING:
@@ -61,7 +61,7 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
 
     def __init__(
         self,
-        llm: "LLMProvider",
+        llm: LLMProvider,
         model: str | None = None,
         pubmed_client: object | None = None,
     ):

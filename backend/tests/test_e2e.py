@@ -1,7 +1,6 @@
 """End-to-end tests for the FastAPI application."""
 import time
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -112,8 +111,8 @@ class TestKeyManagement:
         response = client.get("/api/keys/openai")
         assert response.status_code == 200
         data = response.json()
-        # May be present from env
-        initial_present = data["present"]
+        # May be present from env (result not used, just checking format)
+        _ = data["present"]
 
         # Set a key
         response = client.put("/api/keys/openai", json={"api_key": "sk-test123456789"})

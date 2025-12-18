@@ -9,6 +9,7 @@ Handles:
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
@@ -180,10 +181,8 @@ def get_protocol(db_path: Path, protocol_id: str, load_text: bool = False) -> Pr
 
     normalized_text = None
     if load_text and row["normalized_path"]:
-        try:
+        with contextlib.suppress(Exception):
             normalized_text = Path(row["normalized_path"]).read_text(encoding="utf-8")
-        except Exception:
-            pass
 
     return _row_to_protocol(row, normalized_text)
 
@@ -607,10 +606,7 @@ def validate_run_against_protocol(
                 conflicts.extend(section_conflicts)
 
     # Calculate overall similarity
-    if sections_compared > 0:
-        similarity_score = sections_matched / sections_compared
-    else:
-        similarity_score = 0.0
+    similarity_score = sections_matched / sections_compared if sections_compared > 0 else 0.0
 
     return ValidationResult(
         protocol_id=protocol_id,

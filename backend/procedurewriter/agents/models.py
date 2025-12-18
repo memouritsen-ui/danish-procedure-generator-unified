@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from procedurewriter.agents.base import AgentInput, AgentOutput
 
-
 # =============================================================================
 # Researcher Agent Models
 # =============================================================================

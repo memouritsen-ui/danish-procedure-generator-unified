@@ -13,10 +13,10 @@ import re
 from typing import TYPE_CHECKING
 
 from procedurewriter.agents.base import AgentResult, BaseAgent
-from procedurewriter.agents.models import SourceReference, WriterInput, WriterOutput
+from procedurewriter.agents.models import WriterInput, WriterOutput
 
 if TYPE_CHECKING:
-    from procedurewriter.llm.providers import LLMProvider
+    pass
 
 
 SYSTEM_PROMPT = """Du er en medicinsk fagforfatter, der specialiserer dig i at skrive kliniske procedurer på dansk til akutmedicin.

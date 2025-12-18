@@ -188,9 +188,7 @@ def _looks_like_sentence(text: str) -> bool:
         return False
     # Skip lines that are purely URLs or DOIs
     stripped = text.strip()
-    if stripped.startswith(("http://", "https://", "doi:", "DOI:")):
-        return False
-    return True
+    return not stripped.startswith(("http://", "https://", "doi:", "DOI:"))
 
 
 def _is_only_citations(text: str) -> bool:
