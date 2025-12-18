@@ -173,6 +173,11 @@ async def _run_background(run_id: str) -> None:
             status="DONE",
             manifest_path=Path(result["manifest_path"]),
             docx_path=Path(result["docx_path"]),
+            quality_score=result.get("quality_score"),
+            iterations_used=result.get("iterations_used"),
+            total_cost_usd=result.get("total_cost_usd"),
+            total_input_tokens=result.get("total_input_tokens"),
+            total_output_tokens=result.get("total_output_tokens"),
         )
     except Exception as e:  # noqa: BLE001
         update_run_status(settings.db_path, run_id=run_id, status="FAILED", error=str(e))
@@ -187,6 +192,9 @@ def api_runs() -> list[RunSummary]:
             updated_at_utc=r.updated_at_utc,
             procedure=r.procedure,
             status=r.status,
+            quality_score=r.quality_score,
+            iterations_used=r.iterations_used,
+            total_cost_usd=r.total_cost_usd,
         )
         for r in list_runs(settings.db_path)
     ]
@@ -231,6 +239,11 @@ def api_run(run_id: str) -> RunDetail:
         procedure_md=procedure_md,
         source_count=source_count,
         warnings=warnings,
+        quality_score=run.quality_score,
+        iterations_used=run.iterations_used,
+        total_cost_usd=run.total_cost_usd,
+        total_input_tokens=run.total_input_tokens,
+        total_output_tokens=run.total_output_tokens,
     )
 
 

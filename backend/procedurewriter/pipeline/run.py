@@ -375,12 +375,27 @@ def run_pipeline(
             },
         )
 
+        # Calculate quality score based on evidence coverage
+        supported = int(evidence.get("supported_count") or 0)
+        unsupported = int(evidence.get("unsupported_count") or 0)
+        total_claims = supported + unsupported
+        if total_claims > 0:
+            # Score 1-10 based on support ratio, with minimum of 5 for having any claims
+            quality_score = max(5, min(10, 5 + int((supported / total_claims) * 5)))
+        else:
+            quality_score = 5  # Default score when no claims to validate
+
         return {
             "run_dir": str(run_dir),
             "sources_jsonl_path": str(sources_jsonl_path),
             "procedure_md_path": str(procedure_md_path),
             "manifest_path": str(manifest_path),
             "docx_path": str(docx_path),
+            "quality_score": quality_score,
+            "iterations_used": 1,  # Single pass for now
+            "total_cost_usd": 0.0,  # TODO: Track when agent orchestrator is integrated
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
         }
     finally:
         http.close()

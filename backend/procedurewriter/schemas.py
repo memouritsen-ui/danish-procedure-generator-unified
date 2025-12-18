@@ -20,6 +20,9 @@ class RunSummary(BaseModel):
     updated_at_utc: str
     procedure: str
     status: str
+    quality_score: int | None = None
+    iterations_used: int | None = None
+    total_cost_usd: float | None = None
 
 
 class RunDetail(BaseModel):
@@ -33,6 +36,11 @@ class RunDetail(BaseModel):
     procedure_md: str | None
     source_count: int | None = None
     warnings: list[str] | None = None
+    quality_score: int | None = None
+    iterations_used: int | None = None
+    total_cost_usd: float | None = None
+    total_input_tokens: int | None = None
+    total_output_tokens: int | None = None
 
 
 class SourceRecord(BaseModel):

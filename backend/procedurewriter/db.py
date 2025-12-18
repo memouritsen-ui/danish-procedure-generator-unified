@@ -34,10 +34,27 @@ def init_db(db_path: Path) -> None:
               error TEXT,
               run_dir TEXT NOT NULL,
               manifest_path TEXT,
-              docx_path TEXT
+              docx_path TEXT,
+              quality_score INTEGER,
+              iterations_used INTEGER,
+              total_cost_usd REAL,
+              total_input_tokens INTEGER,
+              total_output_tokens INTEGER
             )
             """
         )
+        # Add columns to existing tables (migration for existing DBs)
+        for col, col_type in [
+            ("quality_score", "INTEGER"),
+            ("iterations_used", "INTEGER"),
+            ("total_cost_usd", "REAL"),
+            ("total_input_tokens", "INTEGER"),
+            ("total_output_tokens", "INTEGER"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {col_type}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS library_sources (
@@ -109,6 +126,11 @@ class RunRow:
     run_dir: str
     manifest_path: str | None
     docx_path: str | None
+    quality_score: int | None
+    iterations_used: int | None
+    total_cost_usd: float | None
+    total_input_tokens: int | None
+    total_output_tokens: int | None
 
 
 def create_run(db_path: Path, *, run_id: str, procedure: str, context: str | None, run_dir: Path) -> None:
@@ -131,14 +153,27 @@ def update_run_status(
     error: str | None = None,
     manifest_path: Path | None = None,
     docx_path: Path | None = None,
+    quality_score: int | None = None,
+    iterations_used: int | None = None,
+    total_cost_usd: float | None = None,
+    total_input_tokens: int | None = None,
+    total_output_tokens: int | None = None,
 ) -> None:
     now = utc_now_iso()
     with _connect(db_path) as conn:
         conn.execute(
             """
             UPDATE runs
-            SET updated_at_utc = ?, status = ?, error = ?, manifest_path = COALESCE(?, manifest_path),
-                docx_path = COALESCE(?, docx_path)
+            SET updated_at_utc = ?,
+                status = ?,
+                error = ?,
+                manifest_path = COALESCE(?, manifest_path),
+                docx_path = COALESCE(?, docx_path),
+                quality_score = COALESCE(?, quality_score),
+                iterations_used = COALESCE(?, iterations_used),
+                total_cost_usd = COALESCE(?, total_cost_usd),
+                total_input_tokens = COALESCE(?, total_input_tokens),
+                total_output_tokens = COALESCE(?, total_output_tokens)
             WHERE run_id = ?
             """,
             (
@@ -147,6 +182,11 @@ def update_run_status(
                 error,
                 str(manifest_path) if manifest_path else None,
                 str(docx_path) if docx_path else None,
+                quality_score,
+                iterations_used,
+                total_cost_usd,
+                total_input_tokens,
+                total_output_tokens,
                 run_id,
             ),
         )
@@ -164,6 +204,11 @@ def _row_to_run(row: sqlite3.Row) -> RunRow:
         run_dir=row["run_dir"],
         manifest_path=row["manifest_path"],
         docx_path=row["docx_path"],
+        quality_score=row["quality_score"],
+        iterations_used=row["iterations_used"],
+        total_cost_usd=row["total_cost_usd"],
+        total_input_tokens=row["total_input_tokens"],
+        total_output_tokens=row["total_output_tokens"],
     )
 
 

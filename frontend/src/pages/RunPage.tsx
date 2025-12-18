@@ -46,6 +46,23 @@ export default function RunPage() {
               run_id: <code>{run.run_id}</code>
             </div>
             <div className="muted">Status: {run.status}</div>
+            {run.quality_score != null && (
+              <div className="muted">
+                Kvalitet:{" "}
+                <span style={{ color: run.quality_score >= 8 ? "#4ade80" : run.quality_score >= 6 ? "#fbbf24" : "#f87171" }}>
+                  {run.quality_score}/10
+                </span>
+                {run.iterations_used != null && ` (${run.iterations_used} iteration${run.iterations_used !== 1 ? "er" : ""})`}
+              </div>
+            )}
+            {run.total_cost_usd != null && run.total_cost_usd > 0 && (
+              <div className="muted">
+                Omkostning: ${run.total_cost_usd.toFixed(4)}
+                {(run.total_input_tokens != null || run.total_output_tokens != null) && (
+                  <span> ({run.total_input_tokens ?? 0} in / {run.total_output_tokens ?? 0} out tokens)</span>
+                )}
+              </div>
+            )}
             {run.source_count != null && <div className="muted">Kilder: {run.source_count}</div>}
             {run.warnings && run.warnings.length > 0 && (
               <div style={{ marginTop: 12 }} className="card">

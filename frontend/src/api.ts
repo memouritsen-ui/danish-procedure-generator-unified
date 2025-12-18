@@ -7,6 +7,9 @@ export type RunSummary = {
   updated_at_utc: string;
   procedure: string;
   status: string;
+  quality_score?: number | null;
+  iterations_used?: number | null;
+  total_cost_usd?: number | null;
 };
 
 export type RunDetail = RunSummary & {
@@ -15,6 +18,8 @@ export type RunDetail = RunSummary & {
   procedure_md?: string | null;
   source_count?: number | null;
   warnings?: string[] | null;
+  total_input_tokens?: number | null;
+  total_output_tokens?: number | null;
 };
 
 export type SourceRecord = {

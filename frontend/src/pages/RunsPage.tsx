@@ -36,6 +36,7 @@ export default function RunsPage() {
                 <th align="left">Tid (UTC)</th>
                 <th align="left">Procedure</th>
                 <th align="left">Status</th>
+                <th align="left">Kvalitet</th>
                 <th align="left">Links</th>
               </tr>
             </thead>
@@ -48,6 +49,15 @@ export default function RunsPage() {
                   <td style={{ padding: "10px 0" }}>{r.procedure}</td>
                   <td className="muted" style={{ padding: "10px 0" }}>
                     {r.status}
+                  </td>
+                  <td style={{ padding: "10px 0" }}>
+                    {r.quality_score != null ? (
+                      <span style={{ color: r.quality_score >= 8 ? "#4ade80" : r.quality_score >= 6 ? "#fbbf24" : "#f87171" }}>
+                        {r.quality_score}/10
+                      </span>
+                    ) : (
+                      <span className="muted">–</span>
+                    )}
                   </td>
                   <td style={{ padding: "10px 0" }}>
                     <Link to={`/runs/${encodeURIComponent(r.run_id)}`} className="muted">
