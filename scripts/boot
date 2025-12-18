@@ -3,6 +3,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Bootstrap dependencies
 "$ROOT_DIR/scripts/bootstrap"
-"$ROOT_DIR/scripts/check"
-AKUTWRITER_OPEN_BROWSER=1 "$ROOT_DIR/scripts/start"
+
+# Skip linting check for desktop launcher - use 'make check' for full validation
+echo "Bootstrap OK, starting application..."
+
+# Use dev mode (runs both backend + frontend with hot reload)
+AKUTWRITER_OPEN_BROWSER=1 "$ROOT_DIR/scripts/dev"

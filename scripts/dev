@@ -99,6 +99,12 @@ trap cleanup EXIT
 echo "Backend:  http://127.0.0.1:${BACKEND_PORT}"
 echo "Frontend: http://127.0.0.1:${FRONTEND_PORT}"
 
+# Open browser if requested
+if [[ "${AKUTWRITER_OPEN_BROWSER:-}" = "1" ]] && command -v open >/dev/null 2>&1; then
+  sleep 2  # Give frontend time to start
+  open "http://127.0.0.1:${FRONTEND_PORT}" || true
+fi
+
 while true; do
   if ! kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
     wait "$BACKEND_PID" || true
