@@ -7,6 +7,7 @@ from typing import Any
 
 from procedurewriter.config_store import load_yaml
 from procedurewriter.db import LibrarySourceRow
+from procedurewriter.llm import get_session_tracker, reset_session_tracker
 from procedurewriter.pipeline.citations import validate_citations
 from procedurewriter.pipeline.docx_writer import write_procedure_docx
 from procedurewriter.pipeline.evidence import build_evidence_report, enforce_evidence_policy
@@ -39,6 +40,9 @@ def run_pipeline(
     (run_dir / "raw").mkdir(parents=True, exist_ok=True)
     (run_dir / "normalized").mkdir(parents=True, exist_ok=True)
     (run_dir / "index").mkdir(parents=True, exist_ok=True)
+
+    # Reset session cost tracker for this pipeline run
+    reset_session_tracker()
 
     author_guide = load_yaml(settings.author_guide_path)
     allowlist = load_yaml(settings.allowlist_path)
@@ -385,6 +389,9 @@ def run_pipeline(
         else:
             quality_score = 5  # Default score when no claims to validate
 
+        # Get cost summary from session tracker
+        cost_summary = get_session_tracker().get_summary()
+
         return {
             "run_dir": str(run_dir),
             "sources_jsonl_path": str(sources_jsonl_path),
@@ -393,9 +400,9 @@ def run_pipeline(
             "docx_path": str(docx_path),
             "quality_score": quality_score,
             "iterations_used": 1,  # Single pass for now
-            "total_cost_usd": 0.0,  # TODO: Track when agent orchestrator is integrated
-            "total_input_tokens": 0,
-            "total_output_tokens": 0,
+            "total_cost_usd": cost_summary.total_cost_usd,
+            "total_input_tokens": cost_summary.total_input_tokens,
+            "total_output_tokens": cost_summary.total_output_tokens,
         }
     finally:
         http.close()

@@ -37,8 +37,16 @@ from procedurewriter.llm.providers import (
     get_default_model,
     get_llm_client,
 )
+from procedurewriter.llm.cost_tracker import (
+    CostEntry,
+    CostSummary,
+    CostTracker,
+    get_session_tracker,
+    reset_session_tracker,
+)
 
 __all__ = [
+    # Providers
     "LLMProvider",
     "LLMProviderType",
     "LLMResponse",
@@ -48,4 +56,10 @@ __all__ = [
     "get_llm_client",
     "get_default_model",
     "DEFAULT_MODELS",
+    # Cost tracking
+    "CostEntry",
+    "CostSummary",
+    "CostTracker",
+    "get_session_tracker",
+    "reset_session_tracker",
 ]

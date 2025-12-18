@@ -177,10 +177,10 @@ danish-procedure-generator-unified/
 - [ ] Store iteration count in DB
 
 ### Sprint 4: Cost Tracking (2 days)
-- [ ] Port cost tracker from claudegithub
-- [ ] Add token counting to providers
-- [ ] Create cost API endpoint
-- [ ] Display in UI
+- [x] Port cost tracker from claudegithub
+- [x] Add token counting to providers
+- [x] Create cost API endpoint
+- [x] Display in UI
 
 ### Sprint 5: Danish Evidence Hierarchy (1 day)
 - [ ] Create evidence_hierarchy.yaml

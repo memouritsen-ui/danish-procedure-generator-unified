@@ -47,6 +47,7 @@ from procedurewriter.schemas import (
     ApiKeyStatus,
     AppStatus,
     ConfigText,
+    CostSummaryResponse,
     IngestResponse,
     IngestUrlRequest,
     RunDetail,
@@ -198,6 +199,36 @@ def api_runs() -> list[RunSummary]:
         )
         for r in list_runs(settings.db_path)
     ]
+
+
+@app.get("/api/costs", response_model=CostSummaryResponse)
+def api_costs() -> CostSummaryResponse:
+    """Get aggregated cost summary across all runs."""
+    runs = list_runs(settings.db_path)
+    total_cost = 0.0
+    total_input = 0
+    total_output = 0
+    runs_with_cost = 0
+
+    for r in runs:
+        if r.total_cost_usd is not None:
+            total_cost += r.total_cost_usd
+            runs_with_cost += 1
+        if r.total_input_tokens is not None:
+            total_input += r.total_input_tokens
+        if r.total_output_tokens is not None:
+            total_output += r.total_output_tokens
+
+    avg_cost = total_cost / runs_with_cost if runs_with_cost > 0 else None
+
+    return CostSummaryResponse(
+        total_runs=len(runs),
+        total_cost_usd=round(total_cost, 6),
+        total_input_tokens=total_input,
+        total_output_tokens=total_output,
+        total_tokens=total_input + total_output,
+        avg_cost_per_run=round(avg_cost, 6) if avg_cost is not None else None,
+    )
 
 
 @app.get("/api/runs/{run_id}", response_model=RunDetail)

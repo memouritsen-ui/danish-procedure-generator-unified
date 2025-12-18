@@ -314,11 +314,18 @@ def _write_llm_section_body(
         f"SNIPPETS:\n{snippets_text}\n"
     )
 
+    from procedurewriter.llm import get_session_tracker
+
     resp = client.chat_completion(
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         model=llm_model,
         temperature=0.15,
     )
+
+    # Track cost
+    tracker = get_session_tracker()
+    tracker.track(resp, operation=f"write_section:{heading}")
+
     raw = resp.content.strip()
     return _normalize_section_lines(raw, fmt=fmt, fallback_citation=allowed_source_ids[0])
 
@@ -402,7 +409,7 @@ def _write_llm(
     anthropic_api_key: str | None = None,
     ollama_base_url: str | None = None,
 ) -> str:
-    from procedurewriter.llm import get_llm_client
+    from procedurewriter.llm import get_llm_client, get_session_tracker
 
     client = get_llm_client(
         provider=llm_provider,
@@ -473,6 +480,11 @@ def _write_llm(
         model=llm_model,
         temperature=0.2,
     )
+
+    # Track cost
+    tracker = get_session_tracker()
+    tracker.track(resp, operation="write_full_procedure")
+
     return resp.content.strip() + "\n"
 
 

@@ -115,3 +115,14 @@ class AppStatus(BaseModel):
 class LLMProviderConfig(BaseModel):
     provider: str
     model: str | None = None
+
+
+class CostSummaryResponse(BaseModel):
+    """Aggregated cost summary across all runs."""
+
+    total_runs: int
+    total_cost_usd: float
+    total_input_tokens: int
+    total_output_tokens: int
+    total_tokens: int
+    avg_cost_per_run: float | None = None
