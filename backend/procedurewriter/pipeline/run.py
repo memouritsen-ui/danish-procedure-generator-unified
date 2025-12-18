@@ -27,6 +27,7 @@ from procedurewriter.settings import Settings
 from procedurewriter.agents.orchestrator import AgentOrchestrator
 from procedurewriter.agents.models import PipelineInput as AgentPipelineInput, SourceReference
 from procedurewriter.llm.providers import get_llm_client
+from procedurewriter.pipeline.events import EventType, get_emitter, remove_emitter
 
 
 def source_record_to_reference(source: SourceRecord) -> SourceReference:
@@ -93,6 +94,10 @@ def run_pipeline(
     (run_dir / "raw").mkdir(parents=True, exist_ok=True)
     (run_dir / "normalized").mkdir(parents=True, exist_ok=True)
     (run_dir / "index").mkdir(parents=True, exist_ok=True)
+
+    # Get event emitter for SSE streaming
+    emitter = get_emitter(run_id)
+    emitter.emit(EventType.PROGRESS, {"message": "Pipeline starting", "stage": "init"})
 
     # Reset session cost tracker for this pipeline run
     reset_session_tracker()
@@ -225,6 +230,7 @@ def run_pipeline(
 
         # Search Danish guideline library FIRST (priority 1000 - highest)
         if not settings.dummy_mode:
+            emitter.emit(EventType.PROGRESS, {"message": "Searching Danish guideline library", "stage": "library_search"})
             library_provider = LibrarySearchProvider(settings.resolved_guideline_library_path)
             if library_provider.available():
                 query_text = " ".join([procedure, context or ""]).strip()
@@ -306,6 +312,7 @@ def run_pipeline(
 
         # Search PubMed (priority 100 - fallback for international research)
         if not settings.dummy_mode:
+            emitter.emit(EventType.PROGRESS, {"message": "Searching PubMed for evidence", "stage": "pubmed_search"})
             pubmed = PubMedClient(
                 http,
                 tool=settings.ncbi_tool,
@@ -469,11 +476,12 @@ def run_pipeline(
                 ollama_base_url=ollama_base_url or settings.ollama_base_url,
             )
 
-            # Create and run orchestrator
+            # Create and run orchestrator with event emitter for SSE streaming
             orchestrator = AgentOrchestrator(
                 llm=llm,
                 model=settings.llm_model,
                 pubmed_client=None,  # Sources already fetched
+                emitter=emitter,
             )
 
             pipeline_input = AgentPipelineInput(
@@ -640,6 +648,8 @@ def run_pipeline(
         }
     finally:
         http.close()
+        # Clean up event emitter when pipeline completes
+        remove_emitter(run_id)
 
 
 def _utc_now_iso() -> str:

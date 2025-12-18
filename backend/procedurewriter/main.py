@@ -11,7 +11,7 @@ from typing import Any
 import anyio
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from procedurewriter import config_store
 from procedurewriter.db import (
@@ -39,6 +39,7 @@ from procedurewriter.pipeline.normalize import (
     normalize_html,
     normalize_pdf_pages,
 )
+from procedurewriter.pipeline.events import get_emitter_if_exists
 from procedurewriter.pipeline.run import run_pipeline
 from procedurewriter.run_bundle import build_run_bundle_zip, read_run_manifest
 from procedurewriter.schemas import (
@@ -350,6 +351,68 @@ def api_sources(run_id: str) -> SourcesResponse:
         return SourcesResponse(run_id=run_id, sources=[])
     sources = [SourceRecord.model_validate(obj) for obj in iter_jsonl(sources_path)]
     return SourcesResponse(run_id=run_id, sources=sources)
+
+
+@app.get("/api/runs/{run_id}/events")
+async def api_events(run_id: str) -> StreamingResponse:
+    """
+    Server-Sent Events stream for pipeline progress.
+
+    Streams real-time events during procedure generation.
+    Connect when run status is RUNNING, events stop when complete.
+    """
+    emitter = get_emitter_if_exists(run_id)
+    if emitter is None:
+        # Run may not be active yet or already complete
+        run = get_run(settings.db_path, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if run.status == "DONE":
+            # Return empty stream with completion event
+            async def done_stream():
+                yield f'data: {{"event": "complete", "data": {{"success": true, "quality_score": {run.quality_score or 0}}}, "timestamp": 0}}\n\n'
+            return StreamingResponse(done_stream(), media_type="text/event-stream")
+        if run.status == "FAILED":
+            async def error_stream():
+                yield f'data: {{"event": "error", "data": {{"stage": "pipeline", "error": "{run.error or "Unknown error"}"}}, "timestamp": 0}}\n\n'
+            return StreamingResponse(error_stream(), media_type="text/event-stream")
+        # Not started yet - return empty stream
+        async def empty_stream():
+            yield 'data: {"event": "progress", "data": {"message": "Waiting for pipeline to start"}, "timestamp": 0}\n\n'
+        return StreamingResponse(empty_stream(), media_type="text/event-stream")
+
+    # Subscribe to event stream
+    queue = emitter.subscribe()
+
+    async def event_stream():
+        try:
+            while True:
+                # Poll the queue with a small timeout to allow cancellation
+                try:
+                    event = await anyio.to_thread.run_sync(
+                        lambda: queue.get(timeout=0.1)
+                    )
+                except Exception:
+                    # Timeout - continue polling
+                    continue
+
+                if event is None:
+                    # Sentinel - stream ended
+                    break
+
+                yield event.to_sse()
+        finally:
+            emitter.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
 
 
 def _find_source(run_dir: Path, source_id: str) -> SourceRecord | None:

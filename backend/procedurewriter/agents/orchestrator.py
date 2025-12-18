@@ -13,9 +13,10 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from procedurewriter.agents.base import AgentStats
+from procedurewriter.pipeline.events import EventEmitter, EventType
 from procedurewriter.agents.editor import EditorAgent
 from procedurewriter.agents.models import (
     EditorInput,
@@ -75,6 +76,7 @@ class AgentOrchestrator:
         llm: "LLMProvider",
         model: str | None = None,
         pubmed_client: object | None = None,
+        emitter: EventEmitter | None = None,
     ):
         """
         Initialize the orchestrator with agents.
@@ -83,10 +85,12 @@ class AgentOrchestrator:
             llm: LLM provider for all agents
             model: Model to use (defaults to provider's default)
             pubmed_client: Optional PubMed client (for research step)
+            emitter: Optional event emitter for SSE streaming
         """
         self._llm = llm
         self._model = model
         self._pubmed = pubmed_client
+        self._emitter = emitter
 
         # Initialize agents
         self._researcher = ResearcherAgent(llm, model, pubmed_client)
@@ -96,6 +100,11 @@ class AgentOrchestrator:
         self._quality = QualityAgent(llm, model)
 
         self._stats = OrchestratorStats()
+
+    def _emit(self, event_type: EventType, data: dict[str, Any]) -> None:
+        """Emit an event if emitter is configured."""
+        if self._emitter:
+            self._emitter.emit(event_type, data)
 
     def run(
         self,
@@ -122,7 +131,12 @@ class AgentOrchestrator:
             if sources:
                 logger.info(f"Using {len(sources)} pre-fetched sources")
                 current_sources = sources
+                self._emit(EventType.SOURCES_FOUND, {
+                    "count": len(sources),
+                    "source": "pre-fetched",
+                })
             else:
+                self._emit(EventType.AGENT_START, {"agent": "Researcher"})
                 logger.info("Running Researcher agent...")
                 research_result = self._researcher.execute(
                     ResearcherInput(
@@ -131,14 +145,27 @@ class AgentOrchestrator:
                     )
                 )
                 self._stats.add_agent_stats("Researcher", research_result.stats)
+                self._emit(EventType.AGENT_COMPLETE, {
+                    "agent": "Researcher",
+                    "success": research_result.output.success,
+                    "cost_usd": research_result.stats.cost_usd,
+                })
 
                 if not research_result.output.success:
+                    self._emit(EventType.ERROR, {
+                        "stage": "research",
+                        "error": research_result.output.error,
+                    })
                     return self._error_output(
                         f"Research failed: {research_result.output.error}"
                     )
 
                 current_sources = research_result.output.sources
                 logger.info(f"Found {len(current_sources)} sources")
+                self._emit(EventType.SOURCES_FOUND, {
+                    "count": len(current_sources),
+                    "source": "researcher",
+                })
 
             # Quality loop
             current_content = ""
@@ -148,8 +175,13 @@ class AgentOrchestrator:
             for iteration in range(1, input_data.max_iterations + 1):
                 self._stats.iterations = iteration
                 logger.info(f"Iteration {iteration}/{input_data.max_iterations}")
+                self._emit(EventType.ITERATION_START, {
+                    "iteration": iteration,
+                    "max_iterations": input_data.max_iterations,
+                })
 
                 # Step 2: Write procedure
+                self._emit(EventType.AGENT_START, {"agent": "Writer"})
                 logger.info("Running Writer agent...")
                 writer_result = self._writer.execute(
                     WriterInput(
@@ -162,8 +194,17 @@ class AgentOrchestrator:
                     )
                 )
                 self._stats.add_agent_stats(f"Writer_iter{iteration}", writer_result.stats)
+                self._emit(EventType.AGENT_COMPLETE, {
+                    "agent": "Writer",
+                    "success": writer_result.output.success,
+                    "cost_usd": writer_result.stats.cost_usd,
+                })
 
                 if not writer_result.output.success:
+                    self._emit(EventType.ERROR, {
+                        "stage": "writer",
+                        "error": writer_result.output.error,
+                    })
                     return self._error_output(
                         f"Writing failed: {writer_result.output.error}"
                     )
@@ -172,6 +213,7 @@ class AgentOrchestrator:
                 citations_used = writer_result.output.citations_used
 
                 # Step 3: Validate claims
+                self._emit(EventType.AGENT_START, {"agent": "Validator"})
                 logger.info("Running Validator agent...")
                 # Extract claims from content (simple: each sentence with citation)
                 claims = self._extract_claims(current_content)
@@ -183,8 +225,14 @@ class AgentOrchestrator:
                     )
                 )
                 self._stats.add_agent_stats(f"Validator_iter{iteration}", validator_result.stats)
+                self._emit(EventType.AGENT_COMPLETE, {
+                    "agent": "Validator",
+                    "success": True,
+                    "cost_usd": validator_result.stats.cost_usd,
+                })
 
                 # Step 4: Edit content
+                self._emit(EventType.AGENT_START, {"agent": "Editor"})
                 logger.info("Running Editor agent...")
                 editor_result = self._editor.execute(
                     EditorInput(
@@ -194,11 +242,17 @@ class AgentOrchestrator:
                     )
                 )
                 self._stats.add_agent_stats(f"Editor_iter{iteration}", editor_result.stats)
+                self._emit(EventType.AGENT_COMPLETE, {
+                    "agent": "Editor",
+                    "success": editor_result.output.success,
+                    "cost_usd": editor_result.stats.cost_usd,
+                })
 
                 if editor_result.output.success:
                     current_content = editor_result.output.edited_content
 
                 # Step 5: Quality check
+                self._emit(EventType.AGENT_START, {"agent": "Quality"})
                 logger.info("Running Quality agent...")
                 quality_result = self._quality.execute(
                     QualityInput(
@@ -212,6 +266,23 @@ class AgentOrchestrator:
 
                 quality_score = quality_result.output.overall_score
                 logger.info(f"Quality score: {quality_score}/10")
+
+                self._emit(EventType.QUALITY_CHECK, {
+                    "score": quality_score,
+                    "passes": quality_result.output.passes_threshold,
+                    "iteration": iteration,
+                })
+                self._emit(EventType.AGENT_COMPLETE, {
+                    "agent": "Quality",
+                    "success": True,
+                    "cost_usd": quality_result.stats.cost_usd,
+                })
+
+                # Emit running cost update
+                self._emit(EventType.COST_UPDATE, {
+                    "total_cost_usd": self._stats.total_cost_usd,
+                    "total_tokens": self._stats.total_input_tokens + self._stats.total_output_tokens,
+                })
 
                 # Check if we pass threshold
                 if quality_result.output.passes_threshold:
@@ -228,6 +299,15 @@ class AgentOrchestrator:
             # Calculate final stats
             self._stats.execution_time_seconds = time.time() - start_time
 
+            # Emit completion
+            self._emit(EventType.COMPLETE, {
+                "success": True,
+                "quality_score": quality_score,
+                "iterations_used": self._stats.iterations,
+                "total_cost_usd": self._stats.total_cost_usd,
+                "execution_time_seconds": self._stats.execution_time_seconds,
+            })
+
             return PipelineOutput(
                 success=True,
                 procedure_markdown=current_content,
@@ -241,6 +321,10 @@ class AgentOrchestrator:
 
         except Exception as e:
             logger.exception(f"Pipeline failed: {e}")
+            self._emit(EventType.ERROR, {
+                "stage": "pipeline",
+                "error": str(e),
+            })
             return self._error_output(str(e))
 
     def _extract_claims(self, content: str) -> list[str]:
