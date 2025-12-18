@@ -353,6 +353,27 @@ def api_sources(run_id: str) -> SourcesResponse:
     return SourcesResponse(run_id=run_id, sources=sources)
 
 
+@app.get("/api/runs/{run_id}/sources/scores")
+def api_source_scores(run_id: str) -> dict[str, Any]:
+    """
+    Get composite trust scores for all sources in a run.
+
+    Returns scored sources ranked by composite score (highest first).
+    Each score includes evidence level, recency, quality factors, and reasoning.
+    """
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    scores_path = Path(run.run_dir) / "source_scores.json"
+    if not scores_path.exists():
+        return {"run_id": run_id, "scores": [], "message": "Scores not available for this run"}
+    try:
+        scores = json.loads(scores_path.read_text(encoding="utf-8"))
+        return {"run_id": run_id, "count": len(scores), "scores": scores}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read scores: {e}")
+
+
 @app.get("/api/runs/{run_id}/events")
 async def api_events(run_id: str) -> StreamingResponse:
     """

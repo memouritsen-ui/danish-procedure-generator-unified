@@ -10,6 +10,7 @@ from procedurewriter.db import LibrarySourceRow
 from procedurewriter.llm import get_session_tracker, reset_session_tracker
 from procedurewriter.pipeline.citations import validate_citations
 from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
+from procedurewriter.pipeline.source_scoring import rank_sources, score_source, SourceScore
 from procedurewriter.pipeline.profiler import profile_section, start_profiling, stop_profiling
 from procedurewriter.pipeline.docx_writer import write_procedure_docx
 from procedurewriter.pipeline.evidence import build_evidence_report, enforce_evidence_policy
@@ -30,28 +31,36 @@ from procedurewriter.llm.providers import get_llm_client
 from procedurewriter.pipeline.events import EventType, get_emitter, remove_emitter
 
 
-def source_record_to_reference(source: SourceRecord) -> SourceReference:
+def source_record_to_reference(
+    source: SourceRecord,
+    source_score: SourceScore | None = None,
+) -> SourceReference:
     """
     Convert a pipeline SourceRecord to an agent SourceReference.
 
     Adapts the pipeline's source format to the agent system's format,
-    calculating relevance score from evidence priority when available.
+    using composite source score when available, or falling back to
+    evidence priority for relevance calculation.
     """
-    # Calculate relevance score from evidence priority (0-1000 mapped to 0.0-1.0)
-    evidence_priority = source.extra.get("evidence_priority", 0)
-    relevance = source.extra.get("relevance_score")
-    if relevance is not None:
-        # relevance_score in source.extra may be on 0-10 scale; normalize to 0-1
-        raw_score = float(relevance)
-        if raw_score > 1.0:
-            relevance_score = min(1.0, raw_score / 10.0)
-        else:
-            relevance_score = raw_score
-    elif evidence_priority:
-        # Map priority 0-1000 to 0.0-1.0
-        relevance_score = min(1.0, evidence_priority / 1000.0)
+    # Use composite score if available (0-100 mapped to 0.0-1.0)
+    if source_score is not None:
+        relevance_score = min(1.0, source_score.composite_score / 100.0)
     else:
-        relevance_score = 0.5  # Default mid-range
+        # Fallback: calculate from evidence priority or relevance_score
+        evidence_priority = source.extra.get("evidence_priority", 0)
+        relevance = source.extra.get("relevance_score")
+        if relevance is not None:
+            # relevance_score in source.extra may be on 0-10 scale; normalize to 0-1
+            raw_score = float(relevance)
+            if raw_score > 1.0:
+                relevance_score = min(1.0, raw_score / 10.0)
+            else:
+                relevance_score = raw_score
+        elif evidence_priority:
+            # Map priority 0-1000 to 0.0-1.0
+            relevance_score = min(1.0, evidence_priority / 1000.0)
+        else:
+            relevance_score = 0.5  # Default mid-range
 
     # Get abstract excerpt from normalized text if available
     abstract_excerpt = None
@@ -75,6 +84,22 @@ def source_record_to_reference(source: SourceRecord) -> SourceReference:
         relevance_score=relevance_score,
         abstract_excerpt=abstract_excerpt,
     )
+
+
+def _source_record_to_scoring_dict(source: SourceRecord) -> dict[str, Any]:
+    """
+    Convert a SourceRecord to a dict suitable for source scoring.
+    """
+    return {
+        "source_id": source.source_id,
+        "kind": source.kind,
+        "title": source.title,
+        "year": source.year,
+        "url": source.url,
+        "doi": source.doi,
+        "pmid": source.pmid,
+        "extra": source.extra,
+    }
 
 
 def run_pipeline(
@@ -448,8 +473,38 @@ def run_pipeline(
                 )
             )
 
+        # Score all sources and add scoring data to extra fields
+        source_dicts_for_scoring = [_source_record_to_scoring_dict(s) for s in sources]
+        all_scored = rank_sources(source_dicts_for_scoring)
+        score_by_id = {ss.source_id: ss for ss in all_scored}
+
+        # Enrich sources with scoring data
+        for source in sources:
+            score = score_by_id.get(source.source_id)
+            if score:
+                source.extra["composite_score"] = score.composite_score
+                source.extra["recency_score"] = score.recency_score
+                source.extra["quality_score"] = score.quality_score
+                source.extra["scoring_reasoning"] = score.reasoning
+
         sources_jsonl_path = run_dir / "sources.jsonl"
         write_jsonl(sources_jsonl_path, [to_jsonl_record(s) for s in sources])
+
+        # Write scores summary to separate file for API
+        scores_summary = [
+            {
+                "source_id": ss.source_id,
+                "evidence_level": ss.evidence_level,
+                "evidence_priority": ss.evidence_priority,
+                "recency_score": ss.recency_score,
+                "recency_year": ss.recency_year,
+                "quality_score": ss.quality_score,
+                "composite_score": ss.composite_score,
+                "reasoning": ss.reasoning,
+            }
+            for ss in all_scored
+        ]
+        write_json(run_dir / "source_scores.json", scores_summary)
 
         snippets = build_snippets(sources)
         query = " ".join([procedure, context or ""]).strip()
@@ -465,8 +520,17 @@ def run_pipeline(
 
         # Use multi-agent orchestrator when LLM is enabled
         if settings.use_llm and not settings.dummy_mode:
-            # Convert sources to agent format
-            agent_sources = [source_record_to_reference(s) for s in sources]
+            # Emit scored sources info (scoring already done above)
+            emitter.emit(EventType.SOURCES_FOUND, {
+                "count": len(all_scored),
+                "top_score": all_scored[0].composite_score if all_scored else 0,
+            })
+
+            # Convert sources to agent format with pre-computed scores
+            agent_sources = [
+                source_record_to_reference(s, score_by_id.get(s.source_id))
+                for s in sources
+            ]
 
             # Get LLM client
             llm = get_llm_client(

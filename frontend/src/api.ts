@@ -42,6 +42,23 @@ export type SourceRecord = {
 
 export type SourcesResponse = { run_id: string; sources: SourceRecord[] };
 
+export type SourceScore = {
+  source_id: string;
+  evidence_level: string;
+  evidence_priority: number;
+  recency_score: number;
+  recency_year: number | null;
+  quality_score: number;
+  composite_score: number;
+  reasoning: string[];
+};
+
+export type SourceScoresResponse = {
+  run_id: string;
+  count: number;
+  scores: SourceScore[];
+};
+
 export type ApiKeyInfo = { present: boolean; masked?: string | null };
 export type ApiKeyStatus = { present: boolean; ok: boolean; message: string };
 export type AppStatus = {
@@ -115,6 +132,12 @@ export async function apiSources(runId: string): Promise<SourcesResponse> {
   const resp = await fetch(`/api/runs/${encodeURIComponent(runId)}/sources`);
   if (!resp.ok) throw new Error(await resp.text());
   return (await resp.json()) as SourcesResponse;
+}
+
+export async function apiSourceScores(runId: string): Promise<SourceScoresResponse> {
+  const resp = await fetch(`/api/runs/${encodeURIComponent(runId)}/sources/scores`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as SourceScoresResponse;
 }
 
 export async function apiGetConfig(name: "author_guide" | "source_allowlist" | "docx_template"): Promise<string> {
