@@ -51,6 +51,7 @@ from procedurewriter.pipeline.versioning import (
     load_source_ids,
 )
 from procedurewriter.run_bundle import build_run_bundle_zip, read_run_manifest
+from pydantic import BaseModel
 from procedurewriter.schemas import (
     ApiKeyInfo,
     ApiKeySetRequest,
@@ -68,6 +69,19 @@ from procedurewriter.schemas import (
     WriteResponse,
 )
 from procedurewriter.settings import Settings
+from procedurewriter.templates import (
+    list_templates,
+    get_template,
+    get_default_template,
+    create_template,
+    update_template,
+    delete_template,
+    set_default_template,
+    get_template_for_run,
+    TemplateConfig,
+    SectionConfig,
+    Template,
+)
 
 settings = Settings()
 app = FastAPI(title="Akut procedure writer", version="0.1.0")
@@ -149,7 +163,14 @@ def api_status() -> AppStatus:
 async def api_write(req: WriteRequest) -> WriteResponse:
     run_id = uuid.uuid4().hex
     run_dir = settings.runs_dir / run_id
-    create_run(settings.db_path, run_id=run_id, procedure=req.procedure, context=req.context, run_dir=run_dir)
+    create_run(
+        settings.db_path,
+        run_id=run_id,
+        procedure=req.procedure,
+        context=req.context,
+        run_dir=run_dir,
+        template_id=req.template_id,
+    )
     asyncio.create_task(_run_background(run_id))
     return WriteResponse(run_id=run_id)
 
@@ -810,6 +831,151 @@ def api_library_search(q: str, limit: int = 20) -> dict[str, Any]:
             for r in results
         ],
     }
+
+
+# --- Template API Endpoints ---
+
+
+@app.get("/api/templates")
+def api_list_templates() -> dict[str, Any]:
+    """List all available templates."""
+    templates = list_templates(settings.db_path)
+    return {
+        "templates": [
+            {
+                "template_id": t.template_id,
+                "name": t.name,
+                "description": t.description,
+                "is_default": t.is_default,
+                "is_system": t.is_system,
+                "section_count": len(t.config.sections),
+            }
+            for t in templates
+        ]
+    }
+
+
+@app.get("/api/templates/{template_id}")
+def api_get_template(template_id: str) -> dict[str, Any]:
+    """Get a specific template with full config."""
+    template = get_template(settings.db_path, template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    return {
+        "template_id": template.template_id,
+        "name": template.name,
+        "description": template.description,
+        "is_default": template.is_default,
+        "is_system": template.is_system,
+        "created_at_utc": template.created_at_utc,
+        "updated_at_utc": template.updated_at_utc,
+        "config": {
+            "title_prefix": template.config.title_prefix,
+            "sections": [
+                {"heading": s.heading, "format": s.format, "bundle": s.bundle}
+                for s in template.config.sections
+            ],
+        },
+    }
+
+
+class CreateTemplateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    config: dict[str, Any]
+
+
+@app.post("/api/templates")
+def api_create_template(request: CreateTemplateRequest) -> dict[str, Any]:
+    """Create a new template."""
+    config = TemplateConfig(
+        title_prefix=request.config.get("title_prefix", "Procedure"),
+        sections=[
+            SectionConfig(
+                heading=s["heading"],
+                format=s.get("format", "bullets"),
+                bundle=s.get("bundle", "action"),
+            )
+            for s in request.config.get("sections", [])
+        ],
+    )
+
+    if not config.sections:
+        raise HTTPException(status_code=400, detail="Template must have at least one section")
+
+    template_id = create_template(
+        settings.db_path,
+        name=request.name,
+        description=request.description,
+        config=config,
+    )
+
+    return {"template_id": template_id}
+
+
+class UpdateTemplateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    config: dict[str, Any] | None = None
+
+
+@app.put("/api/templates/{template_id}")
+def api_update_template(template_id: str, request: UpdateTemplateRequest) -> dict[str, Any]:
+    """Update a template."""
+    config = None
+    if request.config:
+        config = TemplateConfig(
+            title_prefix=request.config.get("title_prefix", "Procedure"),
+            sections=[
+                SectionConfig(
+                    heading=s["heading"],
+                    format=s.get("format", "bullets"),
+                    bundle=s.get("bundle", "action"),
+                )
+                for s in request.config.get("sections", [])
+            ],
+        )
+
+    try:
+        success = update_template(
+            settings.db_path,
+            template_id,
+            name=request.name,
+            description=request.description,
+            config=config,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    return {"status": "updated"}
+
+
+@app.delete("/api/templates/{template_id}")
+def api_delete_template(template_id: str) -> dict[str, Any]:
+    """Delete a template."""
+    try:
+        success = delete_template(settings.db_path, template_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    return {"status": "deleted"}
+
+
+@app.post("/api/templates/{template_id}/set-default")
+def api_set_default_template(template_id: str) -> dict[str, Any]:
+    """Set a template as the default."""
+    success = set_default_template(settings.db_path, template_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    return {"status": "default_set"}
 
 
 # --- Versioning API Endpoints ---

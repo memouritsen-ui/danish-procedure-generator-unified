@@ -1,4 +1,4 @@
-export type WriteRequest = { procedure: string; context?: string };
+export type WriteRequest = { procedure: string; context?: string; template_id?: string };
 export type WriteResponse = { run_id: string };
 
 export type RunSummary = {
@@ -399,4 +399,94 @@ export async function apiDiff(runId: string, otherRunId: string): Promise<Versio
   const resp = await fetch(`/api/runs/${encodeURIComponent(runId)}/diff/${encodeURIComponent(otherRunId)}`);
   if (!resp.ok) throw new Error(await resp.text());
   return (await resp.json()) as VersionDiff;
+}
+
+// --- Template API ---
+
+export type SectionConfig = {
+  heading: string;
+  format: "bullets" | "numbered" | "paragraphs";
+  bundle: "action" | "explanation" | "safety";
+};
+
+export type TemplateConfig = {
+  title_prefix: string;
+  sections: SectionConfig[];
+};
+
+export type TemplateSummary = {
+  template_id: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+  is_system: boolean;
+  section_count: number;
+};
+
+export type TemplateDetail = {
+  template_id: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+  is_system: boolean;
+  created_at_utc: string;
+  updated_at_utc: string;
+  config: TemplateConfig;
+};
+
+export type TemplatesResponse = {
+  templates: TemplateSummary[];
+};
+
+export async function apiListTemplates(): Promise<TemplatesResponse> {
+  const resp = await fetch("/api/templates");
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as TemplatesResponse;
+}
+
+export async function apiGetTemplate(templateId: string): Promise<TemplateDetail> {
+  const resp = await fetch(`/api/templates/${encodeURIComponent(templateId)}`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as TemplateDetail;
+}
+
+export async function apiCreateTemplate(
+  name: string,
+  config: TemplateConfig,
+  description?: string
+): Promise<string> {
+  const resp = await fetch("/api/templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, description, config }),
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+  const json = (await resp.json()) as { template_id: string };
+  return json.template_id;
+}
+
+export async function apiUpdateTemplate(
+  templateId: string,
+  updates: { name?: string; description?: string; config?: TemplateConfig }
+): Promise<void> {
+  const resp = await fetch(`/api/templates/${encodeURIComponent(templateId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+}
+
+export async function apiDeleteTemplate(templateId: string): Promise<void> {
+  const resp = await fetch(`/api/templates/${encodeURIComponent(templateId)}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+}
+
+export async function apiSetDefaultTemplate(templateId: string): Promise<void> {
+  const resp = await fetch(`/api/templates/${encodeURIComponent(templateId)}/set-default`, {
+    method: "POST",
+  });
+  if (!resp.ok) throw new Error(await resp.text());
 }

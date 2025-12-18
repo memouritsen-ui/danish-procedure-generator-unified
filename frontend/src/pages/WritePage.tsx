@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { apiRun, apiSources, apiWrite, RunDetail, SourceRecord } from "../api";
+import { apiRun, apiSources, apiWrite, apiListTemplates, RunDetail, SourceRecord, TemplateSummary } from "../api";
 
 type Status = "idle" | "running" | "done" | "failed";
 
@@ -12,6 +12,22 @@ export default function WritePage() {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+
+  // Load templates on mount
+  useEffect(() => {
+    apiListTemplates()
+      .then((data) => {
+        setTemplates(data.templates);
+        // Select default template
+        const defaultTemplate = data.templates.find((t) => t.is_default);
+        if (defaultTemplate) {
+          setSelectedTemplate(defaultTemplate.template_id);
+        }
+      })
+      .catch((e) => console.error("Failed to load templates:", e));
+  }, []);
 
   const canGenerate = useMemo(() => procedure.trim().length > 0 && status !== "running", [procedure, status]);
 
@@ -21,7 +37,11 @@ export default function WritePage() {
     setSources([]);
     setStatus("running");
     try {
-      const id = await apiWrite({ procedure: procedure.trim(), context: context.trim() || undefined });
+      const id = await apiWrite({
+        procedure: procedure.trim(),
+        context: context.trim() || undefined,
+        template_id: selectedTemplate ?? undefined,
+      });
       setRunId(id);
     } catch (e) {
       setStatus("failed");
@@ -87,6 +107,25 @@ export default function WritePage() {
             rows={6}
             placeholder="Fx: voksne, præhospitalt, særlige constraints…"
           />
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <label className="muted">Skabelon</label>
+          <select
+            value={selectedTemplate ?? ""}
+            onChange={(e) => setSelectedTemplate(e.target.value || null)}
+            style={{ width: "100%" }}
+          >
+            {templates.map((t) => (
+              <option key={t.template_id} value={t.template_id}>
+                {t.name} {t.is_default ? "(standard)" : ""} - {t.section_count} sektioner
+              </option>
+            ))}
+          </select>
+          {selectedTemplate && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              {templates.find((t) => t.template_id === selectedTemplate)?.description ?? ""}
+            </div>
+          )}
         </div>
         <div className="row" style={{ marginTop: 12, alignItems: "center" }}>
           <button disabled={!canGenerate} onClick={onGenerate}>

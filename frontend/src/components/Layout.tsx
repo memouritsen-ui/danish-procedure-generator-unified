@@ -17,6 +17,9 @@ export default function Layout({ children }: PropsWithChildren) {
         <NavLink to="/versions" className={({ isActive }) => (isActive ? "active" : "")}>
           Versioner
         </NavLink>
+        <NavLink to="/templates" className={({ isActive }) => (isActive ? "active" : "")}>
+          Skabeloner
+        </NavLink>
         <NavLink to="/ingest" className={({ isActive }) => (isActive ? "active" : "")}>
           Ingest
         </NavLink>

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class WriteRequest(BaseModel):
     procedure: str = Field(min_length=1)
     context: str | None = None
+    template_id: str | None = None
 
 
 class WriteResponse(BaseModel):

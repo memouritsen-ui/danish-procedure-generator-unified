@@ -20,6 +20,103 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+DEFAULT_TEMPLATES = [
+    {
+        "template_id": "emergency_standard",
+        "name": "Emergency Standard",
+        "description": "Standard akutmedicinsk procedure format med alle sektioner",
+        "is_default": True,
+        "is_system": True,
+        "config": {
+            "title_prefix": "Procedure",
+            "sections": [
+                {"heading": "Indikationer", "format": "bullets", "bundle": "action"},
+                {"heading": "Kontraindikationer", "format": "bullets", "bundle": "action"},
+                {"heading": "Forberedelse", "format": "bullets", "bundle": "action"},
+                {"heading": "Udstyr", "format": "bullets", "bundle": "action"},
+                {"heading": "Fremgangsmåde (trin-for-trin)", "format": "numbered", "bundle": "action"},
+                {"heading": "Forklaringslag (baggrund og rationale)", "format": "paragraphs", "bundle": "explanation"},
+                {"heading": "Sikkerhedsboks", "format": "bullets", "bundle": "safety"},
+                {"heading": "Komplikationer og fejlfinding", "format": "bullets", "bundle": "action"},
+                {"heading": "Disposition og opfølgning", "format": "bullets", "bundle": "action"},
+                {"heading": "Evidens og begrænsninger", "format": "bullets", "bundle": "explanation"},
+            ],
+        },
+    },
+    {
+        "template_id": "surgical_procedure",
+        "name": "Surgical Procedure",
+        "description": "Kirurgisk procedure med præ-, intra- og postoperative faser",
+        "is_default": False,
+        "is_system": True,
+        "config": {
+            "title_prefix": "Kirurgisk Procedure",
+            "sections": [
+                {"heading": "Indikationer", "format": "bullets", "bundle": "action"},
+                {"heading": "Kontraindikationer", "format": "bullets", "bundle": "action"},
+                {"heading": "Præoperativ forberedelse", "format": "bullets", "bundle": "action"},
+                {"heading": "Anæstesi", "format": "bullets", "bundle": "action"},
+                {"heading": "Lejring og afvaskning", "format": "bullets", "bundle": "action"},
+                {"heading": "Kirurgisk teknik", "format": "numbered", "bundle": "action"},
+                {"heading": "Intraoperative observationer", "format": "bullets", "bundle": "safety"},
+                {"heading": "Lukning og forbinding", "format": "numbered", "bundle": "action"},
+                {"heading": "Postoperativ pleje", "format": "bullets", "bundle": "action"},
+                {"heading": "Komplikationer", "format": "bullets", "bundle": "safety"},
+            ],
+        },
+    },
+    {
+        "template_id": "pediatric_emergency",
+        "name": "Pediatric Emergency",
+        "description": "Pædiatrisk akut procedure med vægtbaseret dosering",
+        "is_default": False,
+        "is_system": True,
+        "config": {
+            "title_prefix": "Pædiatrisk Procedure",
+            "sections": [
+                {"heading": "Aldersgrupper og definitioner", "format": "bullets", "bundle": "explanation"},
+                {"heading": "Indikationer", "format": "bullets", "bundle": "action"},
+                {"heading": "Kontraindikationer", "format": "bullets", "bundle": "action"},
+                {"heading": "Dosering per vægt", "format": "bullets", "bundle": "action"},
+                {"heading": "Forberedelse", "format": "bullets", "bundle": "action"},
+                {"heading": "Fremgangsmåde", "format": "numbered", "bundle": "action"},
+                {"heading": "Observationer og monitorering", "format": "bullets", "bundle": "action"},
+                {"heading": "Sikkerhed og advarsler", "format": "bullets", "bundle": "safety"},
+                {"heading": "Forælder-information", "format": "paragraphs", "bundle": "explanation"},
+            ],
+        },
+    },
+]
+
+
+def _seed_default_templates(conn: sqlite3.Connection) -> None:
+    """Seed default templates if templates table is empty."""
+    cursor = conn.execute("SELECT COUNT(*) FROM templates")
+    count = cursor.fetchone()[0]
+    if count > 0:
+        return  # Already seeded
+
+    now = utc_now_iso()
+    for template in DEFAULT_TEMPLATES:
+        conn.execute(
+            """
+            INSERT INTO templates
+            (template_id, name, description, created_at_utc, updated_at_utc, is_default, is_system, config_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                template["template_id"],
+                template["name"],
+                template["description"],
+                now,
+                now,
+                template["is_default"],
+                template["is_system"],
+                json.dumps(template["config"]),
+            ),
+        )
+
+
 def init_db(db_path: Path) -> None:
     with _connect(db_path) as conn:
         conn.execute(
@@ -96,6 +193,35 @@ def init_db(db_path: Path) -> None:
             """
         )
 
+        # Templates table for procedure customization
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS templates (
+              template_id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              description TEXT,
+              created_at_utc TEXT NOT NULL,
+              updated_at_utc TEXT NOT NULL,
+              is_default BOOLEAN DEFAULT FALSE,
+              is_system BOOLEAN DEFAULT FALSE,
+              created_by TEXT,
+              config_json TEXT NOT NULL
+            )
+            """
+        )
+
+        # Add template_id to runs if not exists
+        try:
+            conn.execute("ALTER TABLE runs ADD COLUMN template_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        # Create template indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_templates_default ON templates(is_default)")
+
+        # Seed default templates if table is empty
+        _seed_default_templates(conn)
+
 
 def set_secret(db_path: Path, *, name: str, value: str) -> None:
     now = utc_now_iso()
@@ -151,6 +277,8 @@ class RunRow:
     version_number: int = 1
     version_note: str | None = None
     procedure_normalized: str | None = None
+    # Template field
+    template_id: str | None = None
 
 
 def normalize_procedure_name(name: str) -> str:
@@ -176,6 +304,7 @@ def create_run(
     run_dir: Path,
     parent_run_id: str | None = None,
     version_note: str | None = None,
+    template_id: str | None = None,
 ) -> None:
     now = utc_now_iso()
     procedure_normalized = normalize_procedure_name(procedure)
@@ -210,14 +339,14 @@ def create_run(
             INSERT INTO runs(
                 run_id, created_at_utc, updated_at_utc, procedure, context,
                 status, error, run_dir, parent_run_id, version_number,
-                version_note, procedure_normalized
+                version_note, procedure_normalized, template_id
             )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id, now, now, procedure, context, "QUEUED", None,
                 str(run_dir), parent_run_id, version_number, version_note,
-                procedure_normalized,
+                procedure_normalized, template_id,
             ),
         )
 
@@ -292,6 +421,7 @@ def _row_to_run(row: sqlite3.Row) -> RunRow:
         version_number=row["version_number"] if "version_number" in keys and row["version_number"] else 1,
         version_note=row["version_note"] if "version_note" in keys else None,
         procedure_normalized=row["procedure_normalized"] if "procedure_normalized" in keys else None,
+        template_id=row["template_id"] if "template_id" in keys else None,
     )
 
 
