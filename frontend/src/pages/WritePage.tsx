@@ -118,7 +118,7 @@ export default function WritePage() {
         )}
         {runId && status === "done" && (
           <div style={{ marginTop: 12 }} className="row">
-            <a href={`/api/runs/${encodeURIComponent(runId)}/docx`}>
+            <a href={`/api/runs/${encodeURIComponent(runId)}/docx`} download>
               <button>Download DOCX</button>
             </a>
           </div>

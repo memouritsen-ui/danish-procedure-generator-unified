@@ -69,7 +69,7 @@ echo "Starting backend (FastAPI) on :$BACKEND_PORT and frontend (Vite) on :$FRON
 
 (
   cd "$ROOT_DIR/backend"
-  exec "$PYTHON" -m uvicorn akutwriter.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT"
+  exec "$PYTHON" -m uvicorn procedurewriter.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT"
 ) &
 BACKEND_PID=$!
 

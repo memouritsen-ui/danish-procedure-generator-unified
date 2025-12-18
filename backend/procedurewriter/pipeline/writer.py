@@ -324,11 +324,14 @@ def _write_llm_section_body(
         f"- Stil: {bundle_hint}\n"
         "- Du må kun citere kilder ved at bruge tags præcis i formatet [S:<source_id>] hvor <source_id> er et af de "
         "tilladte ids.\n"
-        "- Hver linje skal være én kort sætning og indeholde mindst én citations-tag.\n"
+        "- Skriv naturligt flydende tekst. Saml relaterede punkter i samme sætning eller bullet. "
+        "UNDGÅ at have én sætning per bullet - det bliver for fragmenteret.\n"
+        "- Hver sætning eller bullet skal indeholde mindst én citations-tag.\n"
         "- Du må kun bruge information, der er understøttet af de vedlagte SNIPPETS. Brug ikke generel viden.\n"
         "- Hvis SNIPPETS ikke dækker noget centralt for sektionen, skal du skrive det eksplicit (fx 'Ikke dækket i de "
         "indsamlede kilder; følg lokal retningslinje.') og stadig citere med et tilladt source_id.\n"
         "- Ingen overskrifter, ingen preface, ingen kilde-URLs i brødteksten.\n"
+        "- Bevar medicinske forkortelser som n. (nervus), m. (musculus), v. (vena), a. (arteria) osv. intakte.\n"
     )
     user = (
         f"PROCEDURE: {procedure}\n"
@@ -389,12 +392,10 @@ def _normalize_section_lines(text: str, *, fmt: str, fallback_citation: str) -> 
         if not content:
             content = "Ikke dækket i de indsamlede kilder; følg lokal retningslinje."
 
-        for sent in split_sentences(content) or [content]:
-            sent = sent.strip()
-            if not sent:
-                continue
-            tags = " ".join(f"[S:{cid}]" for cid in citation_ids)
-            atomic.append(f"{sent} {tags}".strip())
+        # Keep each LLM line as one unit - don't split into individual sentences.
+        # This preserves the natural flow the LLM intended.
+        tags = " ".join(f"[S:{cid}]" for cid in citation_ids)
+        atomic.append(f"{content} {tags}".strip())
 
     if not atomic:
         atomic = [f"Ikke dækket i de indsamlede kilder; følg lokal retningslinje. [S:{fallback_citation}]"]

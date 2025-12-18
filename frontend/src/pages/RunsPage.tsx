@@ -64,7 +64,7 @@ export default function RunsPage() {
                       Åbn
                     </Link>
                     {" · "}
-                    <a href={`/api/runs/${encodeURIComponent(r.run_id)}/docx`} className="muted">
+                    <a href={`/api/runs/${encodeURIComponent(r.run_id)}/docx`} className="muted" download>
                       DOCX
                     </a>
                     {" · "}

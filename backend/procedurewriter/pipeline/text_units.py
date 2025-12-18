@@ -17,7 +17,14 @@ _numbered_re = re.compile(r"^(?P<num>\d+)[.)]\s+(?P<body>.+)$")
 _numbered_only_re = re.compile(r"^\d+[.)]\s*$")
 
 _abbrev_multi_dot_re = re.compile(r"(?i)^[a-zæøå]{1,4}\.(?:[a-zæøå]{1,4}\.)+$")
+# Pattern to detect bibliographic reference lines (URLs, DOIs, PMIDs, etc.)
+_bibliography_re = re.compile(
+    r"^\s*\(?\d{4}\)?\s*"  # Year like (2025) or 2025
+    r".*(?:https?://|doi:|DOI:|pmid:|PMID:)",  # Followed by URL/DOI/PMID
+    re.IGNORECASE
+)
 _abbrev_single_dot_endings = {
+    # General Danish abbreviations
     "ca.",
     "evt.",
     "obs.",
@@ -42,6 +49,22 @@ _abbrev_single_dot_endings = {
     "resp.",
     "ref.",
     "nr.",
+    # Medical abbreviations (anatomical)
+    "n.",    # nervus
+    "m.",    # musculus
+    "v.",    # vena
+    "a.",    # arteria
+    "r.",    # ramus
+    "lig.",  # ligamentum
+    "proc.", # processus
+    # Medical abbreviations (clinical)
+    "p.o.",  # per os
+    "i.v.",  # intravenøst
+    "i.m.",  # intramuskulært
+    "s.c.",  # subkutant
+    "mg.",   # milligram (sometimes written with dot)
+    "ml.",   # milliliter
+    "kg.",   # kilogram
 }
 
 
@@ -63,6 +86,9 @@ def iter_cited_sentences(markdown_text: str) -> Iterator[CitedSentence]:
             else:
                 merged.append(part)
 
+        # Extract all citations from the entire block - these apply to the whole unit
+        block_citations = _citation_re.findall(block)
+
         for sent in merged:
             if not _looks_like_sentence(sent):
                 continue
@@ -78,7 +104,9 @@ def iter_cited_sentences(markdown_text: str) -> Iterator[CitedSentence]:
                     continue
                 sent = remainder
 
-            citations = _citation_re.findall(sent)
+            # Use sentence-level citations if available, otherwise fall back to block-level
+            sentence_citations = _citation_re.findall(sent)
+            citations = sentence_citations if sentence_citations else block_citations
             out.append(CitedSentence(line_no=line_no, text=sent.strip(), citations=citations))
 
     yield from out
@@ -153,7 +181,16 @@ def _iter_blocks(markdown_text: str) -> list[tuple[int, str]]:
 
 def _looks_like_sentence(text: str) -> bool:
     # Require at least one letter/number to avoid checking pure citation lines.
-    return any(ch.isalnum() for ch in text)
+    if not any(ch.isalnum() for ch in text):
+        return False
+    # Skip bibliographic reference lines (year + URL/DOI/PMID)
+    if _bibliography_re.match(text):
+        return False
+    # Skip lines that are purely URLs or DOIs
+    stripped = text.strip()
+    if stripped.startswith(("http://", "https://", "doi:", "DOI:")):
+        return False
+    return True
 
 
 def _is_only_citations(text: str) -> bool:

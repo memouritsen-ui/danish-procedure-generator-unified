@@ -21,6 +21,7 @@ import {
   apiSetOpenAiKey,
   apiStatus,
 } from "../api";
+import DocxTemplateEditor from "../components/DocxTemplateEditor";
 
 export default function SettingsPage() {
   const [authorGuide, setAuthorGuide] = useState("");
@@ -28,6 +29,7 @@ export default function SettingsPage() {
   const [docxTemplate, setDocxTemplate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingDocx, setSavingDocx] = useState(false);
   const [statusInfo, setStatusInfo] = useState<AppStatus | null>(null);
   const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
   const [openAiInfo, setOpenAiInfo] = useState<ApiKeyInfo | null>(null);
@@ -83,13 +85,23 @@ export default function SettingsPage() {
     try {
       await apiSetConfig("author_guide", authorGuide);
       await apiSetConfig("source_allowlist", allowlist);
-      if (docxTemplate) {
-        await apiSetConfig("docx_template", docxTemplate);
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onSaveDocxTemplate() {
+    if (!docxTemplate) return;
+    setError(null);
+    setSavingDocx(true);
+    try {
+      await apiSetConfig("docx_template", docxTemplate);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingDocx(false);
     }
   }
 
@@ -235,7 +247,7 @@ export default function SettingsPage() {
       <h2>Indstillinger</h2>
       <p className="muted">Redigér YAML direkte og gem via API.</p>
       {error && <p className="muted">{error}</p>}
-      <div className="split" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+      <div className="split" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
         <div>
           <h3>author_guide.yaml</h3>
           <textarea value={authorGuide} onChange={(e) => setAuthorGuide(e.target.value)} rows={18} />
@@ -244,15 +256,22 @@ export default function SettingsPage() {
           <h3>source_allowlist.yaml</h3>
           <textarea value={allowlist} onChange={(e) => setAllowlist(e.target.value)} rows={18} />
         </div>
-        <div>
-          <h3>docx_template.yaml</h3>
-          <textarea value={docxTemplate} onChange={(e) => setDocxTemplate(e.target.value)} rows={18} placeholder="DOCX output template configuration..." />
-        </div>
       </div>
       <div style={{ marginTop: 12 }}>
         <button disabled={saving} onClick={onSave}>
-          {saving ? "Gemmer…" : "Gem"}
+          {saving ? "Gemmer…" : "Gem YAML filer"}
         </button>
+      </div>
+
+      <div style={{ marginTop: 24 }} className="card">
+        <h3>DOCX Skabelon</h3>
+        <p className="muted">Konfigurér sektioner, styling og indholdsformater for DOCX-output.</p>
+        <DocxTemplateEditor
+          yamlText={docxTemplate}
+          onChange={setDocxTemplate}
+          onSave={onSaveDocxTemplate}
+          saving={savingDocx}
+        />
       </div>
 
       {statusInfo && (

@@ -278,6 +278,15 @@ def api_run(run_id: str) -> RunDetail:
     )
 
 
+def _sanitize_filename(name: str) -> str:
+    """Sanitize a string for use as a filename."""
+    import re
+    # Replace spaces and special chars with underscores, keep Danish chars
+    sanitized = re.sub(r'[^\w\sæøåÆØÅ-]', '', name)
+    sanitized = re.sub(r'\s+', '_', sanitized.strip())
+    return sanitized[:100] if sanitized else "Procedure"
+
+
 @app.get("/api/runs/{run_id}/docx")
 def api_docx(run_id: str) -> FileResponse:
     run = get_run(settings.db_path, run_id)
@@ -286,7 +295,9 @@ def api_docx(run_id: str) -> FileResponse:
     docx = Path(run.run_dir) / "Procedure.docx"
     if not docx.exists():
         raise HTTPException(status_code=404, detail="DOCX not available")
-    return FileResponse(path=str(docx), filename="Procedure.docx", media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    # Use procedure name for download filename
+    filename = f"{_sanitize_filename(run.procedure)}.docx"
+    return FileResponse(path=str(docx), filename=filename, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 @app.get("/api/runs/{run_id}/manifest")

@@ -81,7 +81,7 @@ export default function RunPage() {
               </div>
             )}
             <div style={{ marginTop: 12 }}>
-              <a href={`/api/runs/${encodeURIComponent(runId)}/docx`}>
+              <a href={`/api/runs/${encodeURIComponent(runId)}/docx`} download>
                 <button>Download DOCX</button>
               </a>
             </div>

@@ -470,6 +470,16 @@ def run_pipeline(
         if not settings.dummy_mode:
             enforce_evidence_policy(evidence, policy=evidence_policy)
 
+        # Calculate quality score based on evidence coverage
+        supported = int(evidence.get("supported_count") or 0)
+        unsupported = int(evidence.get("unsupported_count") or 0)
+        total_claims = supported + unsupported
+        if total_claims > 0:
+            # Score 1-10 based on support ratio, with minimum of 5 for having any claims
+            quality_score = max(5, min(10, 5 + int((supported / total_claims) * 5)))
+        else:
+            quality_score = 5  # Default score when no claims to validate
+
         docx_path = run_dir / "Procedure.docx"
         write_procedure_docx(
             markdown_text=md,
@@ -491,16 +501,6 @@ def run_pipeline(
                 "manifest_sha256": manifest_hash,
             },
         )
-
-        # Calculate quality score based on evidence coverage
-        supported = int(evidence.get("supported_count") or 0)
-        unsupported = int(evidence.get("unsupported_count") or 0)
-        total_claims = supported + unsupported
-        if total_claims > 0:
-            # Score 1-10 based on support ratio, with minimum of 5 for having any claims
-            quality_score = max(5, min(10, 5 + int((supported / total_claims) * 5)))
-        else:
-            quality_score = 5  # Default score when no claims to validate
 
         # Get cost summary from session tracker
         cost_summary = get_session_tracker().get_summary()
