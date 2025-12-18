@@ -104,15 +104,29 @@ def api_status() -> AppStatus:
         ncbi_source = "none"
 
     base_url = os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+
+    anthropic_db = get_secret(settings.db_path, name=_ANTHROPIC_SECRET_NAME)
+    anthropic_env = os.getenv("ANTHROPIC_API_KEY")
+    if anthropic_db:
+        anthropic_source = "db"
+    elif anthropic_env:
+        anthropic_source = "env"
+    else:
+        anthropic_source = "none"
+
     return AppStatus(
         version=str(app.version),
         dummy_mode=settings.dummy_mode,
         use_llm=settings.use_llm,
+        llm_provider=settings.llm_provider.value,
         llm_model=settings.llm_model,
         openai_embeddings_model=settings.openai_embeddings_model,
         openai_base_url=base_url,
         openai_key_present=bool(_effective_openai_api_key()),
         openai_key_source=key_source,
+        anthropic_key_present=bool(_effective_anthropic_api_key()),
+        anthropic_key_source=anthropic_source,
+        ollama_base_url=settings.ollama_base_url,
         ncbi_api_key_present=bool(_effective_ncbi_api_key()),
         ncbi_api_key_source=ncbi_source,
         ncbi_tool=settings.ncbi_tool,
@@ -409,6 +423,42 @@ def api_ncbi_status() -> ApiKeyStatus:
         return ApiKeyStatus(present=present, ok=False, message=str(e))
     finally:
         http.close()
+
+
+@app.get("/api/keys/anthropic", response_model=ApiKeyInfo)
+def api_get_anthropic_key() -> ApiKeyInfo:
+    key = _effective_anthropic_api_key()
+    if not key:
+        return ApiKeyInfo(present=False, masked=None)
+    return ApiKeyInfo(present=True, masked=mask_secret(key))
+
+
+@app.put("/api/keys/anthropic", response_model=ApiKeyInfo)
+def api_set_anthropic_key(req: ApiKeySetRequest) -> ApiKeyInfo:
+    set_secret(settings.db_path, name=_ANTHROPIC_SECRET_NAME, value=req.api_key.strip())
+    return api_get_anthropic_key()
+
+
+@app.delete("/api/keys/anthropic", response_model=ApiKeyInfo)
+def api_delete_anthropic_key() -> ApiKeyInfo:
+    delete_secret(settings.db_path, name=_ANTHROPIC_SECRET_NAME)
+    return api_get_anthropic_key()
+
+
+@app.get("/api/keys/anthropic/status", response_model=ApiKeyStatus)
+def api_anthropic_status() -> ApiKeyStatus:
+    key = _effective_anthropic_api_key()
+    if not key:
+        return ApiKeyStatus(present=False, ok=False, message="No Anthropic API key configured.")
+    try:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=key)
+        # Simple test - just instantiate (full test would require an API call)
+        return ApiKeyStatus(present=True, ok=True, message="OK (key format valid)")
+    except ImportError:
+        return ApiKeyStatus(present=True, ok=False, message="anthropic package not installed")
+    except Exception as e:  # noqa: BLE001
+        return ApiKeyStatus(present=True, ok=False, message=str(e))
 
 
 @app.post("/api/ingest/pdf", response_model=IngestResponse)

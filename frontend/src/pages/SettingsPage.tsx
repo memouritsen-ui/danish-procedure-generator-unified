@@ -3,13 +3,17 @@ import {
   ApiKeyInfo,
   ApiKeyStatus,
   AppStatus,
+  apiAnthropicStatus,
+  apiDeleteAnthropicKey,
   apiDeleteNcbiKey,
   apiDeleteOpenAiKey,
+  apiGetAnthropicKey,
   apiGetConfig,
   apiGetNcbiKey,
   apiGetOpenAiKey,
   apiNcbiStatus,
   apiOpenAiStatus,
+  apiSetAnthropicKey,
   apiSetConfig,
   apiSetNcbiKey,
   apiSetOpenAiKey,
@@ -30,17 +34,22 @@ export default function SettingsPage() {
   const [ncbiKey, setNcbiKey] = useState("");
   const [ncbiStatus, setNcbiStatus] = useState<ApiKeyStatus | null>(null);
   const [ncbiBusy, setNcbiBusy] = useState(false);
+  const [anthropicInfo, setAnthropicInfo] = useState<ApiKeyInfo | null>(null);
+  const [anthropicKey, setAnthropicKey] = useState("");
+  const [anthropicStatus, setAnthropicStatus] = useState<ApiKeyStatus | null>(null);
+  const [anthropicBusy, setAnthropicBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [ag, al, keyInfo, st, ninfo] = await Promise.all([
+        const [ag, al, keyInfo, st, ninfo, ainfo] = await Promise.all([
           apiGetConfig("author_guide"),
           apiGetConfig("source_allowlist"),
           apiGetOpenAiKey(),
           apiStatus(),
           apiGetNcbiKey(),
+          apiGetAnthropicKey(),
         ]);
         if (!cancelled) {
           setAuthorGuide(ag);
@@ -48,6 +57,7 @@ export default function SettingsPage() {
           setOpenAiInfo(keyInfo);
           setStatusInfo(st);
           setNcbiInfo(ninfo);
+          setAnthropicInfo(ainfo);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -163,6 +173,52 @@ export default function SettingsPage() {
     }
   }
 
+  async function onSaveAnthropicKey() {
+    const key = anthropicKey.trim();
+    if (!key) return;
+    setError(null);
+    setAnthropicBusy(true);
+    try {
+      const info = await apiSetAnthropicKey(key);
+      setAnthropicInfo(info);
+      setAnthropicKey("");
+      setAnthropicStatus(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnthropicBusy(false);
+    }
+  }
+
+  async function onDeleteAnthropicKey() {
+    setError(null);
+    setAnthropicBusy(true);
+    try {
+      const info = await apiDeleteAnthropicKey();
+      setAnthropicInfo(info);
+      setAnthropicStatus(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnthropicBusy(false);
+    }
+  }
+
+  async function onTestAnthropicKey() {
+    setError(null);
+    setAnthropicBusy(true);
+    try {
+      const status = await apiAnthropicStatus();
+      setAnthropicStatus(status);
+      setAnthropicInfo(await apiGetAnthropicKey());
+      setStatusInfo(await apiStatus());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnthropicBusy(false);
+    }
+  }
+
   return (
     <div className="card">
       <h2>Indstillinger</h2>
@@ -188,14 +244,20 @@ export default function SettingsPage() {
         <div style={{ marginTop: 18 }} className="card">
           <h3>Runtime</h3>
           <p className="muted">
-            Backend v<code>{statusInfo.version}</code> · LLM: <code>{statusInfo.llm_model}</code> · Embeddings:{" "}
-            <code>{statusInfo.openai_embeddings_model}</code>
+            Backend v<code>{statusInfo.version}</code> · LLM provider: <code>{statusInfo.llm_provider}</code> · Model:{" "}
+            <code>{statusInfo.llm_model}</code> · Embeddings: <code>{statusInfo.openai_embeddings_model}</code>
+          </p>
+          <p className="muted">
+            LLM aktiv: <code>{statusInfo.use_llm ? "ja" : "nej"}</code> · Dummy mode:{" "}
+            <code>{statusInfo.dummy_mode ? "ja" : "nej"}</code>
           </p>
           <p className="muted">
             OpenAI base URL: <code>{statusInfo.openai_base_url}</code> · Key source:{" "}
-            <code>{statusInfo.openai_key_source}</code> · LLM aktiv:{" "}
-            <code>{statusInfo.use_llm ? "ja" : "nej"}</code> · Dummy mode:{" "}
-            <code>{statusInfo.dummy_mode ? "ja" : "nej"}</code>
+            <code>{statusInfo.openai_key_source}</code>
+          </p>
+          <p className="muted">
+            Anthropic key source: <code>{statusInfo.anthropic_key_source}</code> · Ollama URL:{" "}
+            <code>{statusInfo.ollama_base_url}</code>
           </p>
           <p className="muted">
             NCBI tool: <code>{statusInfo.ncbi_tool}</code> · email: <code>{statusInfo.ncbi_email ?? "-"}</code> · API
@@ -273,6 +335,41 @@ export default function SettingsPage() {
         {ncbiStatus && (
           <p className="muted" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
             Forbindelse: {ncbiStatus.ok ? "OK" : "FEJL"} — {ncbiStatus.message}
+          </p>
+        )}
+
+        <hr style={{ borderColor: "#23314f", marginTop: 18, marginBottom: 18 }} />
+
+        <p className="muted">
+          Anthropic API key:{" "}
+          {anthropicInfo?.present ? <code>{anthropicInfo.masked ?? "configured"}</code> : <span>ikke sat</span>}
+        </p>
+        <div className="row" style={{ alignItems: "center" }}>
+          <div style={{ flex: 1 }}>
+            <label className="muted">Ny Anthropic API key</label>
+            <input
+              type="password"
+              value={anthropicKey}
+              onChange={(e) => setAnthropicKey(e.target.value)}
+              placeholder="sk-ant-…"
+            />
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 12, alignItems: "center" }}>
+          <button disabled={anthropicBusy || !anthropicKey.trim()} onClick={onSaveAnthropicKey}>
+            Gem key
+          </button>
+          <button disabled={anthropicBusy || !anthropicInfo?.present} onClick={onDeleteAnthropicKey}>
+            Fjern key
+          </button>
+          <button disabled={anthropicBusy} onClick={onTestAnthropicKey}>
+            Test forbindelse
+          </button>
+          {anthropicBusy && <span className="muted">Arbejder…</span>}
+        </div>
+        {anthropicStatus && (
+          <p className="muted" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+            Forbindelse: {anthropicStatus.ok ? "OK" : "FEJL"} — {anthropicStatus.message}
           </p>
         )}
       </div>

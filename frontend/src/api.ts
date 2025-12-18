@@ -43,11 +43,15 @@ export type AppStatus = {
   version: string;
   dummy_mode: boolean;
   use_llm: boolean;
+  llm_provider: string;
   llm_model: string;
   openai_embeddings_model: string;
   openai_base_url: string;
   openai_key_present: boolean;
   openai_key_source: string;
+  anthropic_key_present: boolean;
+  anthropic_key_source: string;
+  ollama_base_url: string;
   ncbi_api_key_present: boolean;
   ncbi_api_key_source: string;
   ncbi_tool: string;
@@ -176,6 +180,34 @@ export async function apiDeleteNcbiKey(): Promise<ApiKeyInfo> {
 
 export async function apiNcbiStatus(): Promise<ApiKeyStatus> {
   const resp = await fetch("/api/keys/ncbi/status");
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ApiKeyStatus;
+}
+
+export async function apiGetAnthropicKey(): Promise<ApiKeyInfo> {
+  const resp = await fetch("/api/keys/anthropic");
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ApiKeyInfo;
+}
+
+export async function apiSetAnthropicKey(api_key: string): Promise<ApiKeyInfo> {
+  const resp = await fetch("/api/keys/anthropic", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key }),
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ApiKeyInfo;
+}
+
+export async function apiDeleteAnthropicKey(): Promise<ApiKeyInfo> {
+  const resp = await fetch("/api/keys/anthropic", { method: "DELETE" });
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()) as ApiKeyInfo;
+}
+
+export async function apiAnthropicStatus(): Promise<ApiKeyStatus> {
+  const resp = await fetch("/api/keys/anthropic/status");
   if (!resp.ok) throw new Error(await resp.text());
   return (await resp.json()) as ApiKeyStatus;
 }

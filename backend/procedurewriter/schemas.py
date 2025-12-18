@@ -89,12 +89,21 @@ class AppStatus(BaseModel):
     version: str
     dummy_mode: bool
     use_llm: bool
+    llm_provider: str
     llm_model: str
     openai_embeddings_model: str
     openai_base_url: str
     openai_key_present: bool
     openai_key_source: str
+    anthropic_key_present: bool
+    anthropic_key_source: str
+    ollama_base_url: str
     ncbi_api_key_present: bool
     ncbi_api_key_source: str
     ncbi_tool: str
     ncbi_email: str | None = None
+
+
+class LLMProviderConfig(BaseModel):
+    provider: str
+    model: str | None = None
