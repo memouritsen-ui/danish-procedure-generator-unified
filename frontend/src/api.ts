@@ -598,13 +598,17 @@ export type ValidationResult = {
   protocol_name: string;
   name_similarity: number;
   content_similarity: number;
+  compatibility_score: number | null;  // 0-100 from LLM
+  summary: string | null;  // LLM assessment summary
   conflict_count: number;
   conflicts: Conflict[];
+  validation_cost_usd: number | null;
 };
 
 export type ValidationsResponse = {
   run_id: string;
   validations: ValidationResult[];
+  total_validation_cost_usd?: number;
 };
 
 export async function apiValidateRun(runId: string, protocolId?: string): Promise<ValidationsResponse> {

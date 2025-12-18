@@ -61,10 +61,14 @@ class ValidationResult:
 
     protocol_id: str
     protocol_name: str
-    similarity_score: float
+    similarity_score: float  # Legacy field, kept for compatibility
     conflicts: list[ConflictItem]
     sections_compared: int
     sections_matched: int
+    # New LLM-based fields
+    compatibility_score: int | None = None  # 0-100 from LLM
+    summary: str | None = None  # LLM assessment summary
+    validation_cost_usd: float | None = None  # Cost of LLM call
 
 
 def normalize_protocol_name(name: str) -> str:
@@ -709,3 +713,169 @@ def delete_validation_result(db_path: Path, validation_id: str) -> bool:
             (validation_id,),
         )
         return result.rowcount > 0
+
+
+# --- LLM-Based Validation ---
+
+_LLM_VALIDATION_PROMPT = """You are a medical protocol validator. Compare a generated procedure against an approved hospital protocol and identify clinically significant conflicts.
+
+APPROVED PROTOCOL:
+{protocol_text}
+
+GENERATED PROCEDURE:
+{procedure_text}
+
+Analyze for conflicts in:
+1. DOSING - Different doses for the same medication/situation
+2. TIMING - Different intervals, durations, or sequences
+3. CONTRAINDICATIONS - Generated procedure allows what protocol forbids
+4. OMISSIONS - Critical steps in protocol missing from generated
+5. ADDITIONS - Generated adds interventions protocol doesn't support
+
+For each conflict found, assess severity:
+- critical: Could cause patient harm (wrong dose, missed contraindication)
+- warning: Deviation that should be reviewed (different timing, alternative drug)
+- info: Minor difference, likely acceptable variation
+
+Return ONLY valid JSON (no markdown, no explanation outside JSON):
+{{
+  "has_conflicts": boolean,
+  "compatibility_score": integer 0-100,
+  "summary": "1-2 sentence overall assessment in Danish",
+  "conflicts": [
+    {{
+      "type": "dosing|timing|contraindication|omission|addition",
+      "severity": "critical|warning|info",
+      "section": "which section of procedure this relates to",
+      "explanation": "clinical reasoning in Danish for why this is a conflict",
+      "generated_text": "relevant excerpt from generated procedure",
+      "approved_text": "relevant excerpt from approved protocol"
+    }}
+  ]
+}}
+
+IMPORTANT:
+- Only flag genuine clinical conflicts
+- Equivalent medications, acceptable dose ranges, and stylistic differences are NOT conflicts
+- If procedures are compatible, return empty conflicts array and high compatibility_score
+- Write summary and explanations in Danish"""
+
+
+async def validate_run_against_protocol_llm(
+    run_markdown: str,
+    protocol_text: str,
+    protocol_id: str,
+    protocol_name: str,
+    anthropic_client: Any,  # anthropic.AsyncAnthropic
+) -> ValidationResult:
+    """
+    Validate generated procedure against protocol using LLM semantic comparison.
+
+    Returns ValidationResult with LLM-assessed conflicts and compatibility score.
+    """
+    import anthropic
+
+    # Truncate if too long (keep under 8000 chars each to stay within context)
+    max_chars = 8000
+    if len(protocol_text) > max_chars:
+        protocol_text = protocol_text[:max_chars] + "\n\n[... tekst afkortet ...]"
+    if len(run_markdown) > max_chars:
+        run_markdown = run_markdown[:max_chars] + "\n\n[... tekst afkortet ...]"
+
+    prompt = _LLM_VALIDATION_PROMPT.format(
+        protocol_text=protocol_text,
+        procedure_text=run_markdown,
+    )
+
+    # Call Claude Haiku
+    input_tokens = 0
+    output_tokens = 0
+
+    try:
+        response = await anthropic_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+
+        # Parse response
+        response_text = response.content[0].text.strip()
+
+        # Try to extract JSON if wrapped in markdown
+        if response_text.startswith("```"):
+            # Remove markdown code block
+            lines = response_text.split("\n")
+            json_lines = []
+            in_block = False
+            for line in lines:
+                if line.startswith("```"):
+                    in_block = not in_block
+                    continue
+                if in_block or not line.startswith("```"):
+                    json_lines.append(line)
+            response_text = "\n".join(json_lines)
+
+        result_data = json.loads(response_text)
+
+    except json.JSONDecodeError:
+        # LLM returned invalid JSON
+        return ValidationResult(
+            protocol_id=protocol_id,
+            protocol_name=protocol_name,
+            similarity_score=0.0,
+            conflicts=[],
+            sections_compared=0,
+            sections_matched=0,
+            compatibility_score=None,
+            summary="Validering fejlede - kunne ikke parse LLM-svar",
+            validation_cost_usd=_calculate_haiku_cost(input_tokens, output_tokens),
+        )
+    except anthropic.APIError as e:
+        return ValidationResult(
+            protocol_id=protocol_id,
+            protocol_name=protocol_name,
+            similarity_score=0.0,
+            conflicts=[],
+            sections_compared=0,
+            sections_matched=0,
+            compatibility_score=None,
+            summary=f"Validering fejlede - API fejl: {str(e)[:100]}",
+            validation_cost_usd=_calculate_haiku_cost(input_tokens, output_tokens),
+        )
+
+    # Convert LLM conflicts to ConflictItem
+    conflicts = []
+    for c in result_data.get("conflicts", []):
+        conflicts.append(
+            ConflictItem(
+                section=c.get("section", "ukendt"),
+                conflict_type=c.get("type", "unknown"),
+                generated_text=c.get("generated_text", ""),
+                approved_text=c.get("approved_text", ""),
+                severity=c.get("severity", "info"),
+                explanation=c.get("explanation", ""),
+            )
+        )
+
+    return ValidationResult(
+        protocol_id=protocol_id,
+        protocol_name=protocol_name,
+        similarity_score=result_data.get("compatibility_score", 0) / 100.0,
+        conflicts=conflicts,
+        sections_compared=1,  # LLM compares entire document
+        sections_matched=1 if result_data.get("compatibility_score", 0) >= 70 else 0,
+        compatibility_score=result_data.get("compatibility_score", 0),
+        summary=result_data.get("summary", ""),
+        validation_cost_usd=_calculate_haiku_cost(input_tokens, output_tokens),
+    )
+
+
+def _calculate_haiku_cost(input_tokens: int, output_tokens: int) -> float:
+    """Calculate cost for Claude Haiku API call."""
+    # Haiku pricing: $0.25/MTok input, $1.25/MTok output
+    input_cost = (input_tokens / 1_000_000) * 0.25
+    output_cost = (output_tokens / 1_000_000) * 1.25
+    return input_cost + output_cost

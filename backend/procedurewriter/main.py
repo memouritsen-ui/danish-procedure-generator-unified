@@ -90,6 +90,7 @@ from procedurewriter.protocols import (
     delete_protocol,
     find_similar_protocols,
     validate_run_against_protocol,
+    validate_run_against_protocol_llm,
     save_validation_result,
     get_validation_results,
 )
@@ -1129,13 +1130,18 @@ def api_delete_protocol(protocol_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/runs/{run_id}/validate")
-def api_validate_run(run_id: str, protocol_id: str | None = None) -> dict[str, Any]:
+async def api_validate_run(run_id: str, protocol_id: str | None = None, use_llm: bool = True) -> dict[str, Any]:
     """
-    Validate a run against protocols.
+    Validate a run against protocols using LLM semantic comparison.
 
     If protocol_id is provided, validates against that protocol.
     Otherwise, finds similar protocols automatically.
+
+    Args:
+        use_llm: If True (default), uses LLM for semantic comparison. If False, uses legacy pattern matching.
     """
+    import anthropic
+
     run = get_run(settings.db_path, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -1145,6 +1151,14 @@ def api_validate_run(run_id: str, protocol_id: str | None = None) -> dict[str, A
         raise HTTPException(status_code=400, detail="Run has no procedure output")
 
     run_markdown = run_md_path.read_text(encoding="utf-8")
+
+    # Check for API key if using LLM
+    anthropic_key = _effective_anthropic_api_key()
+    if use_llm and not anthropic_key:
+        raise HTTPException(
+            status_code=400,
+            detail="LLM validation requires Anthropic API key. Configure in Settings or set use_llm=false."
+        )
 
     # Find protocols to validate against
     if protocol_id:
@@ -1162,16 +1176,32 @@ def api_validate_run(run_id: str, protocol_id: str | None = None) -> dict[str, A
         ]
 
     results = []
+    total_validation_cost = 0.0
+
     for protocol, name_similarity in protocols_to_check:
         if not protocol or not protocol.normalized_text:
             continue
 
-        result = validate_run_against_protocol(
-            run_markdown=run_markdown,
-            protocol_text=protocol.normalized_text,
-            protocol_id=protocol.protocol_id,
-            protocol_name=protocol.name,
-        )
+        if use_llm and anthropic_key:
+            # Use LLM-based semantic validation
+            client = anthropic.AsyncAnthropic(api_key=anthropic_key)
+            result = await validate_run_against_protocol_llm(
+                run_markdown=run_markdown,
+                protocol_text=protocol.normalized_text,
+                protocol_id=protocol.protocol_id,
+                protocol_name=protocol.name,
+                anthropic_client=client,
+            )
+            if result.validation_cost_usd:
+                total_validation_cost += result.validation_cost_usd
+        else:
+            # Fallback to legacy pattern matching
+            result = validate_run_against_protocol(
+                run_markdown=run_markdown,
+                protocol_text=protocol.normalized_text,
+                protocol_id=protocol.protocol_id,
+                protocol_name=protocol.name,
+            )
 
         validation_id = save_validation_result(settings.db_path, run_id, result)
 
@@ -1181,6 +1211,8 @@ def api_validate_run(run_id: str, protocol_id: str | None = None) -> dict[str, A
             "protocol_name": protocol.name,
             "name_similarity": name_similarity,
             "content_similarity": result.similarity_score,
+            "compatibility_score": result.compatibility_score,
+            "summary": result.summary,
             "conflict_count": len(result.conflicts),
             "conflicts": [
                 {
@@ -1193,9 +1225,14 @@ def api_validate_run(run_id: str, protocol_id: str | None = None) -> dict[str, A
                 }
                 for c in result.conflicts
             ],
+            "validation_cost_usd": result.validation_cost_usd,
         })
 
-    return {"run_id": run_id, "validations": results}
+    return {
+        "run_id": run_id,
+        "validations": results,
+        "total_validation_cost_usd": total_validation_cost,
+    }
 
 
 @app.get("/api/runs/{run_id}/validations")

@@ -252,13 +252,19 @@ export default function RunPage() {
                       fontSize: "0.8rem",
                       padding: "0.2rem 0.5rem",
                       borderRadius: "9999px",
-                      background: v.content_similarity >= 0.7 ? "#166534" : v.content_similarity >= 0.4 ? "#854d0e" : "#7f1d1d",
+                      background: (v.compatibility_score ?? 0) >= 70 ? "#166534" : (v.compatibility_score ?? 0) >= 40 ? "#854d0e" : "#7f1d1d",
                       color: "#fff",
                     }}
                   >
-                    {(v.content_similarity * 100).toFixed(0)}% match
+                    {v.compatibility_score ?? 0}% kompatibel
                   </span>
                 </div>
+
+                {v.summary && (
+                  <p style={{ margin: "0 0 0.5rem 0", fontStyle: "italic", color: "#94a3b8" }}>
+                    {v.summary}
+                  </p>
+                )}
 
                 {v.conflict_count > 0 ? (
                   <div>
