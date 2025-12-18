@@ -64,30 +64,71 @@ Generates demo procedures without external API keys.
 
 ## Features
 
-### Current (v1.0)
+### Current (v2.0)
 - Single procedure → DOCX with citations
 - Real PubMed integration (NCBI API)
 - PDF/DOCX/URL source ingestion
 - Source audit trail (SHA256 hashes)
 - Evidence reports (BM25 + embeddings)
 - Citation validation (per-sentence)
+- **LLM Provider Abstraction:** OpenAI, Anthropic (Claude), Ollama (local)
+- **Cost Tracking:** Per-operation token usage and cost tracking
+- **Danish Evidence Hierarchy:** Priority ranking (DK Guidelines → Nordic → EU → International)
+- **Quality Loop:** Automatic scoring based on evidence coverage
+- **Multi-agent Workflow:** Researcher, Writer, Validator, Editor, Quality agents
 
-### Planned (v2.0)
-- Multi-agent workflow (5 agents)
-- Quality control loop (8/10 threshold)
-- LLM provider abstraction (OpenAI/Anthropic/Ollama)
-- Cost tracking per operation
-- Danish evidence hierarchy (SST→DASEM→ERC→ILCOR)
+### Evidence Hierarchy
+Sources are automatically classified and prioritized:
+
+| Level | Priority | Badge | Examples |
+|-------|----------|-------|----------|
+| Danish Guidelines | 1000 | DK Guideline | sst.dk, dsam.dk, sundhed.dk |
+| Nordic Guidelines | 900 | Nordic | socialstyrelsen.se, helsedirektoratet.no |
+| European Guidelines | 850 | EU Guideline | escardio.org, esmo.org |
+| International Guidelines | 800 | Intl Guideline | nice.org.uk, who.int |
+| Systematic Reviews | 700 | Syst Review | PubMed systematic reviews |
+| Practice Guidelines | 650 | Practice GL | PubMed practice guidelines |
+| RCTs | 500 | RCT | PubMed randomized trials |
+| Observational | 300 | Observational | Cohort/case-control studies |
+| Unclassified | 50 | Kilde | Other sources |
+
+Configure in `config/evidence_hierarchy.yaml`.
 
 ## API Endpoints
 
+### Core Endpoints
 | Endpoint | Description |
 |----------|-------------|
+| `GET /api/status` | Application status and configuration |
 | `GET /api/runs` | List all runs |
 | `POST /api/write` | Start new procedure generation |
-| `GET /api/runs/{id}` | Get run status |
+| `GET /api/runs/{id}` | Get run status and quality score |
 | `GET /api/runs/{id}/manifest` | Get run manifest (audit trail) |
 | `GET /api/runs/{id}/bundle` | Download ZIP bundle |
+| `GET /api/runs/{id}/sources` | Get source list with evidence badges |
+| `GET /api/runs/{id}/evidence` | Get evidence report |
+| `GET /api/costs` | Aggregated cost summary |
+
+### Configuration
+| Endpoint | Description |
+|----------|-------------|
+| `GET/PUT /api/config/author_guide` | Author guide YAML |
+| `GET/PUT /api/config/source_allowlist` | Source allowlist YAML |
+
+### API Keys
+| Endpoint | Description |
+|----------|-------------|
+| `GET/PUT/DELETE /api/keys/openai` | OpenAI API key |
+| `GET/PUT/DELETE /api/keys/anthropic` | Anthropic API key |
+| `GET/PUT/DELETE /api/keys/ncbi` | NCBI API key |
+| `GET /api/keys/{provider}/status` | Verify key validity |
+
+### Document Ingestion
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/ingest/pdf` | Upload PDF to library |
+| `POST /api/ingest/docx` | Upload DOCX to library |
+| `POST /api/ingest/url` | Ingest URL to library |
 
 ## Project Structure
 

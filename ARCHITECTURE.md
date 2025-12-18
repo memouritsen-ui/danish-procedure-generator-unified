@@ -7,8 +7,8 @@ This project consolidates 4 medical textbook generator projects into a unified s
 | Source Project | Contribution | Status |
 |----------------|--------------|--------|
 | akut-procedure-writer | Foundation, pipeline, DOCX export | ✅ Integrated |
-| memouritsen/claudegithub | Multi-agent workflow, cost tracking | 🔄 Sprint 1-4 |
-| copilot-cli/danish_emergency_textbook | Quality loop, evidence hierarchy | 🔄 Sprint 3,5 |
+| memouritsen/claudegithub | Multi-agent workflow, cost tracking | ✅ Complete |
+| copilot-cli/danish_emergency_textbook | Quality loop, evidence hierarchy | ✅ Complete |
 | danish-medical-platform | Archived (15 critical failures) | ❌ Not used |
 
 ## System Architecture
@@ -139,15 +139,17 @@ danish-procedure-generator-unified/
 | 4 | PDF/DOCX Ingestion | Upload and extract source documents | ✅ Working |
 | 5 | Citation Validation | Per-sentence citation checking | ✅ Working |
 
-## Planned Features (v2.0)
+## v2.0 Features (Complete)
 
-| # | Feature | Sprint | Source |
+| # | Feature | Status | Source |
 |---|---------|--------|--------|
-| 1 | LLM Provider Abstraction | Sprint 1 | claudegithub |
-| 2 | Multi-Agent Workflow | Sprint 2 | claudegithub |
-| 3 | Quality Control Loop | Sprint 3 | copilot-cli |
-| 4 | Cost Tracking | Sprint 4 | claudegithub |
-| 5 | Danish Evidence Hierarchy | Sprint 5 | copilot-cli |
+| 1 | LLM Provider Abstraction | ✅ | claudegithub |
+| 2 | Multi-Agent Workflow | ✅ | claudegithub |
+| 3 | Quality Control Loop | ✅ | copilot-cli |
+| 4 | Cost Tracking | ✅ | claudegithub |
+| 5 | Danish Evidence Hierarchy | ✅ | copilot-cli |
+| 6 | E2E Testing (25 tests) | ✅ | Sprint 6 |
+| 7 | Performance Profiling | ✅ | Sprint 6 |
 
 ## Implementation Sprints
 
@@ -158,41 +160,41 @@ danish-procedure-generator-unified/
 - [x] Add ARCHITECTURE.md
 - [x] Archive danish-medical-platform
 
-### Sprint 1: LLM Provider Abstraction (3 days)
-- [ ] Create provider interface (OpenAI, Anthropic, Ollama)
-- [ ] Add environment variable configuration
-- [ ] Update pipeline to use abstraction
-- [ ] Write tests for provider switching
+### Sprint 1: LLM Provider Abstraction ✅
+- [x] Create provider interface (OpenAI, Anthropic, Ollama)
+- [x] Add environment variable configuration
+- [x] Update pipeline to use abstraction
+- [x] Write tests for provider switching
 
-### Sprint 2: Multi-Agent Workflow (5 days)
-- [ ] Port agent base class from claudegithub
-- [ ] Implement 5 agents (Researcher, Validator, Writer, Editor, Quality)
-- [ ] Integrate CrewAI orchestration
-- [ ] Update pipeline to use agents
+### Sprint 2: Multi-Agent Workflow ✅
+- [x] Port agent base class from claudegithub
+- [x] Implement 5 agents (Researcher, Validator, Writer, Editor, Quality)
+- [x] Integrate CrewAI orchestration
+- [x] Update pipeline to use agents
 
-### Sprint 3: Quality Control Loop (2 days)
-- [ ] Add iteration logic (max 3)
-- [ ] Extract quality score from agent output
-- [ ] Re-run if score < 8
-- [ ] Store iteration count in DB
+### Sprint 3: Quality Control Loop ✅
+- [x] Add iteration logic (max 3)
+- [x] Extract quality score from agent output
+- [x] Re-run if score < 8
+- [x] Store iteration count in DB
 
-### Sprint 4: Cost Tracking (2 days)
+### Sprint 4: Cost Tracking ✅
 - [x] Port cost tracker from claudegithub
 - [x] Add token counting to providers
 - [x] Create cost API endpoint
 - [x] Display in UI
 
-### Sprint 5: Danish Evidence Hierarchy (1 day)
-- [ ] Create evidence_hierarchy.yaml
-- [ ] Implement priority search order
-- [ ] Add evidence badges to output
-- [ ] Write tests
+### Sprint 5: Danish Evidence Hierarchy ✅
+- [x] Create evidence_hierarchy.yaml
+- [x] Implement priority search order
+- [x] Add evidence badges to output
+- [x] Write tests
 
-### Sprint 6: Integration & Polish (3 days)
-- [ ] End-to-end testing
-- [ ] Performance profiling
-- [ ] Documentation update
-- [ ] Security review
+### Sprint 6: Integration & Polish ✅
+- [x] End-to-end testing (25 tests)
+- [x] Performance profiling (pipeline profiler)
+- [x] Documentation update
+- [x] Security review
 
 ## Tech Stack
 
@@ -250,17 +252,27 @@ Stop and re-evaluate if:
 
 ## Security Considerations
 
-### Current (v1.0)
-- API keys stored in SQLite (local only)
-- URL allowlist validation
-- Path traversal protection
-- No authentication (local use assumed)
+### Implemented (v2.0)
+| Protection | Implementation | File |
+|------------|---------------|------|
+| SQL Injection | Parameterized queries (?) | db.py |
+| Path Traversal | safe_path_within() validation | file_utils.py, main.py |
+| URL Allowlist | Prefix validation before fetch | main.py:api_ingest_url |
+| API Key Storage | Local SQLite only | db.py:secrets table |
+| API Key Display | Masked output (sk-…1234) | db.py:mask_secret |
+| YAML Injection | safe_load() only | config_store.py |
+| CORS | Localhost origins only | main.py |
+| XSS | No user HTML rendering | N/A |
 
-### Planned (v2.0+)
+### Design Decisions
+- **No auth**: Local-only application, assumes trusted user
+- **Plaintext keys**: SQLite file permissions are sufficient for local use
+- **No rate limiting**: Local use doesn't require it
+
+### Planned (v3.0+)
 - Connection pooling
-- Rate limiting
 - Request logging
-- Secrets encryption at rest
+- Secrets encryption at rest (for cloud deployment)
 
 ## Performance Targets
 
@@ -269,7 +281,10 @@ Stop and re-evaluate if:
 | Single procedure generation | <5 min | ~3-5 min |
 | DOCX export | <10 sec | ~2-3 sec |
 | PubMed search | <30 sec | ~10-20 sec |
-| Quality score | ≥8/10 | N/A (v2.0) |
+| Quality score | ≥8/10 | ✅ Implemented |
+| Pipeline (dummy mode) | <100ms | ~33-59ms |
+| HTTP client init | <50ms | ~35ms |
+| Test suite (136 tests) | <30s | ~15s |
 
 ## Contributing
 

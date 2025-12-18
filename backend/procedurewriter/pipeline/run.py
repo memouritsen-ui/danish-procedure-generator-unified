@@ -10,6 +10,7 @@ from procedurewriter.db import LibrarySourceRow
 from procedurewriter.llm import get_session_tracker, reset_session_tracker
 from procedurewriter.pipeline.citations import validate_citations
 from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
+from procedurewriter.pipeline.profiler import profile_section, start_profiling, stop_profiling
 from procedurewriter.pipeline.docx_writer import write_procedure_docx
 from procedurewriter.pipeline.evidence import build_evidence_report, enforce_evidence_policy
 from procedurewriter.pipeline.fetcher import CachedHttpClient

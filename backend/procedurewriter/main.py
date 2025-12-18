@@ -655,6 +655,11 @@ def serve_frontend(full_path: str) -> FileResponse:
     path = static_dir / full_path
     if path.is_dir():
         path = path / "index.html"
+    # Prevent path traversal attacks
+    try:
+        path = safe_path_within(path, root_dir=static_dir)
+    except UnsafePathError:
+        raise HTTPException(status_code=404, detail="Not found")
     if path.exists():
         return FileResponse(str(path))
     index = static_dir / "index.html"
