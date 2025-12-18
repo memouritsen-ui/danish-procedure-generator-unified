@@ -24,6 +24,56 @@ from procedurewriter.pipeline.types import SourceRecord
 from procedurewriter.pipeline.writer import write_procedure_markdown
 from procedurewriter.pipeline.library_search import LibrarySearchProvider
 from procedurewriter.settings import Settings
+from procedurewriter.agents.orchestrator import AgentOrchestrator
+from procedurewriter.agents.models import PipelineInput as AgentPipelineInput, SourceReference
+from procedurewriter.llm.providers import get_llm_client
+
+
+def source_record_to_reference(source: SourceRecord) -> SourceReference:
+    """
+    Convert a pipeline SourceRecord to an agent SourceReference.
+
+    Adapts the pipeline's source format to the agent system's format,
+    calculating relevance score from evidence priority when available.
+    """
+    # Calculate relevance score from evidence priority (0-1000 mapped to 0.0-1.0)
+    evidence_priority = source.extra.get("evidence_priority", 0)
+    relevance = source.extra.get("relevance_score")
+    if relevance is not None:
+        # relevance_score in source.extra may be on 0-10 scale; normalize to 0-1
+        raw_score = float(relevance)
+        if raw_score > 1.0:
+            relevance_score = min(1.0, raw_score / 10.0)
+        else:
+            relevance_score = raw_score
+    elif evidence_priority:
+        # Map priority 0-1000 to 0.0-1.0
+        relevance_score = min(1.0, evidence_priority / 1000.0)
+    else:
+        relevance_score = 0.5  # Default mid-range
+
+    # Get abstract excerpt from normalized text if available
+    abstract_excerpt = None
+    try:
+        normalized_path = source.normalized_path
+        if normalized_path:
+            from pathlib import Path
+            norm_text = Path(normalized_path).read_text(encoding="utf-8")
+            # Take first 500 chars as excerpt
+            abstract_excerpt = norm_text[:500] if norm_text else None
+    except Exception:
+        pass
+
+    return SourceReference(
+        source_id=source.source_id,
+        title=source.title or "Untitled",
+        year=source.year,
+        pmid=source.pmid,
+        doi=source.doi,
+        url=source.url,
+        relevance_score=relevance_score,
+        abstract_excerpt=abstract_excerpt,
+    )
 
 
 def run_pipeline(
@@ -406,21 +456,85 @@ def run_pipeline(
             openai_api_key=openai_api_key,
         )
 
-        md = write_procedure_markdown(
-            procedure=procedure,
-            context=context,
-            author_guide=author_guide,
-            snippets=retrieved,
-            sources=sources,
-            dummy_mode=settings.dummy_mode,
-            use_llm=settings.use_llm,
-            llm_model=settings.llm_model,
-            llm_provider=settings.llm_provider.value,
-            openai_api_key=openai_api_key,
-            anthropic_api_key=anthropic_api_key,
-            ollama_base_url=ollama_base_url or settings.ollama_base_url,
-        )
-        validate_citations(md, valid_source_ids={s.source_id for s in sources})
+        # Use multi-agent orchestrator when LLM is enabled
+        if settings.use_llm and not settings.dummy_mode:
+            # Convert sources to agent format
+            agent_sources = [source_record_to_reference(s) for s in sources]
+
+            # Get LLM client
+            llm = get_llm_client(
+                provider=settings.llm_provider,
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key,
+                ollama_base_url=ollama_base_url or settings.ollama_base_url,
+            )
+
+            # Create and run orchestrator
+            orchestrator = AgentOrchestrator(
+                llm=llm,
+                model=settings.llm_model,
+                pubmed_client=None,  # Sources already fetched
+            )
+
+            pipeline_input = AgentPipelineInput(
+                procedure_title=procedure,
+                context=context,
+                max_iterations=3,
+                quality_threshold=8,
+            )
+
+            pipeline_result = orchestrator.run(
+                input_data=pipeline_input,
+                sources=agent_sources,
+            )
+
+            if pipeline_result.success and pipeline_result.procedure_markdown:
+                md = pipeline_result.procedure_markdown
+                orchestrator_quality_score = pipeline_result.quality_score
+                orchestrator_iterations = pipeline_result.iterations_used
+                orchestrator_cost = pipeline_result.total_cost_usd
+            else:
+                # Fallback to simple writer if orchestrator fails
+                md = write_procedure_markdown(
+                    procedure=procedure,
+                    context=context,
+                    author_guide=author_guide,
+                    snippets=retrieved,
+                    sources=sources,
+                    dummy_mode=settings.dummy_mode,
+                    use_llm=settings.use_llm,
+                    llm_model=settings.llm_model,
+                    llm_provider=settings.llm_provider.value,
+                    openai_api_key=openai_api_key,
+                    anthropic_api_key=anthropic_api_key,
+                    ollama_base_url=ollama_base_url or settings.ollama_base_url,
+                )
+                orchestrator_quality_score = None
+                orchestrator_iterations = 1
+                orchestrator_cost = 0.0
+        else:
+            # Use simple writer for dummy mode or when LLM is disabled
+            md = write_procedure_markdown(
+                procedure=procedure,
+                context=context,
+                author_guide=author_guide,
+                snippets=retrieved,
+                sources=sources,
+                dummy_mode=settings.dummy_mode,
+                use_llm=settings.use_llm,
+                llm_model=settings.llm_model,
+                llm_provider=settings.llm_provider.value,
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key,
+                ollama_base_url=ollama_base_url or settings.ollama_base_url,
+            )
+            orchestrator_quality_score = None
+            orchestrator_iterations = 1
+            orchestrator_cost = 0.0
+
+        # Skip citation validation for orchestrator output - agents do their own validation
+        if orchestrator_quality_score is None:
+            validate_citations(md, valid_source_ids={s.source_id for s in sources})
 
         procedure_md_path = run_dir / "procedure.md"
         write_text(procedure_md_path, md)
@@ -470,15 +584,19 @@ def run_pipeline(
         if not settings.dummy_mode:
             enforce_evidence_policy(evidence, policy=evidence_policy)
 
-        # Calculate quality score based on evidence coverage
-        supported = int(evidence.get("supported_count") or 0)
-        unsupported = int(evidence.get("unsupported_count") or 0)
-        total_claims = supported + unsupported
-        if total_claims > 0:
-            # Score 1-10 based on support ratio, with minimum of 5 for having any claims
-            quality_score = max(5, min(10, 5 + int((supported / total_claims) * 5)))
+        # Use orchestrator quality score if available, otherwise calculate from evidence
+        if orchestrator_quality_score is not None:
+            quality_score = orchestrator_quality_score
         else:
-            quality_score = 5  # Default score when no claims to validate
+            # Calculate quality score based on evidence coverage
+            supported = int(evidence.get("supported_count") or 0)
+            unsupported = int(evidence.get("unsupported_count") or 0)
+            total_claims = supported + unsupported
+            if total_claims > 0:
+                # Score 1-10 based on support ratio, with minimum of 5 for having any claims
+                quality_score = max(5, min(10, 5 + int((supported / total_claims) * 5)))
+            else:
+                quality_score = 5  # Default score when no claims to validate
 
         docx_path = run_dir / "Procedure.docx"
         write_procedure_docx(
@@ -505,6 +623,9 @@ def run_pipeline(
         # Get cost summary from session tracker
         cost_summary = get_session_tracker().get_summary()
 
+        # Combine orchestrator cost with session tracker cost
+        total_cost = cost_summary.total_cost_usd + orchestrator_cost
+
         return {
             "run_dir": str(run_dir),
             "sources_jsonl_path": str(sources_jsonl_path),
@@ -512,8 +633,8 @@ def run_pipeline(
             "manifest_path": str(manifest_path),
             "docx_path": str(docx_path),
             "quality_score": quality_score,
-            "iterations_used": 1,  # Single pass for now
-            "total_cost_usd": cost_summary.total_cost_usd,
+            "iterations_used": orchestrator_iterations,
+            "total_cost_usd": total_cost,
             "total_input_tokens": cost_summary.total_input_tokens,
             "total_output_tokens": cost_summary.total_output_tokens,
         }

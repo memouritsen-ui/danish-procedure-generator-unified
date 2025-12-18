@@ -274,7 +274,10 @@ def _render_markdown_with_template(doc: Any, markdown_text: str, config: dict[st
         _shade_cell(cell, fill=safety_bg)
         cell.text = ""
         for item in safety_lines:
-            p = cell.add_paragraph(style="List Bullet")
+            p = cell.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.25)
+            p.paragraph_format.first_line_indent = Inches(-0.25)
+            p.add_run("• ").bold = False
             _add_text_with_citations(p, item, citation_color, citation_size)
         safety_lines = []
 
@@ -320,7 +323,10 @@ def _render_markdown_with_template(doc: Any, markdown_text: str, config: dict[st
             if _in_safety_box(current_h2):
                 safety_lines.append(line[2:].strip())
             else:
-                p = doc.add_paragraph(style="List Bullet")
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Inches(0.25)
+                p.paragraph_format.first_line_indent = Inches(-0.25)
+                p.add_run("• ").bold = False
                 _add_text_with_citations(p, line[2:].strip(), citation_color, citation_size)
 
         elif _is_numbered_list_item(line):
