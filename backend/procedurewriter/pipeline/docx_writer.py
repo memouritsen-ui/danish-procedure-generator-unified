@@ -21,6 +21,18 @@ from procedurewriter.pipeline.types import SourceRecord
 _citation_tag_re = re.compile(r"\[S:[^\]]+\]")
 
 
+def format_grade_badge(certainty_level: str) -> str:
+    """Format GRADE certainty as visual badge for Markdown/DOCX.
+
+    Args:
+        certainty_level: One of "High", "Moderate", "Low", "Very Low".
+
+    Returns:
+        Formatted badge string: **[GRADE: Level]**
+    """
+    return f"**[GRADE: {certainty_level}]**"
+
+
 def load_docx_template(template_path: Path | None = None) -> dict[str, Any]:
     """Load DOCX template configuration.
 

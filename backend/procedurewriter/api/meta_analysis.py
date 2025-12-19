@@ -3,11 +3,14 @@
 Provides endpoints for:
 - POST /api/meta-analysis: Start new meta-analysis
 - GET /api/meta-analysis/{run_id}/stream: SSE stream for live monitoring
+
+Rectification: Handles ERROR and COMPLETE events with emitter cleanup.
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -22,6 +25,52 @@ router = APIRouter(prefix="/api", tags=["meta-analysis"])
 
 # In-memory store for active event emitters (production would use Redis)
 _active_emitters: dict[str, EventEmitter] = {}
+
+# Timestamp tracking for stale emitter cleanup (prevents memory leaks)
+_emitter_timestamps: dict[str, float] = {}
+
+# Cleanup timeout in seconds (30 minutes)
+EMITTER_CLEANUP_TIMEOUT = 30 * 60
+
+
+def cleanup_stale_emitters() -> int:
+    """Remove emitters inactive for >30 minutes.
+
+    Called periodically by background task to prevent memory leaks.
+
+    Returns:
+        Number of emitters removed.
+    """
+    current_time = time.time()
+    stale_run_ids = [
+        run_id
+        for run_id, created_at in _emitter_timestamps.items()
+        if current_time - created_at > EMITTER_CLEANUP_TIMEOUT
+    ]
+
+    for run_id in stale_run_ids:
+        if run_id in _active_emitters:
+            _active_emitters[run_id].close()
+            del _active_emitters[run_id]
+        if run_id in _emitter_timestamps:
+            del _emitter_timestamps[run_id]
+
+    return len(stale_run_ids)
+
+
+def remove_emitter_on_completion(run_id: str) -> None:
+    """Remove emitter when COMPLETE or ERROR event emitted.
+
+    Called after pipeline completes to immediately free resources.
+
+    Args:
+        run_id: Run identifier to clean up.
+    """
+    if run_id in _active_emitters:
+        _active_emitters[run_id].close()
+        del _active_emitters[run_id]
+    if run_id in _emitter_timestamps:
+        del _emitter_timestamps[run_id]
 
 
 # =============================================================================
@@ -164,9 +213,10 @@ async def create_meta_analysis(
 
     run_id = f"ma-{uuid.uuid4().hex[:12]}"
 
-    # Create event emitter for this run
+    # Create event emitter for this run with timestamp
     emitter = EventEmitter()
     _active_emitters[run_id] = emitter
+    _emitter_timestamps[run_id] = time.time()
 
     # Start background task
     background_tasks.add_task(_run_meta_analysis_async, run_id, request, emitter)
@@ -177,45 +227,58 @@ async def create_meta_analysis(
 async def get_meta_analysis_events(run_id: str) -> AsyncGenerator[dict[str, Any], None]:
     """Get SSE event generator for meta-analysis run.
 
+    Subscribes to all event types including ERROR and COMPLETE for proper
+    termination and cleanup.
+
     Args:
         run_id: Run identifier.
 
     Yields:
         Event dictionaries with type and data.
     """
+    from procedurewriter.pipeline.events import PipelineEvent
+
     emitter = _active_emitters.get(run_id)
     if emitter is None:
         yield {"event": "error", "data": {"message": "Run not found"}}
         return
 
-    queue: asyncio.Queue[tuple[EventType, dict[str, Any]]] = asyncio.Queue()
-
-    def handler(event_type: EventType, data: dict[str, Any]) -> None:
-        asyncio.get_event_loop().call_soon_threadsafe(
-            queue.put_nowait, (event_type, data)
-        )
-
-    # Subscribe to all event types
-    emitter.subscribe(EventType.PICO_EXTRACTED, handler)
-    emitter.subscribe(EventType.BIAS_ASSESSED, handler)
-    emitter.subscribe(EventType.SYNTHESIS_COMPLETE, handler)
+    # Subscribe to emitter (returns a Queue)
+    queue = emitter.subscribe()
 
     try:
         while True:
             try:
-                event_type, data = await asyncio.wait_for(queue.get(), timeout=30.0)
-                yield {"event": event_type.value, "data": data}
+                # Wait for event with timeout
+                event: PipelineEvent | None = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, queue.get, True, 30.0
+                    ),
+                    timeout=35.0,
+                )
 
-                if event_type == EventType.SYNTHESIS_COMPLETE:
+                if event is None:
+                    # Sentinel value - emitter closed
                     break
-            except asyncio.TimeoutError:
-                # Send keepalive
+
+                yield {"event": event.event_type.value, "data": event.data}
+
+                # Terminate on completion events
+                if event.event_type in (
+                    EventType.SYNTHESIS_COMPLETE,
+                    EventType.COMPLETE,
+                    EventType.ERROR,
+                ):
+                    # Cleanup emitter on completion
+                    remove_emitter_on_completion(run_id)
+                    break
+
+            except (asyncio.TimeoutError, Exception):
+                # Send keepalive on timeout
                 yield {"event": "keepalive", "data": {}}
     finally:
-        # Cleanup
-        emitter.unsubscribe(EventType.PICO_EXTRACTED, handler)
-        emitter.unsubscribe(EventType.BIAS_ASSESSED, handler)
-        emitter.unsubscribe(EventType.SYNTHESIS_COMPLETE, handler)
+        # Unsubscribe from queue
+        emitter.unsubscribe(queue)
 
 
 @router.get("/meta-analysis/{run_id}/stream")

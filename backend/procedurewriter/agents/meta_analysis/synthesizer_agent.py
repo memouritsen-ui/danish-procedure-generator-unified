@@ -5,12 +5,17 @@ and generates GRADE-compliant summary of findings.
 
 Reference: DerSimonian R, Laird N. Meta-analysis in clinical trials.
 Control Clin Trials. 1986;7(3):177-88.
+
+Rectification: Implements deterministic GRADE logic (no LLM discretion) and
+Hartung-Knapp adjustment for small k.
 """
 from __future__ import annotations
 
 import json
 import logging
 import math
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -21,6 +26,203 @@ from procedurewriter.agents.meta_analysis.models import StudyResult
 from procedurewriter.llm.providers import LLMProvider
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Deterministic GRADE Logic (No LLM Discretion)
+# =============================================================================
+
+
+class GRADEDowngrade(str, Enum):
+    """GRADE downgrade reasons per Cochrane guidelines."""
+
+    RISK_OF_BIAS = "risk_of_bias"
+    INCONSISTENCY = "inconsistency"
+    IMPRECISION = "imprecision"
+    INDIRECTNESS = "indirectness"
+    PUBLICATION_BIAS = "publication_bias"
+
+
+@dataclass
+class GRADEResult:
+    """Deterministic GRADE certainty calculation result."""
+
+    certainty_level: Literal["High", "Moderate", "Low", "Very Low"]
+    downgrades: list[GRADEDowngrade] = field(default_factory=list)
+    downgrade_reasons: dict[str, str] = field(default_factory=dict)
+
+
+def calculate_deterministic_grade(
+    i_squared: float,
+    high_risk_proportion: float,
+    n_studies: int,
+) -> GRADEResult:
+    """Calculate GRADE certainty deterministically without LLM.
+
+    Implements hard-coded GRADE downgrade rules per Censor's Report:
+    - I² > 50% → Downgrade for Inconsistency
+    - >25% high RoB studies → Downgrade for Risk of Bias
+    - k < 5 studies → Downgrade for Imprecision
+
+    Args:
+        i_squared: I² heterogeneity percentage (0-100).
+        high_risk_proportion: Proportion of studies with high RoB (0-1).
+        n_studies: Number of studies included (k).
+
+    Returns:
+        GRADEResult with certainty level and downgrade reasons.
+    """
+    downgrades: list[GRADEDowngrade] = []
+    reasons: dict[str, str] = {}
+
+    # Rule 1: I² > 50% → Inconsistency
+    if i_squared > 50.0:
+        downgrades.append(GRADEDowngrade.INCONSISTENCY)
+        reasons["inconsistency"] = f"I² > 50% ({i_squared:.1f}%): substantial heterogeneity"
+
+    # Rule 2: >25% high RoB → Risk of Bias
+    if high_risk_proportion > 0.25:
+        downgrades.append(GRADEDowngrade.RISK_OF_BIAS)
+        reasons["risk_of_bias"] = f">25% studies with high risk of bias ({high_risk_proportion * 100:.0f}%)"
+
+    # Rule 3: k < 5 → Imprecision
+    if n_studies < 5:
+        downgrades.append(GRADEDowngrade.IMPRECISION)
+        reasons["imprecision"] = f"k < 5 studies ({n_studies}): insufficient precision"
+
+    # Determine certainty level based on downgrade count
+    n_downgrades = len(downgrades)
+    if n_downgrades == 0:
+        certainty = "High"
+    elif n_downgrades == 1:
+        certainty = "Moderate"
+    elif n_downgrades == 2:
+        certainty = "Low"
+    else:
+        certainty = "Very Low"
+
+    return GRADEResult(
+        certainty_level=certainty,
+        downgrades=downgrades,
+        downgrade_reasons=reasons,
+    )
+
+
+# =============================================================================
+# Hartung-Knapp Adjustment for Small k
+# =============================================================================
+
+
+def get_t_critical_value(df: int, alpha: float = 0.05) -> float:
+    """Get t-distribution critical value for Hartung-Knapp adjustment.
+
+    Args:
+        df: Degrees of freedom (k - 1).
+        alpha: Significance level (default 0.05 for 95% CI).
+
+    Returns:
+        t critical value for two-tailed test.
+    """
+    if df <= 0:
+        return 1.96  # Fallback to z for degenerate case
+    return stats.t.ppf(1 - alpha / 2, df)
+
+
+def calculate_random_effects_pooled_hk(
+    effects: list[float], variances: list[float]
+) -> "PooledEstimate":
+    """Calculate random-effects pooled estimate with Hartung-Knapp adjustment.
+
+    Uses t-distribution instead of z=1.96 when k < 5 for wider, more
+    conservative confidence intervals.
+
+    Reference: Hartung J, Knapp G. A refined method for the meta-analysis
+    of controlled clinical trials with binary outcome. Stat Med. 2001.
+
+    Args:
+        effects: List of effect sizes.
+        variances: List of within-study variances.
+
+    Returns:
+        PooledEstimate with Hartung-Knapp adjusted CI.
+    """
+    k = len(effects)
+
+    if k == 0:
+        return PooledEstimate(
+            pooled_effect=0.0,
+            ci_lower=0.0,
+            ci_upper=0.0,
+            effect_size_type="OR",
+            p_value=1.0,
+        )
+
+    if k == 1:
+        se = math.sqrt(variances[0])
+        ci_lower = effects[0] - 1.96 * se
+        ci_upper = effects[0] + 1.96 * se
+        z = effects[0] / se if se > 0 else 0
+        p_value = 2 * (1 - stats.norm.cdf(abs(z)))
+        return PooledEstimate(
+            pooled_effect=effects[0],
+            ci_lower=ci_lower,
+            ci_upper=ci_upper,
+            effect_size_type="OR",
+            p_value=p_value,
+            se=se,
+        )
+
+    # Calculate τ²
+    tau_sq = calculate_tau_squared(effects, variances)
+
+    # Random-effects weights
+    re_weights = [1.0 / (v + tau_sq) for v in variances]
+    sum_re_weights = sum(re_weights)
+
+    # Pooled effect
+    pooled_effect = sum(e * w for e, w in zip(effects, re_weights)) / sum_re_weights
+
+    # Standard error of pooled effect
+    pooled_variance = 1.0 / sum_re_weights
+    pooled_se = math.sqrt(pooled_variance)
+
+    # Hartung-Knapp adjustment: use t-distribution when k < 5
+    df = k - 1
+    if k < 5:
+        # Use t-distribution for wider CI
+        t_crit = get_t_critical_value(df, alpha=0.05)
+
+        # Hartung-Knapp variance adjustment
+        # q* = Σ w_i * (θ_i - θ̂)² / (k - 1)
+        q_star = sum(
+            w * (e - pooled_effect) ** 2
+            for e, w in zip(effects, re_weights)
+        ) / df if df > 0 else 1.0
+
+        # Adjusted SE
+        hk_se = pooled_se * math.sqrt(max(1.0, q_star))
+
+        ci_lower = pooled_effect - t_crit * hk_se
+        ci_upper = pooled_effect + t_crit * hk_se
+
+        # P-value using t-distribution
+        t_stat = pooled_effect / hk_se if hk_se > 0 else 0
+        p_value = 2 * (1 - stats.t.cdf(abs(t_stat), df))
+    else:
+        # Standard z-based CI for k >= 5
+        ci_lower = pooled_effect - 1.96 * pooled_se
+        ci_upper = pooled_effect + 1.96 * pooled_se
+        z = pooled_effect / pooled_se if pooled_se > 0 else 0
+        p_value = 2 * (1 - stats.norm.cdf(abs(z)))
+
+    return PooledEstimate(
+        pooled_effect=pooled_effect,
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+        effect_size_type="OR",
+        p_value=p_value,
+        se=pooled_se,
+    )
 
 
 # =============================================================================
@@ -255,6 +457,7 @@ class SynthesisOutput(BaseModel):
     included_studies: int
     total_sample_size: int
     grade_summary: str
+    certainty_level: Literal["High", "Moderate", "Low", "Very Low"] = "Moderate"
     forest_plot_data: list[ForestPlotEntry]
 
 
@@ -339,15 +542,19 @@ class EvidenceSynthesizerAgent(BaseAgent[SynthesisInput, SynthesisOutput]):
         # Extract effect sizes and variances
         effects = [s.statistics.effect_size for s in studies]
         variances = [s.statistics.variance for s in studies]
+        k = len(studies)
 
-        # Calculate statistics
-        pooled = calculate_random_effects_pooled(effects, variances)
+        # Calculate statistics with Hartung-Knapp adjustment for small k
+        if k < 5:
+            pooled = calculate_random_effects_pooled_hk(effects, variances)
+        else:
+            pooled = calculate_random_effects_pooled(effects, variances)
         pooled.effect_size_type = studies[0].statistics.effect_size_type
 
         q = calculate_cochrans_q(effects, variances)
         tau_sq = calculate_tau_squared(effects, variances)
         i_sq = calculate_i_squared(effects, variances)
-        df = len(studies) - 1
+        df = k - 1
 
         # Q test p-value (chi-squared with df degrees of freedom)
         q_p_value = 1 - stats.chi2.cdf(q, df) if df > 0 else 1.0
@@ -381,22 +588,38 @@ class EvidenceSynthesizerAgent(BaseAgent[SynthesisInput, SynthesisOutput]):
 
         total_sample_size = sum(s.sample_size for s in studies)
 
-        # Generate GRADE summary using LLM
+        # Calculate Risk of Bias proportion for deterministic GRADE
+        high_risk_count = sum(
+            1 for s in studies if s.risk_of_bias.overall.value == "high"
+        )
+        high_risk_proportion = high_risk_count / k if k > 0 else 0.0
+
+        # DETERMINISTIC GRADE: No LLM discretion
+        grade_result = calculate_deterministic_grade(
+            i_squared=i_sq,
+            high_risk_proportion=high_risk_proportion,
+            n_studies=k,
+        )
+
+        # Generate human-readable summary (still uses LLM for prose, but
+        # certainty level is locked to deterministic calculation)
         grade_summary = self._generate_grade_summary(
             input_data.outcome_of_interest,
             pooled,
             heterogeneity,
-            len(studies),
+            k,
             total_sample_size,
             studies,
+            grade_result,  # Pass deterministic result
         )
 
         output = SynthesisOutput(
             pooled_estimate=pooled,
             heterogeneity=heterogeneity,
-            included_studies=len(studies),
+            included_studies=k,
             total_sample_size=total_sample_size,
             grade_summary=grade_summary,
+            certainty_level=grade_result.certainty_level,
             forest_plot_data=forest_plot_data,
         )
 
@@ -413,8 +636,22 @@ class EvidenceSynthesizerAgent(BaseAgent[SynthesisInput, SynthesisOutput]):
         n_studies: int,
         total_n: int,
         studies: list[StudyResult],
+        grade_result: GRADEResult | None = None,
     ) -> str:
-        """Generate GRADE-compliant summary using LLM."""
+        """Generate GRADE-compliant summary using deterministic logic.
+
+        The certainty level is determined by calculate_deterministic_grade()
+        with NO LLM discretion. The LLM is only used for prose generation.
+
+        Args:
+            outcome: Outcome of interest.
+            pooled: Pooled estimate result.
+            heterogeneity: Heterogeneity metrics.
+            n_studies: Number of studies.
+            total_n: Total sample size.
+            studies: List of included studies.
+            grade_result: Deterministic GRADE result (certainty locked).
+        """
         # Count risk of bias levels
         high_risk = sum(
             1 for s in studies if s.risk_of_bias.overall.value == "high"
@@ -422,6 +659,13 @@ class EvidenceSynthesizerAgent(BaseAgent[SynthesisInput, SynthesisOutput]):
         some_concerns = sum(
             1 for s in studies if s.risk_of_bias.overall.value == "some_concerns"
         )
+
+        # Use deterministic certainty if provided
+        certainty = grade_result.certainty_level if grade_result else "Moderate"
+        downgrades = grade_result.downgrade_reasons if grade_result else {}
+
+        # Format downgrade reasons for prompt
+        downgrade_text = "\n".join(f"- {reason}" for reason in downgrades.values()) if downgrades else "None"
 
         prompt = f"""Generate a GRADE-compliant summary of findings for this meta-analysis.
 
@@ -441,8 +685,12 @@ EVIDENCE BASE:
 - Total participants: {total_n}
 - Risk of bias: {high_risk} high risk, {some_concerns} some concerns
 
-Provide a 2-3 sentence GRADE summary including certainty level (High, Moderate, Low, Very Low).
-Mention downgrading reasons if applicable."""
+CERTAINTY LEVEL (DETERMINISTIC - DO NOT CHANGE): {certainty}
+DOWNGRADE REASONS:
+{downgrade_text}
+
+Write a 2-3 sentence summary that includes the certainty level "{certainty}" and explains the downgrades.
+The certainty level is pre-determined and MUST NOT be changed."""
 
         messages = [
             {"role": "system", "content": self._get_system_prompt()},
