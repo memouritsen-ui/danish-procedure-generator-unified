@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     dummy_mode: bool = False
 
+    # Evidence verification (uses Anthropic Haiku)
+    enable_evidence_verification: bool = True
+
     # LLM Provider Configuration
     llm_provider: LLMProviderEnum = LLMProviderEnum.OPENAI
     use_llm: bool = True

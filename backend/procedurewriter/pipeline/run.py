@@ -622,6 +622,72 @@ def run_pipeline(
                 if isinstance(p, str) and p.strip():
                     evidence_policy = p.strip().lower()
 
+        # Run evidence verification if enabled and Anthropic key is available
+        verification_cost = 0.0
+        verification_result: dict[str, Any] | None = None
+        if (
+            settings.enable_evidence_verification
+            and anthropic_api_key
+            and not settings.dummy_mode
+            and sources
+        ):
+            try:
+                import asyncio
+                from anthropic import AsyncAnthropic
+                from procedurewriter.pipeline.evidence_verifier import (
+                    verify_all_citations,
+                    summary_to_dict,
+                )
+
+                emitter.emit(EventType.PROGRESS, {"message": "Verifying evidence", "stage": "verification"})
+
+                # Build source content map
+                source_contents: dict[str, str] = {}
+                for src in sources:
+                    if src.normalized_path:
+                        norm_path = Path(src.normalized_path)
+                        if norm_path.exists():
+                            source_contents[src.source_id] = norm_path.read_text(
+                                encoding="utf-8", errors="replace"
+                            )
+
+                # Run async verification
+                async def run_verification() -> tuple:
+                    client = AsyncAnthropic(api_key=anthropic_api_key)
+                    return await verify_all_citations(
+                        markdown_text=md,
+                        sources=source_contents,
+                        anthropic_client=client,
+                        max_concurrent=5,
+                        max_verifications=50,
+                    )
+
+                verification_summary, verification_cost = asyncio.run(run_verification())
+
+                # Save verification results
+                verification_path = run_dir / "evidence_verification.json"
+                write_json(verification_path, summary_to_dict(verification_summary))
+
+                verification_result = {
+                    "total_citations": verification_summary.total_citations,
+                    "fully_supported": verification_summary.fully_supported,
+                    "partially_supported": verification_summary.partially_supported,
+                    "not_supported": verification_summary.not_supported,
+                    "contradicted": verification_summary.contradicted,
+                    "overall_score": verification_summary.overall_score,
+                    "verification_cost_usd": verification_cost,
+                }
+
+                emitter.emit(EventType.PROGRESS, {
+                    "message": f"Evidence verified: {verification_summary.overall_score}% supported",
+                    "stage": "verification_complete",
+                    "score": verification_summary.overall_score,
+                })
+
+            except Exception as e:
+                logger.warning("Evidence verification failed: %s", e)
+                verification_result = {"error": str(e)}
+
         runtime: dict[str, Any] = {
             "dummy_mode": settings.dummy_mode,
             "use_llm": settings.use_llm,
@@ -635,6 +701,8 @@ def run_pipeline(
         }
         if warnings:
             runtime["warnings"] = warnings[:20]
+        if verification_result:
+            runtime["evidence_verification"] = verification_result
 
         manifest_path = run_dir / "run_manifest.json"
         manifest_hash = write_manifest(
@@ -695,7 +763,7 @@ def run_pipeline(
         cost_summary = get_session_tracker().get_summary()
 
         # Combine orchestrator cost with session tracker cost
-        total_cost = cost_summary.total_cost_usd + orchestrator_cost
+        total_cost = cost_summary.total_cost_usd + orchestrator_cost + verification_cost
 
         return {
             "run_dir": str(run_dir),
