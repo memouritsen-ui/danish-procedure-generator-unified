@@ -367,6 +367,117 @@ def api_evidence(run_id: str) -> dict[str, Any]:
     return obj
 
 
+@app.post("/api/runs/{run_id}/verify-evidence")
+async def api_verify_evidence(run_id: str) -> dict[str, Any]:
+    """
+    Verify citations in a run's procedure using LLM.
+
+    This performs semantic verification of each citation to check if the
+    cited source actually supports the claim being made.
+
+    Requires Anthropic API key to be configured.
+    """
+    from anthropic import AsyncAnthropic
+
+    from procedurewriter.pipeline.evidence_verifier import (
+        read_source_content,
+        summary_to_dict,
+        verify_all_citations,
+    )
+
+    # Check for API key
+    anthropic_key = _effective_anthropic_api_key()
+    if not anthropic_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Anthropic API key required for evidence verification. Configure in Settings.",
+        )
+
+    # Get run data
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run_dir = Path(run.run_dir)
+
+    # Read procedure markdown
+    procedure_path = run_dir / "procedure.md"
+    if not procedure_path.exists():
+        raise HTTPException(status_code=404, detail="Procedure not available")
+    procedure_md = procedure_path.read_text(encoding="utf-8")
+
+    # Read sources
+    sources_path = run_dir / "sources.jsonl"
+    if not sources_path.exists():
+        raise HTTPException(status_code=404, detail="Sources not available")
+
+    sources: dict[str, str] = {}
+    for obj in iter_jsonl(sources_path):
+        source_id = obj.get("source_id", "")
+        normalized_path = obj.get("normalized_path")
+        if source_id and normalized_path:
+            content = read_source_content(normalized_path)
+            if content:
+                sources[source_id] = content
+
+    if not sources:
+        return {
+            "run_id": run_id,
+            "status": "error",
+            "message": "No source content available for verification",
+        }
+
+    # Run verification
+    client = AsyncAnthropic(api_key=anthropic_key)
+    try:
+        summary, cost = await verify_all_citations(
+            procedure_md,
+            sources,
+            client,
+            max_concurrent=5,
+            max_verifications=50,
+        )
+    finally:
+        await client.close()
+
+    # Save verification results
+    result = summary_to_dict(summary)
+    result["run_id"] = run_id
+    result["verification_cost_usd"] = round(cost, 4)
+
+    verification_path = run_dir / "evidence_verification.json"
+    verification_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    return result
+
+
+@app.get("/api/runs/{run_id}/verify-evidence")
+def api_get_evidence_verification(run_id: str) -> dict[str, Any]:
+    """
+    Get cached evidence verification results for a run.
+
+    Returns 404 if verification has not been run yet.
+    Use POST to /api/runs/{run_id}/verify-evidence to run verification.
+    """
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run_dir = Path(run.run_dir)
+    verification_path = run_dir / "evidence_verification.json"
+
+    if not verification_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Evidence verification not available. POST to this endpoint to run verification.",
+        )
+
+    obj = json.loads(verification_path.read_text(encoding="utf-8"))
+    if not isinstance(obj, dict):
+        raise HTTPException(status_code=500, detail="Invalid verification data")
+    return obj
+
+
 @app.get("/api/runs/{run_id}/bundle")
 def api_bundle(run_id: str) -> FileResponse:
     run = get_run(settings.db_path, run_id)
