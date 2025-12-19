@@ -8,7 +8,6 @@ from typing import Any
 
 from procedurewriter.agents.models import PipelineInput as AgentPipelineInput
 from procedurewriter.agents.models import SourceReference
-from procedurewriter.agents.orchestrator import AgentOrchestrator
 from procedurewriter.config_store import load_yaml
 from procedurewriter.db import LibrarySourceRow
 from procedurewriter.llm import get_session_tracker, reset_session_tracker
@@ -537,6 +536,10 @@ def run_pipeline(
             )
 
             # Create and run orchestrator with event emitter for SSE streaming
+            # Lazy import to avoid circular dependency:
+            # agents/__init__ → orchestrator → pipeline.events → pipeline/__init__ → run → orchestrator
+            from procedurewriter.agents.orchestrator import AgentOrchestrator
+
             orchestrator = AgentOrchestrator(
                 llm=llm,
                 model=settings.llm_model,
