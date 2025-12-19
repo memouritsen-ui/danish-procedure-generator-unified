@@ -26,6 +26,8 @@ Usage:
     print(f"Cost: ${response.cost_usd:.4f}")
 """
 
+from procedurewriter.llm.cache import LLMCache, compute_cache_key
+from procedurewriter.llm.cached_provider import CachedLLMProvider
 from procedurewriter.llm.cost_tracker import (
     CostEntry,
     CostSummary,
@@ -56,6 +58,10 @@ __all__ = [
     "get_llm_client",
     "get_default_model",
     "DEFAULT_MODELS",
+    # Caching
+    "LLMCache",
+    "CachedLLMProvider",
+    "compute_cache_key",
     # Cost tracking
     "CostEntry",
     "CostSummary",

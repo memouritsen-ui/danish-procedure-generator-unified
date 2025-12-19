@@ -195,6 +195,7 @@ class TestGetLLMClient:
         client = get_llm_client(
             provider=LLMProviderType.OPENAI,
             openai_api_key="test-key",
+            enable_cache=False,
         )
         assert isinstance(client, OpenAIProvider)
         assert client.provider_type == LLMProviderType.OPENAI
@@ -204,6 +205,7 @@ class TestGetLLMClient:
         client = get_llm_client(
             provider=LLMProviderType.ANTHROPIC,
             anthropic_api_key="test-key",
+            enable_cache=False,
         )
         assert isinstance(client, AnthropicProvider)
         assert client.provider_type == LLMProviderType.ANTHROPIC
@@ -214,6 +216,7 @@ class TestGetLLMClient:
         client = get_llm_client(
             provider=LLMProviderType.OLLAMA,
             ollama_base_url="http://localhost:11434",
+            enable_cache=False,
         )
         assert isinstance(client, OllamaProvider)
         assert client.provider_type == LLMProviderType.OLLAMA
@@ -223,6 +226,7 @@ class TestGetLLMClient:
         client = get_llm_client(
             provider="openai",
             openai_api_key="test-key",
+            enable_cache=False,
         )
         assert isinstance(client, OpenAIProvider)
 
@@ -239,7 +243,7 @@ class TestGetLLMClient:
     @patch.dict(os.environ, {"PROCEDUREWRITER_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "env-key"})
     def test_auto_detect_from_env(self) -> None:
         """Test auto-detecting provider from environment."""
-        client = get_llm_client()
+        client = get_llm_client(enable_cache=False)
         assert isinstance(client, AnthropicProvider)
 
 

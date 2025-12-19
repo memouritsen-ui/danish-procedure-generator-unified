@@ -21,6 +21,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 
@@ -320,6 +321,8 @@ def get_llm_client(
     openai_base_url: str | None = None,
     anthropic_api_key: str | None = None,
     ollama_base_url: str | None = None,
+    enable_cache: bool = True,
+    cache_dir: Path | None = None,
 ) -> LLMProvider:
     """
     Get an LLM client for the specified provider.
@@ -330,9 +333,11 @@ def get_llm_client(
         openai_base_url: OpenAI base URL (for Azure or custom endpoints)
         anthropic_api_key: Anthropic API key
         ollama_base_url: Ollama server URL
+        enable_cache: Whether to enable response caching (default: True)
+        cache_dir: Custom cache directory (default: ~/.cache/procedurewriter/llm)
 
     Returns:
-        Configured LLM provider
+        Configured LLM provider (wrapped with caching if enabled)
 
     Raises:
         ValueError: If provider is not configured or unavailable
@@ -346,30 +351,36 @@ def get_llm_client(
     if isinstance(provider, str):
         provider = LLMProviderType(provider.lower())
 
+    client: LLMProvider
+
     if provider == LLMProviderType.OPENAI:
         api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
         base_url = openai_base_url or os.environ.get("OPENAI_BASE_URL")
         client = OpenAIProvider(api_key=api_key, base_url=base_url)
         if not client.is_available():
             raise ValueError("OpenAI provider requires OPENAI_API_KEY")
-        return client
 
     elif provider == LLMProviderType.ANTHROPIC:
         api_key = anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
         client = AnthropicProvider(api_key=api_key)
         if not client.is_available():
             raise ValueError("Anthropic provider requires ANTHROPIC_API_KEY")
-        return client
 
     elif provider == LLMProviderType.OLLAMA:
         base_url = ollama_base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         client = OllamaProvider(base_url=base_url)
         if not client.is_available():
             raise ValueError(f"Ollama server not available at {base_url}")
-        return client
 
     else:
         raise ValueError(f"Unknown provider: {provider}")
+
+    # Wrap with caching if enabled
+    if enable_cache:
+        from procedurewriter.llm.cached_provider import CachedLLMProvider
+        client = CachedLLMProvider(client, cache_dir=cache_dir, enabled=True)
+
+    return client
 
 
 # Default models per provider
