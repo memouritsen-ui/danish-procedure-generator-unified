@@ -36,6 +36,11 @@ class EventType(Enum):
     ERROR = "error"
     COST_UPDATE = "cost_update"
 
+    # Meta-analysis events
+    PICO_EXTRACTED = "pico_extracted"
+    BIAS_ASSESSED = "bias_assessed"
+    SYNTHESIS_COMPLETE = "synthesis_complete"
+
 
 @dataclass
 class PipelineEvent:

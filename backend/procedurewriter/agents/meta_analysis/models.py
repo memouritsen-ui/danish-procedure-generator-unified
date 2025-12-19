@@ -52,6 +52,14 @@ class PICOData(BaseModel):
     intervention_mesh: list[str] = Field(default_factory=list)
     outcome_mesh: list[str] = Field(default_factory=list)
 
+    # Language detection for cross-lingual normalization
+    detected_language: str = Field(
+        default="en",
+        min_length=2,
+        max_length=5,
+        description="ISO 639-1 language code (en, da, etc.)"
+    )
+
     @field_validator("confidence")
     @classmethod
     def validate_confidence(cls, v: float) -> float:
