@@ -461,3 +461,195 @@ def _add_field(paragraph: Any, field_code: str) -> None:
     fld_char_end = OxmlElement("w:fldChar")
     fld_char_end.set(qn("w:fldCharType"), "end")
     run._r.append(fld_char_end)
+
+
+# =============================================================================
+# Meta-Analysis DOCX Generation (Cochrane-style)
+# =============================================================================
+
+
+def write_meta_analysis_docx(
+    *,
+    output: Any,  # OrchestratorOutput
+    output_path: Path,
+    run_id: str,
+) -> None:
+    """Write Cochrane-style meta-analysis report as DOCX.
+
+    Danish labels used throughout:
+    - "Inkluderede studier" (Included studies)
+    - "Risiko for bias" (Risk of bias)
+    - "Evidens-syntese" (Evidence synthesis)
+
+    Args:
+        output: OrchestratorOutput with synthesis results.
+        output_path: Path to save the DOCX file.
+        run_id: Unique run identifier.
+    """
+    from datetime import UTC, datetime
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc: Any = Document()
+
+    # Apply document margins
+    for section in doc.sections:
+        section.top_margin = Inches(1.0)
+        section.bottom_margin = Inches(1.0)
+        section.left_margin = Inches(1.0)
+        section.right_margin = Inches(1.0)
+
+    # Title
+    title = doc.add_heading("Meta-analyse Rapport", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Subtitle with run ID
+    subtitle = doc.add_paragraph()
+    run = subtitle.add_run(f"Run ID: {run_id}")
+    run.font.size = Pt(10)
+    run.font.color.rgb = RGBColor(128, 128, 128)
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Timestamp
+    ts = datetime.now(UTC).replace(microsecond=0).isoformat()
+    ts_para = doc.add_paragraph()
+    ts_run = ts_para.add_run(f"Genereret: {ts}")
+    ts_run.font.size = Pt(10)
+    ts_run.font.color.rgb = RGBColor(128, 128, 128)
+    ts_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_paragraph()  # Spacer
+
+    # Section 1: Inkluderede studier (Included studies)
+    doc.add_heading("Inkluderede studier", level=1)
+
+    n_included = len(output.included_study_ids)
+    n_excluded = len(output.excluded_study_ids)
+    n_manual = len(output.manual_review_needed)
+
+    summary_para = doc.add_paragraph()
+    summary_para.add_run(f"Antal inkluderede studier: {n_included}\n")
+    summary_para.add_run(f"Antal ekskluderede studier: {n_excluded}\n")
+    if n_manual > 0:
+        summary_para.add_run(f"Kræver manuel gennemgang: {n_manual}\n")
+
+    # Included study IDs
+    if output.included_study_ids:
+        doc.add_heading("Inkluderede studie-ID'er", level=2)
+        for study_id in output.included_study_ids:
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.25)
+            p.add_run(f"• {study_id}")
+
+    # Excluded studies with reasons
+    if output.excluded_study_ids:
+        doc.add_heading("Ekskluderede studier", level=2)
+        for study_id in output.excluded_study_ids:
+            reason = output.exclusion_reasons.get(study_id, "Ingen grund angivet")
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.25)
+            p.add_run(f"• {study_id}: ").bold = True
+            p.add_run(reason)
+
+    # Section 2: Risiko for bias (Risk of bias)
+    doc.add_page_break()
+    doc.add_heading("Risiko for bias", level=1)
+
+    rob_intro = doc.add_paragraph()
+    rob_intro.add_run(
+        "Vurdering af risiko for bias følger Cochrane Risk of Bias 2.0 værktøjet. "
+        "Domæner inkluderer: randomisering, afvigelser fra intervention, manglende data, "
+        "måling af udfald og selektion af rapporteret resultat."
+    )
+
+    # Section 3: Evidens-syntese (Evidence synthesis)
+    doc.add_page_break()
+    doc.add_heading("Evidens-syntese", level=1)
+
+    synthesis = output.synthesis
+
+    # Pooled estimate
+    doc.add_heading("Samlet effektestimat", level=2)
+    pooled = synthesis.pooled_estimate
+
+    pooled_table = doc.add_table(rows=5, cols=2)
+    pooled_table.style = "Table Grid"
+
+    pooled_rows = [
+        ("Effektmål", f"{pooled.effect_size_type}"),
+        ("Samlet effekt", f"{pooled.pooled_effect:.3f}"),
+        ("95% CI", f"[{pooled.ci_lower:.3f}, {pooled.ci_upper:.3f}]"),
+        ("P-værdi", f"{pooled.p_value:.4f}"),
+        ("Antal studier", str(synthesis.included_studies)),
+    ]
+
+    for i, (label, value) in enumerate(pooled_rows):
+        pooled_table.cell(i, 0).text = label
+        pooled_table.cell(i, 1).text = value
+        pooled_table.cell(i, 0).paragraphs[0].runs[0].bold = True
+
+    doc.add_paragraph()  # Spacer
+
+    # Heterogeneity
+    doc.add_heading("Heterogenitet", level=2)
+    het = synthesis.heterogeneity
+
+    het_table = doc.add_table(rows=5, cols=2)
+    het_table.style = "Table Grid"
+
+    het_rows = [
+        ("I²", f"{het.i_squared:.1f}%"),
+        ("Cochran's Q", f"{het.cochrans_q:.2f}"),
+        ("τ²", f"{het.tau_squared:.4f}"),
+        ("Frihedsgrader (df)", str(het.df)),
+        ("Fortolkning", het.interpretation.capitalize() if het.interpretation else "N/A"),
+    ]
+
+    for i, (label, value) in enumerate(het_rows):
+        het_table.cell(i, 0).text = label
+        het_table.cell(i, 1).text = value
+        het_table.cell(i, 0).paragraphs[0].runs[0].bold = True
+
+    doc.add_paragraph()  # Spacer
+
+    # Forest plot data table
+    if synthesis.forest_plot_data:
+        doc.add_heading("Forest Plot Data", level=2)
+
+        forest_table = doc.add_table(rows=len(synthesis.forest_plot_data) + 1, cols=5)
+        forest_table.style = "Table Grid"
+
+        # Header row
+        headers = ["Studie", "Effekt", "95% CI", "Vægt", "N"]
+        for j, header in enumerate(headers):
+            cell = forest_table.cell(0, j)
+            cell.text = header
+            cell.paragraphs[0].runs[0].bold = True
+
+        # Data rows
+        for i, entry in enumerate(synthesis.forest_plot_data, start=1):
+            forest_table.cell(i, 0).text = entry.study_label
+            forest_table.cell(i, 1).text = f"{entry.effect_size:.3f}"
+            forest_table.cell(i, 2).text = f"[{entry.ci_lower:.2f}, {entry.ci_upper:.2f}]"
+            forest_table.cell(i, 3).text = f"{entry.weight * 100:.1f}%"
+            forest_table.cell(i, 4).text = str(entry.sample_size)
+
+    # GRADE summary
+    doc.add_paragraph()  # Spacer
+    doc.add_heading("GRADE Vurdering", level=2)
+
+    grade_para = doc.add_paragraph()
+    grade_para.add_run(synthesis.grade_summary)
+
+    # Total sample size
+    doc.add_paragraph()
+    total_n_para = doc.add_paragraph()
+    total_n_para.add_run(f"Total stikprøvestørrelse: {synthesis.total_sample_size}")
+
+    # Footer with run ID
+    section = doc.sections[0]
+    footer = section.footer
+    p = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    p.text = f"Meta-analyse run_id={run_id}"
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.save(str(output_path))

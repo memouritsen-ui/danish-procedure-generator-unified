@@ -107,6 +107,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include meta-analysis router
+from procedurewriter.api.meta_analysis import router as meta_analysis_router
+
+app.include_router(meta_analysis_router)
+
 
 @app.on_event("startup")
 def _startup() -> None:

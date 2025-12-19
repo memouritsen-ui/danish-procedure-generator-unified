@@ -265,6 +265,37 @@ def init_db(db_path: Path) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_validation_run ON validation_results(run_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_validation_protocol ON validation_results(protocol_id)")
 
+        # Meta-analysis runs table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS meta_analysis_runs (
+              run_id TEXT PRIMARY KEY,
+              created_at_utc TEXT NOT NULL,
+              updated_at_utc TEXT NOT NULL,
+              status TEXT NOT NULL,
+              error TEXT,
+              pico_query_json TEXT NOT NULL,
+              outcome_of_interest TEXT NOT NULL,
+              study_count INTEGER NOT NULL,
+              included_studies INTEGER,
+              excluded_studies INTEGER,
+              pooled_effect REAL,
+              ci_lower REAL,
+              ci_upper REAL,
+              i_squared REAL,
+              tau_squared REAL,
+              cochrans_q REAL,
+              grade_certainty TEXT,
+              docx_path TEXT,
+              synthesis_json TEXT
+            )
+            """
+        )
+
+        # Meta-analysis indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_runs_status ON meta_analysis_runs(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_runs_created ON meta_analysis_runs(created_at_utc)")
+
 
 def set_secret(db_path: Path, *, name: str, value: str) -> None:
     now = utc_now_iso()
@@ -630,3 +661,167 @@ def get_version_chain(db_path: Path, run_id: str) -> list[RunRow]:
 
     # Reverse to get oldest first
     return list(reversed(chain))
+
+
+# --- Meta-analysis run functions ---
+
+
+@dataclass(frozen=True)
+class MetaAnalysisRunRow:
+    """Row data for meta-analysis run."""
+
+    run_id: str
+    created_at_utc: str
+    updated_at_utc: str
+    status: str
+    error: str | None
+    pico_query: dict[str, Any]
+    outcome_of_interest: str
+    study_count: int
+    included_studies: int | None
+    excluded_studies: int | None
+    pooled_effect: float | None
+    ci_lower: float | None
+    ci_upper: float | None
+    i_squared: float | None
+    tau_squared: float | None
+    cochrans_q: float | None
+    grade_certainty: str | None
+    docx_path: str | None
+    synthesis: dict[str, Any] | None
+
+
+def create_meta_analysis_run(
+    db_path: Path,
+    *,
+    run_id: str,
+    pico_query: dict[str, Any],
+    outcome_of_interest: str,
+    study_count: int,
+) -> None:
+    """Create a new meta-analysis run record."""
+    now = utc_now_iso()
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO meta_analysis_runs(
+                run_id, created_at_utc, updated_at_utc, status,
+                pico_query_json, outcome_of_interest, study_count
+            )
+            VALUES(?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                now,
+                now,
+                "QUEUED",
+                json.dumps(pico_query, ensure_ascii=False),
+                outcome_of_interest,
+                study_count,
+            ),
+        )
+
+
+def update_meta_analysis_results(
+    db_path: Path,
+    *,
+    run_id: str,
+    pooled_effect: float | None = None,
+    ci_lower: float | None = None,
+    ci_upper: float | None = None,
+    i_squared: float | None = None,
+    tau_squared: float | None = None,
+    cochrans_q: float | None = None,
+    included_studies: int | None = None,
+    excluded_studies: int | None = None,
+    grade_certainty: str | None = None,
+    status: str | None = None,
+    error: str | None = None,
+    docx_path: str | None = None,
+    synthesis: dict[str, Any] | None = None,
+) -> None:
+    """Update meta-analysis run with results."""
+    now = utc_now_iso()
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE meta_analysis_runs
+            SET updated_at_utc = ?,
+                status = COALESCE(?, status),
+                error = COALESCE(?, error),
+                pooled_effect = COALESCE(?, pooled_effect),
+                ci_lower = COALESCE(?, ci_lower),
+                ci_upper = COALESCE(?, ci_upper),
+                i_squared = COALESCE(?, i_squared),
+                tau_squared = COALESCE(?, tau_squared),
+                cochrans_q = COALESCE(?, cochrans_q),
+                included_studies = COALESCE(?, included_studies),
+                excluded_studies = COALESCE(?, excluded_studies),
+                grade_certainty = COALESCE(?, grade_certainty),
+                docx_path = COALESCE(?, docx_path),
+                synthesis_json = COALESCE(?, synthesis_json)
+            WHERE run_id = ?
+            """,
+            (
+                now,
+                status,
+                error,
+                pooled_effect,
+                ci_lower,
+                ci_upper,
+                i_squared,
+                tau_squared,
+                cochrans_q,
+                included_studies,
+                excluded_studies,
+                grade_certainty,
+                docx_path,
+                json.dumps(synthesis, ensure_ascii=False) if synthesis else None,
+                run_id,
+            ),
+        )
+
+
+def _row_to_meta_run(row: sqlite3.Row) -> MetaAnalysisRunRow:
+    """Convert database row to MetaAnalysisRunRow."""
+    return MetaAnalysisRunRow(
+        run_id=row["run_id"],
+        created_at_utc=row["created_at_utc"],
+        updated_at_utc=row["updated_at_utc"],
+        status=row["status"],
+        error=row["error"],
+        pico_query=json.loads(row["pico_query_json"]),
+        outcome_of_interest=row["outcome_of_interest"],
+        study_count=row["study_count"],
+        included_studies=row["included_studies"],
+        excluded_studies=row["excluded_studies"],
+        pooled_effect=row["pooled_effect"],
+        ci_lower=row["ci_lower"],
+        ci_upper=row["ci_upper"],
+        i_squared=row["i_squared"],
+        tau_squared=row["tau_squared"],
+        cochrans_q=row["cochrans_q"],
+        grade_certainty=row["grade_certainty"],
+        docx_path=row["docx_path"],
+        synthesis=json.loads(row["synthesis_json"]) if row["synthesis_json"] else None,
+    )
+
+
+def get_meta_analysis_run(db_path: Path, run_id: str) -> MetaAnalysisRunRow | None:
+    """Get meta-analysis run by ID."""
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM meta_analysis_runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        return _row_to_meta_run(row) if row else None
+
+
+def list_meta_analysis_runs(db_path: Path, limit: int = 100) -> list[MetaAnalysisRunRow]:
+    """List recent meta-analysis runs."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM meta_analysis_runs ORDER BY created_at_utc DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [_row_to_meta_run(r) for r in rows]
