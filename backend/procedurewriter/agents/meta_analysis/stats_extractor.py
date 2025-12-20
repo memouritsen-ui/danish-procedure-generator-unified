@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -79,28 +80,39 @@ class StatisticsExtractorAgent(BaseAgent[StatsExtractionInput, StatisticalMetric
                 stats=self._stats
             )
 
-        # 3. Calculate Variance from CI if needed
-        # SE = (Upper - Lower) / (2 * 1.96) = (Upper - Lower) / 3.92
-        # Variance = SE^2
-        variance = 0.0
+        # 3. Calculate Variance from CI
+        # For ratio metrics (OR/RR/HR): use log scale
+        # For difference metrics (MD/SMD): use linear scale
+        # Formula: SE = (CI_upper - CI_lower) / 3.92, Variance = SE^2
+
         ci_lower = raw.ci_lower if raw.ci_lower is not None else raw.effect_size * 0.5
         ci_upper = raw.ci_upper if raw.ci_upper is not None else raw.effect_size * 2.0
-        
-        # If extracted, verify consistency
+
+        # Swap if flipped
         if ci_upper < ci_lower:
-            ci_lower, ci_upper = ci_upper, ci_lower # Swap if flipped
+            ci_lower, ci_upper = ci_upper, ci_lower
+
+        # Determine if ratio metric (requires log-scale calculation)
+        is_ratio_metric = raw.effect_type in ("OR", "RR", "HR")
 
         if raw.ci_lower is not None and raw.ci_upper is not None:
-            # If log-scale metric (OR/RR), calculate on log scale? 
-            # DerSimonian-Laird usually works on Log(OR).
-            # BUT: models.py seems to store raw effect sizes. 
-            # Wait, `synthesizer_agent.py` uses `calculate_random_effects_pooled`.
-            # Usually for OR/RR, we transform to log space for pooling, then exp back.
-            # Let's check `synthesizer_agent.py` later. For now, we store what we extracted.
-            
-            # Simple linear SE approximation (sufficient for extraction layer)
-            se = (ci_upper - ci_lower) / 3.92
-            variance = se ** 2
+            if is_ratio_metric:
+                # Log-scale calculation for OR/RR/HR
+                # CI is symmetric on log scale: log(OR) ± 1.96 * SE[log(OR)]
+                # Therefore: SE[log(OR)] = (log(CI_upper) - log(CI_lower)) / 3.92
+                if ci_lower > 0 and ci_upper > 0:
+                    log_ci_lower = math.log(ci_lower)
+                    log_ci_upper = math.log(ci_upper)
+                    se_log = (log_ci_upper - log_ci_lower) / 3.92
+                    variance = se_log ** 2
+                else:
+                    # CI contains zero or negative (invalid for ratio metrics)
+                    logger.warning(f"Invalid CI for ratio metric: [{ci_lower}, {ci_upper}]")
+                    variance = 1.0
+            else:
+                # Linear scale for MD/SMD
+                se = (ci_upper - ci_lower) / 3.92
+                variance = se ** 2
         else:
             # Fallback variance if no CI reported
             variance = 1.0 
