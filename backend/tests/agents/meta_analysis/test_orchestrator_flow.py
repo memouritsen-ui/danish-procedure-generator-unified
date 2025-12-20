@@ -5,19 +5,11 @@ Tests the full orchestration pipeline: PICO extraction -> Screening -> Bias -> S
 """
 from __future__ import annotations
 
-import asyncio
 import json
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
-from procedurewriter.agents.meta_analysis.models import (
-    PICOData,
-    RiskOfBias,
-    RiskOfBiasAssessment,
-    StatisticalMetrics,
-    StudyResult,
-)
 from procedurewriter.llm.providers import LLMProviderType, LLMResponse
 
 
@@ -152,9 +144,6 @@ class TestEventEmission:
 
     def test_emits_pico_extracted_event(self) -> None:
         """Orchestrator should emit PICO_EXTRACTED event."""
-        from procedurewriter.agents.meta_analysis.orchestrator import (
-            MetaAnalysisOrchestrator,
-        )
         from procedurewriter.pipeline.events import EventType
 
         # Verify the event type exists
@@ -211,9 +200,9 @@ class TestOrchestratorOutput:
         """OrchestratorOutput should contain synthesis results."""
         from procedurewriter.agents.meta_analysis.orchestrator import OrchestratorOutput
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            SynthesisOutput,
-            PooledEstimate,
             HeterogeneityMetrics,
+            PooledEstimate,
+            SynthesisOutput,
         )
 
         synthesis = SynthesisOutput(
@@ -439,9 +428,30 @@ class TestFullPipelineFlow:
         input_data = OrchestratorInput(
             query=query,
             study_sources=[
-                {"study_id": "Study1", "title": "ACE Trial 1", "abstract": "RCT of ACE inhibitors..."},
-                {"study_id": "Study2", "title": "ACE Trial 2", "abstract": "RCT of ACE inhibitors..."},
-                {"study_id": "Study3", "title": "Asthma Trial", "abstract": "RCT in children..."},
+                {
+                    "study_id": "Study1",
+                    "title": "ACE Trial 1",
+                    "abstract": "RCT of ACE inhibitors...",
+                    "effect_size": 0.405,  # ln(1.5) - provides stats to skip extraction
+                    "variance": 0.04,
+                    "ci_lower": 0.01,
+                    "ci_upper": 0.80,
+                },
+                {
+                    "study_id": "Study2",
+                    "title": "ACE Trial 2",
+                    "abstract": "RCT of ACE inhibitors...",
+                    "effect_size": 0.588,  # ln(1.8)
+                    "variance": 0.0625,
+                    "ci_lower": 0.10,
+                    "ci_upper": 1.08,
+                },
+                {
+                    "study_id": "Study3",
+                    "title": "Asthma Trial",
+                    "abstract": "RCT in children...",
+                    # No effect_size needed - will be excluded by screening
+                },
             ],
             outcome_of_interest="Blood pressure reduction",
         )
@@ -462,9 +472,9 @@ class TestStatisticalValidationWithKnownData:
     def test_known_dataset_synthesis(self) -> None:
         """Synthesis should match pre-calculated results for known data."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            calculate_random_effects_pooled,
             calculate_cochrans_q,
             calculate_i_squared,
+            calculate_random_effects_pooled,
             calculate_tau_squared,
         )
 
