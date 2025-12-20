@@ -19,7 +19,12 @@ from procedurewriter.db import LibrarySourceRow
 from procedurewriter.llm import get_session_tracker, reset_session_tracker
 from procedurewriter.llm.providers import get_llm_client
 from procedurewriter.pipeline.citations import validate_citations
-from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx, write_procedure_docx
+from procedurewriter.pipeline.docx_writer import (
+    write_evidence_review_docx,
+    write_meta_analysis_docx,
+    write_procedure_docx,
+    write_source_analysis_docx,
+)
 from procedurewriter.pipeline.events import EventType, get_emitter, remove_emitter
 from procedurewriter.pipeline.evidence import build_evidence_report, enforce_evidence_policy
 from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
@@ -774,6 +779,39 @@ def run_pipeline(
             manifest_hash=manifest_hash,
             template_path=settings.docx_template_path,
             quality_score=quality_score,
+        )
+
+        # ---------------------------------------------------------------------
+        # VERBOSE DOCUMENTATION: Source Analysis & Evidence Review
+        # ---------------------------------------------------------------------
+        # Generate source analysis DOCX (explains how sources were found/scored)
+        source_analysis_path = run_dir / "source_analysis.docx"
+        write_source_analysis_docx(
+            sources=sources,
+            procedure=procedure,
+            run_id=run_id,
+            output_path=source_analysis_path,
+            search_terms=None,  # Terms not preserved in scope - sources contain metadata
+        )
+        update_manifest_artifact(
+            manifest_path=manifest_path,
+            artifact_key="source_analysis_docx",
+            artifact_path=source_analysis_path,
+        )
+
+        # Generate evidence review DOCX (explains claim verification)
+        evidence_review_path = run_dir / "evidence_review.docx"
+        write_evidence_review_docx(
+            evidence_report=evidence,
+            sources=sources,
+            procedure=procedure,
+            run_id=run_id,
+            output_path=evidence_review_path,
+        )
+        update_manifest_artifact(
+            manifest_path=manifest_path,
+            artifact_key="evidence_review_docx",
+            artifact_path=evidence_review_path,
         )
 
         # ---------------------------------------------------------------------

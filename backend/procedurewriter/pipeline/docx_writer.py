@@ -684,3 +684,451 @@ def write_meta_analysis_docx(
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     doc.save(str(output_path))
+
+
+# =============================================================================
+# Verbose Documentation DOCX Generation
+# =============================================================================
+
+
+def write_source_analysis_docx(
+    *,
+    sources: list[SourceRecord],
+    procedure: str,
+    run_id: str,
+    output_path: Path,
+    search_terms: list[str] | None = None,
+) -> None:
+    """Write source analysis documentation as DOCX.
+
+    Hybrid format: Readable prose for clinicians + technical appendix for audit.
+
+    Args:
+        sources: List of source records from the pipeline.
+        procedure: Name of the procedure being documented.
+        run_id: Unique run identifier.
+        output_path: Path to save the DOCX file.
+        search_terms: Optional list of search terms used.
+    """
+    from datetime import UTC, datetime
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc: Any = Document()
+
+    # Apply document margins
+    for section in doc.sections:
+        section.top_margin = Inches(1.0)
+        section.bottom_margin = Inches(1.0)
+        section.left_margin = Inches(1.0)
+        section.right_margin = Inches(1.0)
+
+    # Title
+    title = doc.add_heading("Kildeanalyse", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Subtitle
+    subtitle = doc.add_paragraph()
+    run = subtitle.add_run(f"Procedure: {procedure}")
+    run.font.size = Pt(12)
+    run.font.bold = True
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Timestamp
+    ts = datetime.now(UTC).replace(microsecond=0).isoformat()
+    ts_para = doc.add_paragraph()
+    ts_run = ts_para.add_run(f"Genereret: {ts}")
+    ts_run.font.size = Pt(10)
+    ts_run.font.color.rgb = RGBColor(128, 128, 128)
+    ts_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_paragraph()  # Spacer
+
+    # ==========================================================================
+    # SECTION 1: READABLE PROSE
+    # ==========================================================================
+
+    doc.add_heading("Søgestrategi", level=1)
+
+    # Count sources by type
+    source_types: dict[str, int] = {}
+    for src in sources:
+        kind = src.kind or "unknown"
+        source_types[kind] = source_types.get(kind, 0) + 1
+
+    # Prose description of search
+    search_para = doc.add_paragraph()
+    search_para.add_run(
+        f"For at finde evidens til proceduren \"{procedure}\" blev følgende kilder gennemsøgt:\n\n"
+    )
+
+    if "danish_guideline" in source_types:
+        search_para.add_run(
+            f"• Det danske kliniske bibliotek ({source_types['danish_guideline']} guidelines fundet)\n"
+        )
+    if "pubmed" in source_types:
+        search_para.add_run(
+            f"• PubMed/MEDLINE ({source_types['pubmed']} artikler fundet)\n"
+        )
+    if "system_note" in source_types:
+        search_para.add_run(
+            "• Bemærk: Nogle kilder kunne ikke hentes i denne kørsel\n"
+        )
+
+    if search_terms:
+        terms_para = doc.add_paragraph()
+        terms_para.add_run("Søgetermer anvendt: ").bold = True
+        terms_para.add_run(", ".join(search_terms))
+
+    # Evidence hierarchy explanation
+    doc.add_heading("Evidenshierarki", level=1)
+
+    hierarchy_para = doc.add_paragraph()
+    hierarchy_para.add_run(
+        "Kilderne er prioriteret efter evidenshierarkiet:\n\n"
+        "1. Danske kliniske guidelines (højeste prioritet) - Disse er udarbejdet af danske "
+        "faglige selskaber og regioner specifikt til dansk praksis.\n\n"
+        "2. Systematiske reviews og meta-analyser - Giver samlet evidens fra flere studier.\n\n"
+        "3. Randomiserede kontrollerede studier (RCT) - Guldstandard for klinisk evidens.\n\n"
+        "4. Observationsstudier og case-serier - Lavere evidensniveau, men relevant for sjældne tilstande.\n\n"
+        "5. Ekspertudtalelser - Bruges når højere evidens ikke er tilgængelig."
+    )
+
+    # Found sources summary
+    doc.add_heading("Fundne Kilder", level=1)
+
+    if not sources or (len(sources) == 1 and sources[0].kind == "system_note"):
+        no_sources = doc.add_paragraph()
+        no_sources.add_run(
+            "Ingen eksterne kilder kunne findes til denne procedure. "
+            "Dette kan skyldes at søgetermerne ikke matchede tilgængelige dokumenter, "
+            "eller at der ikke findes danske guidelines for dette emne."
+        )
+    else:
+        real_sources = [s for s in sources if s.kind != "system_note"]
+        for i, src in enumerate(real_sources[:10], 1):  # Limit to 10 in prose
+            src_para = doc.add_paragraph()
+            src_para.paragraph_format.left_indent = Inches(0.25)
+
+            # Title and type
+            src_para.add_run(f"{i}. {src.title or 'Uden titel'}").bold = True
+            src_para.add_run(f" ({src.kind})\n")
+
+            # Year if available
+            if src.year:
+                src_para.add_run(f"   År: {src.year}\n")
+
+            # Evidence level if available
+            evidence_level = src.extra.get("evidence_level", "")
+            if evidence_level:
+                src_para.add_run(f"   Evidensniveau: {evidence_level}\n")
+
+            # Scoring reasoning (first line only)
+            reasoning = src.extra.get("scoring_reasoning", [])
+            if reasoning and len(reasoning) > 0:
+                src_para.add_run(f"   Vurdering: {reasoning[-1]}\n")  # Total score
+
+        if len(real_sources) > 10:
+            more_para = doc.add_paragraph()
+            more_para.add_run(f"... og {len(real_sources) - 10} yderligere kilder (se teknisk appendix)")
+
+    # ==========================================================================
+    # SECTION 2: TECHNICAL APPENDIX
+    # ==========================================================================
+
+    doc.add_page_break()
+    doc.add_heading("Teknisk Appendix", level=1)
+
+    appendix_intro = doc.add_paragraph()
+    appendix_intro.add_run(
+        "Dette appendix indeholder detaljerede tekniske data til audit og reproducerbarhed."
+    )
+    appendix_intro.runs[0].font.italic = True
+
+    # Source scoring table
+    doc.add_heading("Kildescore-tabel", level=2)
+
+    real_sources = [s for s in sources if s.kind != "system_note"]
+    if real_sources:
+        # Create table with headers
+        table = doc.add_table(rows=len(real_sources) + 1, cols=5)
+        table.style = "Table Grid"
+
+        headers = ["Kilde-ID", "Type", "Samlet Score", "Kvalitet", "Aktualitet"]
+        for j, header in enumerate(headers):
+            cell = table.cell(0, j)
+            cell.text = header
+            cell.paragraphs[0].runs[0].bold = True
+
+        # Data rows
+        for i, src in enumerate(real_sources, start=1):
+            table.cell(i, 0).text = src.source_id
+            table.cell(i, 1).text = src.kind or "unknown"
+            table.cell(i, 2).text = f"{src.extra.get('composite_score', 0):.1f}"
+            table.cell(i, 3).text = f"{src.extra.get('quality_score', 0):.2f}"
+            table.cell(i, 4).text = f"{src.extra.get('recency_score', 0):.2f}"
+
+        doc.add_paragraph()  # Spacer
+
+        # Detailed reasoning for each source
+        doc.add_heading("Detaljeret Scoring-begrundelse", level=2)
+
+        for src in real_sources[:20]:  # Limit to 20
+            src_heading = doc.add_paragraph()
+            src_heading.add_run(f"{src.source_id}: {src.title or 'Uden titel'}").bold = True
+
+            reasoning = src.extra.get("scoring_reasoning", [])
+            if reasoning:
+                for reason in reasoning:
+                    reason_para = doc.add_paragraph()
+                    reason_para.paragraph_format.left_indent = Inches(0.25)
+                    reason_para.add_run(f"• {reason}")
+            else:
+                no_reason = doc.add_paragraph()
+                no_reason.paragraph_format.left_indent = Inches(0.25)
+                no_reason.add_run("Ingen scoring-begrundelse tilgængelig")
+
+            doc.add_paragraph()  # Spacer between sources
+    else:
+        no_data = doc.add_paragraph()
+        no_data.add_run("Ingen kilder at vise i teknisk appendix.")
+
+    # Footer
+    section = doc.sections[0]
+    footer = section.footer
+    p = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    p.text = f"Kildeanalyse | run_id={run_id}"
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.save(str(output_path))
+
+
+def write_evidence_review_docx(
+    *,
+    evidence_report: dict[str, Any],
+    sources: list[SourceRecord],
+    procedure: str,
+    run_id: str,
+    output_path: Path,
+) -> None:
+    """Write evidence review documentation as DOCX.
+
+    Hybrid format: Readable prose for clinicians + technical appendix for audit.
+
+    Args:
+        evidence_report: Evidence report data (from evidence_report.json).
+        sources: List of source records for reference.
+        procedure: Name of the procedure being documented.
+        run_id: Unique run identifier.
+        output_path: Path to save the DOCX file.
+    """
+    from datetime import UTC, datetime
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc: Any = Document()
+
+    # Apply document margins
+    for section in doc.sections:
+        section.top_margin = Inches(1.0)
+        section.bottom_margin = Inches(1.0)
+        section.left_margin = Inches(1.0)
+        section.right_margin = Inches(1.0)
+
+    # Title
+    title = doc.add_heading("Evidensgennemgang", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Subtitle
+    subtitle = doc.add_paragraph()
+    run = subtitle.add_run(f"Procedure: {procedure}")
+    run.font.size = Pt(12)
+    run.font.bold = True
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Timestamp
+    ts = datetime.now(UTC).replace(microsecond=0).isoformat()
+    ts_para = doc.add_paragraph()
+    ts_run = ts_para.add_run(f"Genereret: {ts}")
+    ts_run.font.size = Pt(10)
+    ts_run.font.color.rgb = RGBColor(128, 128, 128)
+    ts_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_paragraph()  # Spacer
+
+    # ==========================================================================
+    # SECTION 1: READABLE PROSE
+    # ==========================================================================
+
+    doc.add_heading("Verifikationsproces", level=1)
+
+    process_para = doc.add_paragraph()
+    process_para.add_run(
+        "Hver påstand i den genererede procedure er blevet systematisk verificeret mod de "
+        "tilgængelige kilder. Denne proces sikrer, at procedurens indhold er evidensbaseret "
+        "og kan spores tilbage til kliniske kilder.\n\n"
+        "Verifikationen klassificerer hver påstand som:\n"
+        "• Understøttet - Påstanden har direkte støtte i en eller flere kilder\n"
+        "• Delvist understøttet - Dele af påstanden har støtte, men ikke alt\n"
+        "• Ikke understøttet - Ingen kilder understøtter påstanden direkte\n"
+        "• Modstridende - En kilde modsiger påstanden"
+    )
+
+    # Results summary
+    doc.add_heading("Resultater", level=1)
+
+    sentences = evidence_report.get("sentences", [])
+    sentence_count = evidence_report.get("sentence_count", len(sentences))
+
+    supported_count = sum(1 for s in sentences if s.get("supported", False))
+    unsupported_count = sentence_count - supported_count
+
+    # Calculate percentages
+    if sentence_count > 0:
+        support_pct = (supported_count / sentence_count) * 100
+    else:
+        support_pct = 0
+
+    results_para = doc.add_paragraph()
+    results_para.add_run(f"Antal analyserede påstande: {sentence_count}\n\n")
+    results_para.add_run(f"✓ Understøttede påstande: {supported_count} ({support_pct:.0f}%)\n").bold = True
+    results_para.add_run(f"✗ Ikke-understøttede påstande: {unsupported_count} ({100-support_pct:.0f}%)\n")
+
+    # Quality assessment
+    doc.add_heading("Kvalitetsvurdering", level=1)
+
+    quality_para = doc.add_paragraph()
+
+    if support_pct >= 80:
+        quality_para.add_run("Høj evidensdækning: ").bold = True
+        quality_para.add_run(
+            f"Proceduren har {support_pct:.0f}% understøttede påstande, hvilket indikerer "
+            "solid evidensbasering. Proceduren kan anvendes med høj tillid til det faglige indhold."
+        )
+    elif support_pct >= 50:
+        quality_para.add_run("Moderat evidensdækning: ").bold = True
+        quality_para.add_run(
+            f"Proceduren har {support_pct:.0f}% understøttede påstande. "
+            "Visse dele af proceduren bør gennemgås af en klinisk ekspert for at verificere "
+            "de ikke-understøttede påstande."
+        )
+    else:
+        quality_para.add_run("Lav evidensdækning: ").bold = True
+        quality_para.add_run(
+            f"Kun {support_pct:.0f}% af påstandene er understøttet af kilder. "
+            "Proceduren kræver omfattende klinisk review før anvendelse. "
+            "Overvej at søge efter yderligere kilder eller konsultere fageksperter."
+        )
+
+    # Recommendations
+    doc.add_heading("Anbefalinger", level=1)
+
+    rec_para = doc.add_paragraph()
+    if unsupported_count > 0:
+        rec_para.add_run("Baseret på evidensgennemgangen anbefales følgende:\n\n")
+
+        if unsupported_count > sentence_count * 0.5:
+            rec_para.add_run("1. Søg efter yderligere danske eller internationale kilder\n")
+            rec_para.add_run("2. Konsultér relevant fagligt selskab for ekspertudtalelser\n")
+            rec_para.add_run("3. Overvej at simplificere proceduren til kun understøttede elementer\n")
+        else:
+            rec_para.add_run("1. Gennemgå de ikke-understøttede påstande med klinisk ekspert\n")
+            rec_para.add_run("2. Tilføj eksplicitte noter hvor evidens mangler\n")
+            rec_para.add_run("3. Opdatér proceduren når nye kilder bliver tilgængelige\n")
+    else:
+        rec_para.add_run(
+            "Alle påstande er understøttet af kilder. Proceduren er klar til klinisk brug "
+            "efter standard godkendelsesproces."
+        )
+
+    # ==========================================================================
+    # SECTION 2: TECHNICAL APPENDIX
+    # ==========================================================================
+
+    doc.add_page_break()
+    doc.add_heading("Teknisk Appendix", level=1)
+
+    appendix_intro = doc.add_paragraph()
+    appendix_intro.add_run(
+        "Dette appendix indeholder detaljerede verifikationsdata for hver påstand."
+    )
+    appendix_intro.runs[0].font.italic = True
+
+    # Unsupported claims table
+    unsupported = [s for s in sentences if not s.get("supported", False)]
+
+    if unsupported:
+        doc.add_heading("Ikke-understøttede Påstande", level=2)
+
+        for i, claim in enumerate(unsupported[:30], 1):  # Limit to 30
+            claim_para = doc.add_paragraph()
+            claim_para.paragraph_format.left_indent = Inches(0.25)
+
+            text = claim.get("clean_text", claim.get("text", ""))
+            if len(text) > 200:
+                text = text[:200] + "..."
+
+            claim_para.add_run(f"{i}. ").bold = True
+            claim_para.add_run(text)
+
+            # Show line number if available
+            line_no = claim.get("line_no")
+            if line_no:
+                claim_para.add_run(f" (linje {line_no})")
+                claim_para.runs[-1].font.color.rgb = RGBColor(128, 128, 128)
+
+        if len(unsupported) > 30:
+            more = doc.add_paragraph()
+            more.add_run(f"... og {len(unsupported) - 30} yderligere ikke-understøttede påstande")
+
+    # Supported claims with citations
+    supported = [s for s in sentences if s.get("supported", False)]
+
+    if supported:
+        doc.add_heading("Understøttede Påstande (med kilder)", level=2)
+
+        for i, claim in enumerate(supported[:20], 1):  # Limit to 20
+            claim_para = doc.add_paragraph()
+            claim_para.paragraph_format.left_indent = Inches(0.25)
+
+            text = claim.get("clean_text", claim.get("text", ""))
+            if len(text) > 150:
+                text = text[:150] + "..."
+
+            claim_para.add_run(f"{i}. ").bold = True
+            claim_para.add_run(text)
+
+            # Show citations
+            citations = claim.get("citations", [])
+            if citations:
+                claim_para.add_run(f" [{', '.join(citations)}]")
+                claim_para.runs[-1].font.color.rgb = RGBColor(0, 100, 0)
+
+        if len(supported) > 20:
+            more = doc.add_paragraph()
+            more.add_run(f"... og {len(supported) - 20} yderligere understøttede påstande")
+
+    # Summary statistics table
+    doc.add_heading("Statistik-oversigt", level=2)
+
+    stats_table = doc.add_table(rows=4, cols=2)
+    stats_table.style = "Table Grid"
+
+    stats_data = [
+        ("Samlet antal påstande", str(sentence_count)),
+        ("Understøttede", f"{supported_count} ({support_pct:.1f}%)"),
+        ("Ikke-understøttede", f"{unsupported_count} ({100-support_pct:.1f}%)"),
+        ("Antal kilder anvendt", str(len([s for s in sources if s.kind != "system_note"]))),
+    ]
+
+    for i, (label, value) in enumerate(stats_data):
+        stats_table.cell(i, 0).text = label
+        stats_table.cell(i, 1).text = value
+        stats_table.cell(i, 0).paragraphs[0].runs[0].bold = True
+
+    # Footer
+    section = doc.sections[0]
+    footer = section.footer
+    p = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    p.text = f"Evidensgennemgang | run_id={run_id}"
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.save(str(output_path))
