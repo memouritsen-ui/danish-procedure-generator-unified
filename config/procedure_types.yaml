@@ -1,0 +1,182 @@
+# Procedure type configuration for anatomical requirements.
+# Phase 3: Anatomical Content Requirements
+#
+# This file defines anatomical requirements for invasive procedures.
+# The AnatomicalRequirementsRegistry uses these definitions to validate
+# that procedure content includes necessary anatomical information.
+version: 1
+
+# List of invasive procedures requiring anatomical validation
+invasive_procedures:
+  - pleuradræn
+  - lumbalpunktur
+  - central_venous_access
+  - arteriel_kanyle
+  - pericardiocentese
+  - thoracocentese
+  - ascitespunktur
+  - knæpunktur
+  - suprapubisk_kateter
+
+# Anatomical requirements per procedure
+anatomical_requirements:
+  pleuradræn:
+    landmarks:
+      - name: "5. interkostalrum"
+        aliases:
+          - "femte interkostalrum"
+          - "5th intercostal space"
+          - "5. ICR"
+          - "ICS 5"
+        category: thorax
+
+      - name: "midtaksillærlinjen"
+        aliases:
+          - "midaxillærlinjen"
+          - "mid-axillary line"
+          - "MAL"
+        category: thorax
+
+      - name: "triangle of safety"
+        aliases:
+          - "safety triangle"
+          - "sikkerhedstriangel"
+          - "det sikre område"
+        category: thorax
+
+    requires:
+      depth_guidance: true
+      surface_anatomy: true
+      angle_guidance: true
+      verification_step: false
+
+    expected_depth: "variabel afhængig af patient"
+    expected_angle: "over øvre ribbenrand"
+
+  lumbalpunktur:
+    landmarks:
+      - name: "L3-L4"
+        aliases:
+          - "L3/L4"
+          - "L3-4"
+          - "intervertebralrum L3-L4"
+        category: spine
+
+      - name: "L4-L5"
+        aliases:
+          - "L4/L5"
+          - "L4-5"
+          - "intervertebralrum L4-L5"
+        category: spine
+
+      - name: "crista iliaca"
+        aliases:
+          - "hoftekammen"
+          - "iliac crest"
+          - "L4 niveau"
+        category: spine
+
+      - name: "processus spinosus"
+        aliases:
+          - "spinous process"
+          - "torntappen"
+        category: spine
+
+    requires:
+      depth_guidance: true
+      surface_anatomy: true
+      angle_guidance: true
+      verification_step: true
+
+    expected_depth: "4-7 cm hos voksne"
+    expected_angle: "let kranial vinkel i midtlinjen"
+
+  central_venous_access:
+    landmarks:
+      - name: "v. jugularis interna"
+        aliases:
+          - "vena jugularis interna"
+          - "internal jugular vein"
+          - "IJV"
+        category: vascular
+
+      - name: "a. carotis"
+        aliases:
+          - "arteria carotis"
+          - "carotid artery"
+        category: vascular
+
+      - name: "m. sternocleidomastoideus"
+        aliases:
+          - "SCM"
+          - "sternocleidomastoid"
+        category: vascular
+
+    requires:
+      depth_guidance: true
+      surface_anatomy: true
+      angle_guidance: true
+      verification_step: true
+
+  arteriel_kanyle:
+    landmarks:
+      - name: "a. radialis"
+        aliases:
+          - "arteria radialis"
+          - "radial artery"
+        category: vascular
+
+      - name: "processus styloideus radii"
+        aliases:
+          - "styloid process"
+        category: vascular
+
+    requires:
+      depth_guidance: false
+      surface_anatomy: true
+      angle_guidance: true
+      verification_step: false
+
+  pericardiocentese:
+    landmarks:
+      - name: "processus xiphoideus"
+        aliases:
+          - "xiphoid process"
+          - "sværdtappen"
+        category: thorax
+
+      - name: "venstre costalbue"
+        aliases:
+          - "left costal margin"
+        category: thorax
+
+    requires:
+      depth_guidance: true
+      surface_anatomy: true
+      angle_guidance: true
+      verification_step: true
+
+# Templates for generating anatomical content suggestions
+anatomical_templates:
+  thorax:
+    surface_anatomy: |
+      Palpér de øverste ribben og tæl ned til {landmark}.
+      Identificér orienteringspunkter: {orientation_points}.
+    depth_guidance: |
+      Avancér nålen {depth} indtil {endpoint}.
+      Forvent modstand ved {resistance_points}.
+
+  spine:
+    surface_anatomy: |
+      Palpér {landmark} som reference for {vertebral_level}.
+      Patienten positioneres med maksimal lumbalkyfose.
+    depth_guidance: |
+      Avancér nålen {depth} i midtlinjen.
+      Forvent "give" ved passage af ligamentum flavum.
+
+  vascular:
+    surface_anatomy: |
+      Palpér {landmark} for at identificere arteriens forløb.
+      Identificér venens position {relation_to_artery}.
+    depth_guidance: |
+      Punktér med ultralydsvejledning i {angle}.
