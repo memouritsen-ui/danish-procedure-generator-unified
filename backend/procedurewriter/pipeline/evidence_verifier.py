@@ -89,6 +89,62 @@ VIGTIGT:
 - "contradicted" KUN hvis kilden eksplicit modsiger påstanden"""
 
 
+def _fix_unescaped_quotes_in_json(json_str: str) -> str:
+    """
+    Fix unescaped quotes inside JSON string values.
+
+    LLMs sometimes return JSON like:
+    {"explanation": "The source mentions "some term" which..."}
+
+    This function attempts to escape such internal quotes.
+    """
+    # Strategy: Find string values and escape internal quotes
+    result = []
+    i = 0
+    in_string = False
+    string_start = -1
+
+    while i < len(json_str):
+        char = json_str[i]
+
+        if char == '\\' and i + 1 < len(json_str):
+            # Skip escaped character
+            result.append(char)
+            result.append(json_str[i + 1])
+            i += 2
+            continue
+
+        if char == '"':
+            if not in_string:
+                # Starting a string
+                in_string = True
+                string_start = i
+                result.append(char)
+            else:
+                # Check if this is the end of the string
+                # Look ahead for : , } or end of content
+                rest = json_str[i + 1:].lstrip()
+                if rest and rest[0] in ':,}]':
+                    # This is likely the end of the string
+                    in_string = False
+                    result.append(char)
+                elif not rest:
+                    # End of text
+                    in_string = False
+                    result.append(char)
+                else:
+                    # This is an internal quote - escape it
+                    result.append('\\"')
+                    i += 1
+                    continue
+        else:
+            result.append(char)
+
+        i += 1
+
+    return ''.join(result)
+
+
 def _extract_json_from_response(response_text: str) -> dict[str, Any] | None:
     """Extract JSON from LLM response, handling various formats."""
     text = response_text.strip()
@@ -110,32 +166,63 @@ def _extract_json_from_response(response_text: str) -> dict[str, Any] | None:
 
     # Find JSON object boundaries
     first_brace = text.find("{")
-    if first_brace != -1:
-        depth = 0
-        in_string = False
-        escape_next = False
-        for i, char in enumerate(text[first_brace:], start=first_brace):
-            if escape_next:
-                escape_next = False
-                continue
-            if char == "\\":
-                escape_next = True
-                continue
-            if char == '"' and not escape_next:
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
-                    json_str = text[first_brace : i + 1]
-                    try:
-                        return json.loads(json_str)
-                    except json.JSONDecodeError:
-                        break
+    last_brace = text.rfind("}")
+
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        json_str = text[first_brace:last_brace + 1]
+
+        # Try parsing as-is
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+
+        # Try fixing unescaped quotes
+        try:
+            fixed = _fix_unescaped_quotes_in_json(json_str)
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback: regex extraction for known fields
+        try:
+            support_match = re.search(r'"support_level"\s*:\s*"([^"]+)"', json_str)
+            confidence_match = re.search(r'"confidence"\s*:\s*(\d+)', json_str)
+
+            if support_match:
+                # Extract explanation more carefully - find the value after "explanation":
+                expl_start = json_str.find('"explanation"')
+                if expl_start != -1:
+                    colon_pos = json_str.find(':', expl_start)
+                    if colon_pos != -1:
+                        # Find the opening quote
+                        quote_start = json_str.find('"', colon_pos)
+                        if quote_start != -1:
+                            # Find closing - look for ", or "}
+                            rest = json_str[quote_start + 1:]
+                            # Find the next field or end
+                            end_patterns = ['",', '"}', '"\n}']
+                            end_pos = len(rest)
+                            for pattern in end_patterns:
+                                pos = rest.find(pattern)
+                                if pos != -1 and pos < end_pos:
+                                    end_pos = pos
+                            explanation = rest[:end_pos]
+                        else:
+                            explanation = ""
+                    else:
+                        explanation = ""
+                else:
+                    explanation = ""
+
+                return {
+                    "support_level": support_match.group(1),
+                    "confidence": int(confidence_match.group(1)) if confidence_match else 50,
+                    "explanation": explanation,
+                    "relevant_quote": "",
+                }
+        except Exception:
+            pass
 
     logger.warning("Failed to extract JSON from verification response: %s", text[:200])
     return None

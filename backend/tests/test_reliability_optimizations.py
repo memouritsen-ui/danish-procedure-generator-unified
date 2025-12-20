@@ -272,11 +272,11 @@ class TestLLMTermExpansion:
         from procedurewriter.pipeline.run import _get_llm_english_terms
 
         mock_llm = MagicMock()
-        mock_llm.chat.return_value = MagicMock(
+        mock_llm.chat_completion.return_value = MagicMock(
             content='["acute hypoglycemia", "low blood sugar", "diabetes emergency"]'
         )
 
-        result = _get_llm_english_terms("akut hypoglykæmi", None, mock_llm)
+        result = _get_llm_english_terms("akut hypoglykæmi", None, mock_llm, "test-model")
 
         assert len(result) == 3
         assert "acute hypoglycemia" in result
@@ -286,11 +286,11 @@ class TestLLMTermExpansion:
         from procedurewriter.pipeline.run import _get_llm_english_terms
 
         mock_llm = MagicMock()
-        mock_llm.chat.return_value = MagicMock(
+        mock_llm.chat_completion.return_value = MagicMock(
             content='```json\n["term1", "term2"]\n```'
         )
 
-        result = _get_llm_english_terms("test", None, mock_llm)
+        result = _get_llm_english_terms("test", None, mock_llm, "test-model")
 
         assert len(result) == 2
         assert "term1" in result
@@ -300,9 +300,9 @@ class TestLLMTermExpansion:
         from procedurewriter.pipeline.run import _get_llm_english_terms
 
         mock_llm = MagicMock()
-        mock_llm.chat.side_effect = Exception("API error")
+        mock_llm.chat_completion.side_effect = Exception("API error")
 
-        result = _get_llm_english_terms("test", None, mock_llm)
+        result = _get_llm_english_terms("test", None, mock_llm, "test-model")
 
         assert result == []
 
@@ -311,7 +311,7 @@ class TestLLMTermExpansion:
         from procedurewriter.pipeline.run import _expand_procedure_terms
 
         mock_llm = MagicMock()
-        mock_llm.chat.return_value = MagicMock(
+        mock_llm.chat_completion.return_value = MagicMock(
             content='["llm suggested term"]'
         )
 
@@ -319,10 +319,11 @@ class TestLLMTermExpansion:
             procedure="akut test",
             context=None,
             llm=mock_llm,
+            model="test-model",
         )
 
         assert "llm suggested term" in result
-        mock_llm.chat.assert_called_once()
+        mock_llm.chat_completion.assert_called_once()
 
 
 class TestRFC5987Encoding:

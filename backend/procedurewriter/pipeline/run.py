@@ -415,6 +415,7 @@ def run_pipeline(
                 procedure=procedure,
                 context=context,
                 llm=term_expansion_llm,
+                model=settings.llm_model,
             )
             queries = _build_pubmed_queries(expanded_terms=expanded_terms)
             candidates: list[dict[str, Any]] = []
@@ -1181,6 +1182,7 @@ def _get_llm_english_terms(
     procedure: str,
     context: str | None,
     llm: Any,
+    model: str,
 ) -> list[str]:
     """Use LLM to suggest English medical terms for a Danish procedure.
 
@@ -1188,6 +1190,7 @@ def _get_llm_english_terms(
         procedure: Danish procedure title
         context: Optional context
         llm: LLM provider instance
+        model: Model name to use for completion
 
     Returns:
         List of English medical terms/phrases for PubMed search.
@@ -1210,8 +1213,9 @@ Fokusér på:
 - Specifikke procedure-navne"""
 
     try:
-        response = llm.chat(
+        response = llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
+            model=model,
             temperature=0.1,
             max_tokens=200,
         )
@@ -1240,6 +1244,7 @@ def _expand_procedure_terms(
     procedure: str,
     context: str | None,
     llm: Any | None = None,
+    model: str = "gpt-4o-mini",
 ) -> list[str]:
     """Expand Danish procedure terms to include English equivalents.
 
@@ -1247,6 +1252,7 @@ def _expand_procedure_terms(
         procedure: Danish procedure title
         context: Optional context
         llm: Optional LLM provider for live translation (recommended)
+        model: Model name to use for LLM completion
 
     Returns:
         List of search terms including Danish original and English translations.
@@ -1265,7 +1271,7 @@ def _expand_procedure_terms(
 
     # Strategy 1: LLM-based translation (most accurate for medical terms)
     if llm is not None:
-        llm_terms = _get_llm_english_terms(procedure, context, llm)
+        llm_terms = _get_llm_english_terms(procedure, context, llm, model)
         if llm_terms:
             logger.info("LLM suggested English terms: %s", llm_terms)
             terms.extend(llm_terms)

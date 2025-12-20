@@ -155,7 +155,11 @@ class OpenAIProvider(LLMProvider):
             "temperature": temperature,
         }
         if max_tokens:
-            kwargs["max_tokens"] = max_tokens
+            # GPT-5 series and newer models use max_completion_tokens instead of max_tokens
+            if "gpt-5" in model.lower() or "o1" in model.lower() or "o3" in model.lower():
+                kwargs["max_completion_tokens"] = max_tokens
+            else:
+                kwargs["max_tokens"] = max_tokens
 
         response = client.chat.completions.create(**kwargs)
 

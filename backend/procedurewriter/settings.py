@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # LLM Provider Configuration
     llm_provider: LLMProviderEnum = LLMProviderEnum.OPENAI
     use_llm: bool = True
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "gpt-5.2"  # Upgraded from gpt-4o-mini for better style processing
 
     # Provider-specific settings (read from env without prefix)
     # These are typically set as OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     def get_default_model_for_provider(self) -> str:
         """Get the default model name for the configured provider."""
         defaults = {
-            LLMProviderEnum.OPENAI: "gpt-4o-mini",
+            LLMProviderEnum.OPENAI: "gpt-5.2",
             LLMProviderEnum.ANTHROPIC: "claude-3-5-sonnet-20241022",
             LLMProviderEnum.OLLAMA: "llama3.1",
         }
