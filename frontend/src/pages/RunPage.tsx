@@ -118,6 +118,14 @@ export default function RunPage() {
                  </a>
               )}
             </div>
+            <div style={{ marginTop: 8 }} className="row">
+              <a href={`/api/runs/${encodeURIComponent(runId)}/docx/source-analysis`} download>
+                <button className="secondary">Kildeanalyse DOCX</button>
+              </a>
+              <a href={`/api/runs/${encodeURIComponent(runId)}/docx/evidence-review`} download style={{ marginLeft: '10px' }}>
+                <button className="secondary">Evidensgennemgang DOCX</button>
+              </a>
+            </div>
             <div style={{ marginTop: 12 }} className="row">
               <a href={`/api/runs/${encodeURIComponent(runId)}/bundle`}>
                 <button>Download bundle</button>

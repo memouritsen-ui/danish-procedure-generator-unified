@@ -435,6 +435,48 @@ def api_meta_analysis_docx(run_id: str) -> FileResponse:
     )
 
 
+@app.get("/api/runs/{run_id}/docx/source-analysis")
+def api_source_analysis_docx(run_id: str) -> FileResponse:
+    """Download the source analysis documentation."""
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    docx_path = Path(run.run_dir) / "source_analysis.docx"
+    if not docx_path.exists():
+        raise HTTPException(status_code=404, detail="Source analysis document not found for this run.")
+
+    filename = f"{_sanitize_filename(run.procedure)}_Kildeanalyse.docx"
+    content_disposition = _make_content_disposition(filename)
+
+    return FileResponse(
+        path=str(docx_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": content_disposition},
+    )
+
+
+@app.get("/api/runs/{run_id}/docx/evidence-review")
+def api_evidence_review_docx(run_id: str) -> FileResponse:
+    """Download the evidence review documentation."""
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    docx_path = Path(run.run_dir) / "evidence_review.docx"
+    if not docx_path.exists():
+        raise HTTPException(status_code=404, detail="Evidence review document not found for this run.")
+
+    filename = f"{_sanitize_filename(run.procedure)}_Evidensgennemgang.docx"
+    content_disposition = _make_content_disposition(filename)
+
+    return FileResponse(
+        path=str(docx_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": content_disposition},
+    )
+
+
 @app.get("/api/runs/{run_id}/manifest")
 def api_manifest(run_id: str) -> dict[str, Any]:
     run = get_run(settings.db_path, run_id)
