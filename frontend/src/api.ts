@@ -20,6 +20,7 @@ export type RunDetail = RunSummary & {
   warnings?: string[] | null;
   total_input_tokens?: number | null;
   total_output_tokens?: number | null;
+  has_meta_analysis_report?: boolean;
 };
 
 export type SourceRecord = {

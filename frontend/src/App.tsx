@@ -7,6 +7,7 @@ import RunPage from "./pages/RunPage";
 import RunsPage from "./pages/RunsPage";
 import SettingsPage from "./pages/SettingsPage";
 import SourcesPage from "./pages/SourcesPage";
+import { StylesPage } from "./pages/StylesPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import TemplateEditorPage from "./pages/TemplateEditorPage";
 import VersionHistoryPage from "./pages/VersionHistoryPage";
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/templates/:templateId" element={<TemplateEditorPage />} />
         <Route path="/protocols" element={<ProtocolsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/styles" element={<StylesPage />} />
         <Route path="/ingest" element={<IngestPage />} />
         <Route path="*" element={<Navigate to="/write" replace />} />
       </Routes>

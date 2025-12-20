@@ -29,6 +29,9 @@ export default function Layout({ children }: PropsWithChildren) {
         <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
           Indstillinger
         </NavLink>
+        <NavLink to="/styles" className={({ isActive }) => (isActive ? "active" : "")}>
+          Stilprofiler
+        </NavLink>
       </nav>
       <div className="container">{children}</div>
     </>
