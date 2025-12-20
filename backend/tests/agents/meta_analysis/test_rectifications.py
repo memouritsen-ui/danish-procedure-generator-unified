@@ -6,13 +6,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from scipy import stats
-
 
 # =============================================================================
 # FIX 1: Deterministic GRADE Logic with Hartung-Knapp
@@ -25,8 +23,8 @@ class TestDeterministicGRADELogic:
     def test_downgrade_for_inconsistency_when_i_squared_above_50(self) -> None:
         """Auto-downgrade when I² > 50% (substantial heterogeneity)."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            calculate_deterministic_grade,
             GRADEDowngrade,
+            calculate_deterministic_grade,
         )
 
         result = calculate_deterministic_grade(
@@ -41,8 +39,8 @@ class TestDeterministicGRADELogic:
     def test_downgrade_for_risk_of_bias_when_above_25_percent(self) -> None:
         """Auto-downgrade when >25% studies have high RoB."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            calculate_deterministic_grade,
             GRADEDowngrade,
+            calculate_deterministic_grade,
         )
 
         result = calculate_deterministic_grade(
@@ -57,8 +55,8 @@ class TestDeterministicGRADELogic:
     def test_downgrade_for_imprecision_when_k_less_than_5(self) -> None:
         """Auto-downgrade for imprecision when k < 5 studies."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            calculate_deterministic_grade,
             GRADEDowngrade,
+            calculate_deterministic_grade,
         )
 
         result = calculate_deterministic_grade(
@@ -185,8 +183,8 @@ class TestHartungKnappAdjustment:
     def test_uses_z_when_k_5_or_more(self) -> None:
         """Standard z=1.96 should be used when k >= 5."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            calculate_random_effects_pooled_hk,
             calculate_random_effects_pooled,
+            calculate_random_effects_pooled_hk,
         )
 
         effects = [0.5, 0.6, 0.55, 0.48, 0.52]
@@ -229,7 +227,7 @@ class TestSSEErrorHandling:
     @pytest.mark.asyncio
     async def test_stream_terminates_on_error_event(self) -> None:
         """Stream should terminate when ERROR event received."""
-        from procedurewriter.api.meta_analysis import get_meta_analysis_events, _active_emitters
+        from procedurewriter.api.meta_analysis import _active_emitters, get_meta_analysis_events
         from procedurewriter.pipeline.events import EventEmitter, EventType
 
         run_id = "test-error-run"
@@ -262,7 +260,7 @@ class TestSSEErrorHandling:
     @pytest.mark.asyncio
     async def test_stream_terminates_on_complete_event(self) -> None:
         """Stream should terminate when COMPLETE event received."""
-        from procedurewriter.api.meta_analysis import get_meta_analysis_events, _active_emitters
+        from procedurewriter.api.meta_analysis import _active_emitters, get_meta_analysis_events
         from procedurewriter.pipeline.events import EventEmitter, EventType
 
         run_id = "test-complete-run"
@@ -301,7 +299,6 @@ class TestEmitterCleanup:
     def test_emitter_has_created_at_timestamp(self) -> None:
         """Active emitters should track creation timestamp."""
         from procedurewriter.api.meta_analysis import (
-            _active_emitters,
             _emitter_timestamps,
         )
 
@@ -311,9 +308,9 @@ class TestEmitterCleanup:
     def test_stale_emitters_removed_after_30_minutes(self) -> None:
         """Emitters inactive for >30 minutes should be pruned."""
         from procedurewriter.api.meta_analysis import (
-            cleanup_stale_emitters,
             _active_emitters,
             _emitter_timestamps,
+            cleanup_stale_emitters,
         )
         from procedurewriter.pipeline.events import EventEmitter
 
@@ -330,9 +327,9 @@ class TestEmitterCleanup:
     def test_active_emitters_not_removed(self) -> None:
         """Emitters within 30-minute window should not be pruned."""
         from procedurewriter.api.meta_analysis import (
-            cleanup_stale_emitters,
             _active_emitters,
             _emitter_timestamps,
+            cleanup_stale_emitters,
         )
         from procedurewriter.pipeline.events import EventEmitter
 
@@ -377,9 +374,9 @@ class TestGRADEBadgeInjection:
     def test_synthesis_output_includes_certainty_level(self) -> None:
         """SynthesisOutput should include certainty_level field."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            SynthesisOutput,
-            PooledEstimate,
             HeterogeneityMetrics,
+            PooledEstimate,
+            SynthesisOutput,
         )
 
         output = SynthesisOutput(
@@ -419,14 +416,15 @@ class TestGRADEBadgeInjection:
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
+        from docx import Document
+
         from procedurewriter.agents.meta_analysis.orchestrator import OrchestratorOutput
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            SynthesisOutput,
-            PooledEstimate,
             HeterogeneityMetrics,
+            PooledEstimate,
+            SynthesisOutput,
         )
-        from docx import Document
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
 
         synthesis = SynthesisOutput(
             pooled_estimate=PooledEstimate(
@@ -482,7 +480,6 @@ class TestHartungKnappIntegration:
 
     def test_orchestrator_uses_hartung_knapp_for_small_k(self) -> None:
         """Full pipeline should use Hartung-Knapp when k < 5 studies."""
-        from unittest.mock import MagicMock
         from procedurewriter.agents.meta_analysis.orchestrator import (
             MetaAnalysisOrchestrator,
             OrchestratorInput,

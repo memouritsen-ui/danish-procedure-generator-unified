@@ -7,8 +7,6 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-import pytest
-
 from procedurewriter.agents.meta_analysis.models import RiskOfBias, RiskOfBiasAssessment
 from procedurewriter.llm.providers import LLMProviderType, LLMResponse
 

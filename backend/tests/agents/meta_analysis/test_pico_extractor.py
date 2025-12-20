@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from procedurewriter.agents.meta_analysis.models import ManualReviewRequired, PICOData
+from procedurewriter.agents.meta_analysis.models import ManualReviewRequired
 from procedurewriter.llm.providers import LLMProviderType, LLMResponse
 
 
@@ -74,8 +74,8 @@ class TestPICOExtraction:
     def test_extract_pico_from_english_abstract(self) -> None:
         """Extract PICO elements from English abstract."""
         from procedurewriter.agents.meta_analysis.pico_extractor import (
-            PICOExtractor,
             PICOExtractionInput,
+            PICOExtractor,
         )
 
         llm_response = json.dumps({
@@ -108,8 +108,8 @@ class TestPICOExtraction:
     def test_extract_pico_from_danish_abstract(self) -> None:
         """Extract PICO from Danish abstract with MeSH normalization."""
         from procedurewriter.agents.meta_analysis.pico_extractor import (
-            PICOExtractor,
             PICOExtractionInput,
+            PICOExtractor,
         )
 
         # LLM extracts Danish terms and normalizes to English MeSH
@@ -145,8 +145,8 @@ class TestPICOExtraction:
     def test_extract_pico_optional_comparison(self) -> None:
         """Single-arm studies should have None comparison."""
         from procedurewriter.agents.meta_analysis.pico_extractor import (
-            PICOExtractor,
             PICOExtractionInput,
+            PICOExtractor,
         )
 
         llm_response = json.dumps({
@@ -195,8 +195,8 @@ class TestConfidenceGating:
     def test_high_confidence_succeeds(self) -> None:
         """Confidence >= 0.85 should return successful result."""
         from procedurewriter.agents.meta_analysis.pico_extractor import (
-            PICOExtractor,
             PICOExtractionInput,
+            PICOExtractor,
         )
 
         llm_response = json.dumps({
@@ -227,8 +227,8 @@ class TestConfidenceGating:
     def test_low_confidence_raises_manual_review(self) -> None:
         """Confidence < 0.85 should raise ManualReviewRequired."""
         from procedurewriter.agents.meta_analysis.pico_extractor import (
-            PICOExtractor,
             PICOExtractionInput,
+            PICOExtractor,
         )
 
         llm_response = json.dumps({
@@ -261,8 +261,8 @@ class TestConfidenceGating:
     def test_confidence_threshold_is_configurable(self) -> None:
         """Confidence threshold should be configurable."""
         from procedurewriter.agents.meta_analysis.pico_extractor import (
-            PICOExtractor,
             PICOExtractionInput,
+            PICOExtractor,
         )
 
         llm_response = json.dumps({
@@ -316,8 +316,8 @@ class TestMultiPassExtraction:
     def test_self_correction_improves_confidence(self) -> None:
         """Second pass should attempt to improve low-confidence extraction."""
         from procedurewriter.agents.meta_analysis.pico_extractor import (
-            PICOExtractor,
             PICOExtractionInput,
+            PICOExtractor,
         )
 
         # First pass: low confidence
@@ -382,6 +382,7 @@ class TestInputValidation:
     def test_input_requires_study_id(self) -> None:
         """PICOExtractionInput should require study_id."""
         from pydantic import ValidationError
+
         from procedurewriter.agents.meta_analysis.pico_extractor import PICOExtractionInput
 
         with pytest.raises(ValidationError):
@@ -393,6 +394,7 @@ class TestInputValidation:
     def test_input_requires_at_least_title_or_abstract(self) -> None:
         """PICOExtractionInput should require at least title or abstract."""
         from pydantic import ValidationError
+
         from procedurewriter.agents.meta_analysis.pico_extractor import PICOExtractionInput
 
         with pytest.raises(ValidationError):

@@ -7,10 +7,7 @@ CRITICAL: Statistical tests use known datasets to validate math.
 from __future__ import annotations
 
 import json
-import math
 from unittest.mock import MagicMock
-
-import pytest
 
 from procedurewriter.agents.meta_analysis.models import (
     PICOData,
@@ -202,9 +199,9 @@ class TestSynthesisOutput:
     def test_synthesis_output_structure(self) -> None:
         """SynthesisOutput should contain all required fields."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            SynthesisOutput,
-            PooledEstimate,
             HeterogeneityMetrics,
+            PooledEstimate,
+            SynthesisOutput,
         )
 
         output = SynthesisOutput(

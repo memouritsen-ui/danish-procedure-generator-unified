@@ -5,10 +5,7 @@ Following TDD: Tests written before implementation.
 from __future__ import annotations
 
 import json
-from typing import Literal
 from unittest.mock import MagicMock
-
-import pytest
 
 from procedurewriter.agents.meta_analysis.models import PICOData
 from procedurewriter.llm.providers import LLMProviderType, LLMResponse
@@ -142,9 +139,9 @@ class TestScreeningExecution:
     def test_screen_matching_study_includes(self) -> None:
         """Study matching PICO query should be included."""
         from procedurewriter.agents.meta_analysis.screener_agent import (
-            StudyScreenerAgent,
-            ScreeningInput,
             PICOQuery,
+            ScreeningInput,
+            StudyScreenerAgent,
         )
 
         llm_response = json.dumps({
@@ -182,9 +179,9 @@ class TestScreeningExecution:
     def test_screen_non_matching_study_excludes(self) -> None:
         """Study not matching PICO query should be excluded."""
         from procedurewriter.agents.meta_analysis.screener_agent import (
-            StudyScreenerAgent,
-            ScreeningInput,
             PICOQuery,
+            ScreeningInput,
+            StudyScreenerAgent,
         )
 
         llm_response = json.dumps({
@@ -240,9 +237,9 @@ class TestLowConfidenceFlagging:
     def test_low_intervention_confidence_flags_manual_review(self) -> None:
         """Intervention confidence < 0.90 should flag for manual verification."""
         from procedurewriter.agents.meta_analysis.screener_agent import (
-            StudyScreenerAgent,
-            ScreeningInput,
             PICOQuery,
+            ScreeningInput,
+            StudyScreenerAgent,
         )
 
         # Note: The agent should detect low confidence and flag regardless of LLM response
@@ -284,9 +281,9 @@ class TestLowConfidenceFlagging:
     def test_high_confidence_does_not_flag(self) -> None:
         """High confidence (>= 0.90) should not flag for manual verification."""
         from procedurewriter.agents.meta_analysis.screener_agent import (
-            StudyScreenerAgent,
-            ScreeningInput,
             PICOQuery,
+            ScreeningInput,
+            StudyScreenerAgent,
         )
 
         llm_response = json.dumps({

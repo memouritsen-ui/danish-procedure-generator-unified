@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from procedurewriter.agents.meta_analysis.models import PICOData
 
 
