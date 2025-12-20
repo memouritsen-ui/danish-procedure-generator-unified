@@ -329,6 +329,18 @@ def _render_markdown_with_template(doc: Any, markdown_text: str, config: dict[st
             h = doc.add_heading(heading_text, level=2)
             _apply_heading_color(h, config, 3)
 
+        elif line.startswith("  - "):
+            # Nested bullet (second level)
+            if not current_section_visible:
+                continue
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.5)
+            p.paragraph_format.first_line_indent = Inches(-0.25)
+            p.paragraph_format.space_before = Pt(2)
+            p.paragraph_format.space_after = Pt(2)
+            p.add_run("○ ").bold = False
+            _add_text_with_citations(p, line[4:].strip(), citation_color, citation_size)
+
         elif line.startswith("- "):
             if not current_section_visible:
                 continue
@@ -338,6 +350,8 @@ def _render_markdown_with_template(doc: Any, markdown_text: str, config: dict[st
                 p = doc.add_paragraph()
                 p.paragraph_format.left_indent = Inches(0.25)
                 p.paragraph_format.first_line_indent = Inches(-0.25)
+                p.paragraph_format.space_before = Pt(4)
+                p.paragraph_format.space_after = Pt(4)
                 p.add_run("• ").bold = False
                 _add_text_with_citations(p, line[2:].strip(), citation_color, citation_size)
 
@@ -349,6 +363,8 @@ def _render_markdown_with_template(doc: Any, markdown_text: str, config: dict[st
                 safety_lines.append(body)
             else:
                 p = doc.add_paragraph(style="List Number")
+                p.paragraph_format.space_before = Pt(4)
+                p.paragraph_format.space_after = Pt(4)
                 _add_text_with_citations(p, body, citation_color, citation_size)
 
         else:
@@ -358,6 +374,9 @@ def _render_markdown_with_template(doc: Any, markdown_text: str, config: dict[st
                 safety_lines.append(line.strip())
             else:
                 p = doc.add_paragraph()
+                p.paragraph_format.first_line_indent = Inches(0.25)
+                p.paragraph_format.space_before = Pt(6)
+                p.paragraph_format.space_after = Pt(6)
                 _add_text_with_citations(p, line.strip(), citation_color, citation_size)
 
     flush_safety_box()

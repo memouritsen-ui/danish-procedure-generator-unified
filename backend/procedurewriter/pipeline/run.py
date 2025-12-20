@@ -26,7 +26,7 @@ from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
 from procedurewriter.pipeline.fetcher import CachedHttpClient
 from procedurewriter.pipeline.io import write_json, write_jsonl, write_text
 from procedurewriter.pipeline.library_search import LibrarySearchProvider
-from procedurewriter.pipeline.manifest import write_manifest
+from procedurewriter.pipeline.manifest import update_manifest_artifact, write_manifest
 from procedurewriter.pipeline.normalize import normalize_html, normalize_pubmed
 from procedurewriter.pipeline.pubmed import PubMedClient
 from procedurewriter.pipeline.retrieve import build_snippets, retrieve
@@ -850,6 +850,18 @@ def run_pipeline(
                         output=ma_result.output,
                         output_path=ma_docx_path,
                         run_id=run_id
+                    )
+
+                    # Add meta-analysis artifacts to manifest
+                    update_manifest_artifact(
+                        manifest_path=manifest_path,
+                        artifact_key="meta_analysis_docx",
+                        artifact_path=ma_docx_path,
+                    )
+                    update_manifest_artifact(
+                        manifest_path=manifest_path,
+                        artifact_key="synthesis_report",
+                        artifact_path=ma_report_path,
                     )
 
                     orchestrator_cost += ma_result.stats.cost_usd

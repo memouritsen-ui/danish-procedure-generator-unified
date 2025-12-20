@@ -67,3 +67,39 @@ def write_manifest(
     serialized = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     write_text(manifest_path, serialized)
     return sha256_bytes(serialized.encode("utf-8"))
+
+
+def update_manifest_artifact(
+    manifest_path: Path,
+    artifact_key: str,
+    artifact_path: Path,
+) -> str:
+    """Add or update an artifact in an existing manifest.
+
+    Args:
+        manifest_path: Path to the existing manifest JSON file.
+        artifact_key: Key for the artifact (e.g., "meta_analysis_docx").
+        artifact_path: Path to the artifact file.
+
+    Returns:
+        Updated manifest SHA256 hash.
+    """
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+
+    if not artifact_path.exists():
+        raise FileNotFoundError(f"Artifact not found: {artifact_path}")
+
+    # Load existing manifest
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    # Add/update artifact
+    manifest["artifacts"][artifact_key] = {
+        "path": str(artifact_path),
+        "sha256": sha256_file(artifact_path),
+    }
+
+    # Re-serialize and write
+    serialized = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    write_text(manifest_path, serialized)
+    return sha256_bytes(serialized.encode("utf-8"))
