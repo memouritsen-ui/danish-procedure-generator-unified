@@ -15,6 +15,7 @@ from typing import Pattern
 WORKFLOW_PATTERNS: list[tuple[str, Pattern[str]]] = [
     # Contact/call patterns
     ("ring_til_bagvagt", re.compile(r"ring\s+til\s+bagvagt", re.I)),
+    ("kontakt_bagvagt", re.compile(r"kontakt\s+bagvagt", re.I)),
     ("kontakt_forvagt", re.compile(r"kontakt\s+forvagt", re.I)),
     ("tilkald_anaestesi", re.compile(r"tilkald\s+an[æa]stesi", re.I)),
     ("ring_til_anaestesi", re.compile(r"ring\s+til\s+an[æa]stesi", re.I)),
