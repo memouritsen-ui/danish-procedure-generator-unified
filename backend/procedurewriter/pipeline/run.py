@@ -347,7 +347,25 @@ def run_pipeline(
                 email=settings.ncbi_email,
                 api_key=ncbi_api_key or settings.ncbi_api_key,
             )
-            expanded_terms = _expand_procedure_terms(procedure=procedure, context=context)
+
+            # Get LLM for term expansion if available (improves search quality)
+            term_expansion_llm = None
+            if settings.use_llm and (openai_api_key or anthropic_api_key):
+                try:
+                    term_expansion_llm = get_llm_client(
+                        provider=settings.llm_provider,
+                        openai_api_key=openai_api_key,
+                        anthropic_api_key=anthropic_api_key,
+                        ollama_base_url=ollama_base_url or settings.ollama_base_url,
+                    )
+                except Exception as e:
+                    logger.warning("Could not create LLM for term expansion: %s", e)
+
+            expanded_terms = _expand_procedure_terms(
+                procedure=procedure,
+                context=context,
+                llm=term_expansion_llm,
+            )
             queries = _build_pubmed_queries(expanded_terms=expanded_terms)
             candidates: list[dict[str, Any]] = []
             seen_pmids: set[str] = set()
@@ -1035,15 +1053,104 @@ _DA_EN_SUBSTRINGS: list[tuple[str, str]] = [
 ]
 
 
-def _expand_procedure_terms(*, procedure: str, context: str | None) -> list[str]:
+def _get_llm_english_terms(
+    procedure: str,
+    context: str | None,
+    llm: Any,
+) -> list[str]:
+    """Use LLM to suggest English medical terms for a Danish procedure.
+
+    Args:
+        procedure: Danish procedure title
+        context: Optional context
+        llm: LLM provider instance
+
+    Returns:
+        List of English medical terms/phrases for PubMed search.
+        Empty list if LLM call fails.
+    """
+    import json as json_module
+
+    prompt = f"""Du er en medicinsk oversætter. Givet en dansk procedure-titel,
+foreslå 2-4 engelske medicinske søgetermer til PubMed.
+
+Dansk procedure: "{procedure}"
+{f'Kontekst: "{context}"' if context else ''}
+
+Svar KUN med en JSON-liste af engelske termer, f.eks.:
+["lumbar puncture", "spinal tap", "cerebrospinal fluid collection"]
+
+Fokusér på:
+- Officielle medicinske termer (MeSH hvor muligt)
+- Almindelige synonymer
+- Specifikke procedure-navne"""
+
+    try:
+        response = llm.chat(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=200,
+        )
+        content = response.content.strip()
+
+        # Parse JSON array
+        if content.startswith("["):
+            terms = json_module.loads(content)
+            if isinstance(terms, list):
+                return [str(t).strip() for t in terms if t]
+        # Try to extract JSON from response
+        import re
+        match = re.search(r'\[.*?\]', content, re.DOTALL)
+        if match:
+            terms = json_module.loads(match.group())
+            if isinstance(terms, list):
+                return [str(t).strip() for t in terms if t]
+    except Exception as e:
+        logger.warning("LLM term expansion failed, using fallback: %s", e)
+
+    return []
+
+
+def _expand_procedure_terms(
+    *,
+    procedure: str,
+    context: str | None,
+    llm: Any | None = None,
+) -> list[str]:
+    """Expand Danish procedure terms to include English equivalents.
+
+    Args:
+        procedure: Danish procedure title
+        context: Optional context
+        llm: Optional LLM provider for live translation (recommended)
+
+    Returns:
+        List of search terms including Danish original and English translations.
+
+    Strategy:
+        1. If LLM provided: Use LLM to suggest English terms (most accurate)
+        2. Fall back to static dictionary for known phrases
+        3. Fall back to substring-based translation for components
+    """
     base = procedure.strip()
     if not base:
         return []
 
     terms: list[str] = [base]
     lowered = base.lower().strip()
+
+    # Strategy 1: LLM-based translation (most accurate for medical terms)
+    if llm is not None:
+        llm_terms = _get_llm_english_terms(procedure, context, llm)
+        if llm_terms:
+            logger.info("LLM suggested English terms: %s", llm_terms)
+            terms.extend(llm_terms)
+
+    # Strategy 2: Static dictionary lookup (fallback)
     if lowered in _DA_EN_PHRASES:
         terms.extend(_DA_EN_PHRASES[lowered])
+
+    # Strategy 3: Substring-based translation (component matching)
     translated = lowered
     for da, en in _DA_EN_SUBSTRINGS:
         if da in translated:
@@ -1052,13 +1159,13 @@ def _expand_procedure_terms(*, procedure: str, context: str | None) -> list[str]
     if translated and translated != lowered:
         terms.append(translated)
 
-    # Lightly include context terms if provided (kept conservative to avoid over-filtering).
+    # Include context terms if provided
     if context:
         ctx = context.strip()
         if ctx:
             terms.append(f"{base} {ctx}")
 
-    # Deduplicate while preserving order.
+    # Deduplicate while preserving order
     seen: set[str] = set()
     deduped_terms: list[str] = []
     for t in terms:
@@ -1070,6 +1177,7 @@ def _expand_procedure_terms(*, procedure: str, context: str | None) -> list[str]
             continue
         seen.add(key)
         deduped_terms.append(t)
+
     return deduped_terms
 
 

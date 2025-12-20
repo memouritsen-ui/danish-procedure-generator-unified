@@ -329,12 +329,67 @@ def api_run(run_id: str) -> RunDetail:
 
 
 def _sanitize_filename(name: str) -> str:
-    """Sanitize a string for use as a filename."""
+    """Sanitize a string for use as a filename.
+
+    Preserves Danish characters (æ, ø, å) for display purposes.
+    For HTTP headers, use _encode_filename_rfc5987() instead.
+    """
     import re
     # Replace spaces and special chars with underscores, keep Danish chars
     sanitized = re.sub(r'[^\w\sæøåÆØÅ-]', '', name)
     sanitized = re.sub(r'\s+', '_', sanitized.strip())
     return sanitized[:100] if sanitized else "Procedure"
+
+
+def _encode_filename_rfc5987(filename: str) -> str:
+    """Encode filename for Content-Disposition header per RFC 5987.
+
+    RFC 5987 allows non-ASCII characters in HTTP headers using:
+    filename*=UTF-8''percent-encoded-filename
+
+    This ensures Danish characters (æ, ø, å) work in all browsers:
+    - Chrome, Firefox, Edge: Support RFC 5987
+    - Safari: Falls back to ASCII filename parameter
+    - IE11: Falls back to ASCII filename parameter
+
+    Args:
+        filename: The filename including extension (e.g., "Akut_hypoækmi.docx")
+
+    Returns:
+        RFC 5987 encoded string (e.g., "UTF-8''Akut_hypo%C3%A6kmi.docx")
+    """
+    from urllib.parse import quote
+
+    # Encode as UTF-8 and percent-encode
+    # quote() with safe='' encodes everything except unreserved chars
+    # We keep some safe chars that are valid in filenames
+    encoded = quote(filename, safe='')
+    return f"UTF-8''{encoded}"
+
+
+def _make_content_disposition(filename: str) -> str:
+    """Create Content-Disposition header value with RFC 5987 support.
+
+    Returns a header that works across all browsers:
+    - Modern browsers use filename* (RFC 5987) for full Unicode support
+    - Legacy browsers fall back to ASCII filename parameter
+
+    Args:
+        filename: The desired filename (may contain Danish chars)
+
+    Returns:
+        Complete Content-Disposition header value
+    """
+    import re
+
+    # Create ASCII-safe fallback (replace non-ASCII with underscore)
+    ascii_safe = re.sub(r'[^\x00-\x7F]', '_', filename)
+
+    # RFC 5987 encoded version with full Unicode support
+    rfc5987_encoded = _encode_filename_rfc5987(filename)
+
+    # Return both: filename for legacy, filename* for modern browsers
+    return f'attachment; filename="{ascii_safe}"; filename*={rfc5987_encoded}'
 
 
 @app.get("/api/runs/{run_id}/docx")
@@ -345,9 +400,17 @@ def api_docx(run_id: str) -> FileResponse:
     docx = Path(run.run_dir) / "Procedure.docx"
     if not docx.exists():
         raise HTTPException(status_code=404, detail="DOCX not available")
-    # Use procedure name for download filename
+
+    # Use procedure name for download filename with RFC 5987 encoding
+    # This ensures Danish characters (æ, ø, å) work in all browsers
     filename = f"{_sanitize_filename(run.procedure)}.docx"
-    return FileResponse(path=str(docx), filename=filename, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    content_disposition = _make_content_disposition(filename)
+
+    return FileResponse(
+        path=str(docx),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": content_disposition},
+    )
 
 
 @app.get("/api/runs/{run_id}/docx/meta-analysis")
@@ -361,8 +424,15 @@ def api_meta_analysis_docx(run_id: str) -> FileResponse:
     if not docx_path.exists():
         raise HTTPException(status_code=404, detail="Meta-analysis document not found for this run.")
 
+    # Use procedure name for download filename with RFC 5987 encoding
     filename = f"{_sanitize_filename(run.procedure)}_MetaAnalysis.docx"
-    return FileResponse(path=str(docx_path), filename=filename, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    content_disposition = _make_content_disposition(filename)
+
+    return FileResponse(
+        path=str(docx_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": content_disposition},
+    )
 
 
 @app.get("/api/runs/{run_id}/manifest")

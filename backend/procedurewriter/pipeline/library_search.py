@@ -123,7 +123,10 @@ class LibrarySearchProvider:
         fts_query = self._prepare_fts_query(query)
 
         with self._connect() as conn:
-            # Use FTS5 MATCH with BM25 ranking
+            # Use FTS5 MATCH with weighted BM25 ranking
+            # bm25(table, weight_col0, weight_col1, ...) - higher weight = more important
+            # Assuming FTS5 columns: doc_id (0), title (1), content (2)
+            # Title matches weighted 10x higher than content matches
             sql = """
                 SELECT
                     d.doc_id,
@@ -135,7 +138,7 @@ class LibrarySearchProvider:
                     d.publish_year,
                     d.category,
                     d.content_type,
-                    bm25(documents_fts) as relevance
+                    bm25(documents_fts, 0.0, 10.0, 1.0) as relevance
                 FROM documents_fts
                 JOIN documents d ON documents_fts.doc_id = d.doc_id
                 WHERE documents_fts MATCH ?
@@ -177,22 +180,57 @@ class LibrarySearchProvider:
 
             return results
 
-    def _prepare_fts_query(self, query: str) -> str:
-        """Prepare a natural language query for FTS5.
+    def _prepare_fts_query(self, query: str, *, phrase_boost: bool = True) -> str:
+        """Prepare a natural language query for FTS5 with phrase support.
 
-        Converts: "akut hypoglykæmi behandling"
-        To: "akut OR hypoglykæmi OR behandling"
+        Strategy:
+        1. Try exact phrase match first (highest relevance)
+        2. Fall back to OR-based term matching
+        3. Support multi-word phrases in quotes
+
+        Examples:
+            "akut hypoglykæmi" -> "akut hypoglykæmi" OR akut OR hypoglykæmi
+            akut hypoglykæmi behandling -> "akut hypoglykæmi behandling" OR akut OR hypoglykæmi OR behandling
         """
-        # Remove FTS5 special characters that could cause syntax errors
         import re
-        clean = re.sub(r'["\'\(\)\[\]\{\}\*\-\+\:\;\,\.\!\?]', ' ', query)
-        tokens = clean.split()
 
-        if not tokens:
+        # Remove FTS5 special characters except quotes (for phrase detection)
+        clean = re.sub(r'[\(\)\[\]\{\}\*\-\+\:\;\,\.\!\?]', ' ', query)
+        clean = clean.strip()
+
+        if not clean:
             return '""'  # Empty query
 
-        # Use OR to match any term (more lenient search)
-        return " OR ".join(tokens)
+        # Extract quoted phrases and remaining terms
+        quoted_phrases = re.findall(r'"([^"]+)"', clean)
+        remaining = re.sub(r'"[^"]*"', '', clean).strip()
+        tokens = remaining.split() if remaining else []
+
+        query_parts: list[str] = []
+
+        # If phrase_boost is enabled, add the entire query as a phrase
+        if phrase_boost and len(tokens) >= 2:
+            # Exact phrase match gets highest priority in BM25
+            full_phrase = " ".join(tokens)
+            query_parts.append(f'"{full_phrase}"')
+
+        # Add any explicitly quoted phrases
+        for phrase in quoted_phrases:
+            phrase = phrase.strip()
+            if phrase:
+                query_parts.append(f'"{phrase}"')
+
+        # Add individual terms with OR (fallback matching)
+        for token in tokens:
+            token = token.strip()
+            if token and len(token) >= 2:  # Skip single-char tokens
+                query_parts.append(token)
+
+        if not query_parts:
+            return '""'
+
+        # Combine with OR - FTS5 will rank phrase matches higher naturally
+        return " OR ".join(query_parts)
 
     def _fallback_search(
         self,

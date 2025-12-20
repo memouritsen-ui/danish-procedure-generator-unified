@@ -212,23 +212,36 @@ class AgentOrchestrator:
                 current_content = writer_result.output.content_markdown
                 citations_used = writer_result.output.citations_used
 
-                # Step 3: Validate claims
+                # Step 3: Validate claims (chunked for long procedures)
                 self._emit(EventType.AGENT_START, {"agent": "Validator"})
                 logger.info("Running Validator agent...")
-                # Extract claims from content (simple: each sentence with citation)
-                claims = self._extract_claims(current_content)
-                validator_result = self._validator.execute(
-                    ValidatorInput(
-                        procedure_title=input_data.procedure_title,
-                        claims=claims,
-                        sources=current_sources,
-                    )
-                )
-                self._stats.add_agent_stats(f"Validator_iter{iteration}", validator_result.stats)
+                # Extract claims and chunk for validation
+                claim_chunks = self._extract_claims(current_content)
+
+                validator_total_cost = 0.0
+                if claim_chunks:
+                    for chunk_idx, claims in enumerate(claim_chunks):
+                        if chunk_idx > 0:
+                            logger.info(f"Validating chunk {chunk_idx + 1}/{len(claim_chunks)}")
+
+                        validator_result = self._validator.execute(
+                            ValidatorInput(
+                                procedure_title=input_data.procedure_title,
+                                claims=claims,
+                                sources=current_sources,
+                            )
+                        )
+                        validator_total_cost += validator_result.stats.cost_usd
+
+                    self._stats.add_agent_stats(f"Validator_iter{iteration}", validator_result.stats)
+                else:
+                    logger.warning("No claims found to validate in content")
+
                 self._emit(EventType.AGENT_COMPLETE, {
                     "agent": "Validator",
                     "success": True,
-                    "cost_usd": validator_result.stats.cost_usd,
+                    "cost_usd": validator_total_cost,
+                    "chunks_validated": len(claim_chunks),
                 })
 
                 # Step 4: Edit content
@@ -327,11 +340,30 @@ class AgentOrchestrator:
             })
             return self._error_output(str(e))
 
-    def _extract_claims(self, content: str) -> list[str]:
-        """Extract factual claims from content (sentences with citations)."""
+    def _extract_claims(
+        self,
+        content: str,
+        *,
+        max_claims_per_chunk: int = 25,
+    ) -> list[list[str]]:
+        """Extract factual claims from content and chunk for validation.
+
+        Args:
+            content: Markdown content with citations
+            max_claims_per_chunk: Maximum claims per validation batch
+                                  (prevents token overflow in validator)
+
+        Returns:
+            List of claim chunks. Each chunk is a list of claim strings.
+            Empty list if no claims found.
+
+        Note:
+            All claims are extracted - no arbitrary limit.
+            Claims are chunked to respect validator's token budget.
+        """
         import re
 
-        claims = []
+        all_claims: list[str] = []
         # Split into sentences
         sentences = re.split(r"(?<=[.!?])\s+", content)
 
@@ -341,9 +373,22 @@ class AgentOrchestrator:
                 # Clean up the sentence
                 clean = sentence.strip()
                 if len(clean) > 20:  # Skip very short fragments
-                    claims.append(clean)
+                    all_claims.append(clean)
 
-        return claims[:20]  # Limit to 20 claims to avoid token bloat
+        if not all_claims:
+            return []
+
+        # Chunk claims for validation
+        chunks: list[list[str]] = []
+        for i in range(0, len(all_claims), max_claims_per_chunk):
+            chunk = all_claims[i:i + max_claims_per_chunk]
+            chunks.append(chunk)
+
+        logger.info(
+            "Extracted %d claims in %d chunks (max %d per chunk)",
+            len(all_claims), len(chunks), max_claims_per_chunk
+        )
+        return chunks
 
     def _error_output(self, error: str) -> PipelineOutput:
         """Create error output."""
