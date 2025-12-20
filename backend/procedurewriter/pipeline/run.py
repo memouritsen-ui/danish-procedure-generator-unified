@@ -41,7 +41,52 @@ from procedurewriter.pipeline.types import SourceRecord
 from procedurewriter.pipeline.writer import write_procedure_markdown
 from procedurewriter.settings import Settings
 
+# Style profile imports
+from procedurewriter.agents.style_agent import StyleAgent, StyleInput
+from procedurewriter.db import get_default_style_profile
+from procedurewriter.llm.providers import LLMProvider
+from procedurewriter.models.style_profile import StyleProfile
+
 logger = logging.getLogger(__name__)
+
+
+def _apply_style_profile(
+    *,
+    raw_markdown: str,
+    sources: list[SourceRecord],
+    procedure_name: str,
+    style_profile: StyleProfile | None,
+    llm: LLMProvider | None,
+    model: str | None,
+) -> str:
+    """Apply style profile to markdown using StyleAgent.
+
+    Returns original markdown if no profile or LLM available.
+    """
+    if style_profile is None or llm is None:
+        return raw_markdown
+
+    try:
+        agent = StyleAgent(llm=llm, model=model or "gpt-4")
+        result = agent.execute(
+            StyleInput(
+                procedure_title=procedure_name,
+                raw_markdown=raw_markdown,
+                sources=sources,
+                style_profile=style_profile,
+            )
+        )
+
+        if result.output.success:
+            return result.output.polished_markdown
+        else:
+            # Log warning and return original
+            logger.warning("StyleAgent failed: %s", result.output.error)
+            return raw_markdown
+
+    except Exception as e:
+        logger.warning("StyleAgent error: %s", e)
+        return raw_markdown
 
 
 def source_record_to_reference(
@@ -770,9 +815,38 @@ def run_pipeline(
             else:
                 quality_score = 5  # Default score when no claims to validate
 
+        # Apply style profile if available (LLM-powered markdown polishing)
+        style_profile_data = get_default_style_profile(settings.db_path)
+        style_profile: StyleProfile | None = None
+        if style_profile_data:
+            style_profile = StyleProfile.from_db_dict(style_profile_data)
+
+        if style_profile and settings.use_llm and not settings.dummy_mode:
+            # Get LLM for style agent (reuse existing client if in scope, or create new)
+            try:
+                style_llm = get_llm_client(
+                    provider=settings.llm_provider,
+                    openai_api_key=openai_api_key,
+                    anthropic_api_key=anthropic_api_key,
+                    ollama_base_url=ollama_base_url or settings.ollama_base_url,
+                )
+                polished_md = _apply_style_profile(
+                    raw_markdown=md,
+                    sources=sources,
+                    procedure_name=procedure,
+                    style_profile=style_profile,
+                    llm=style_llm,
+                    model=settings.llm_model,
+                )
+            except Exception as e:
+                logger.warning("Failed to apply style profile: %s", e)
+                polished_md = md
+        else:
+            polished_md = md
+
         docx_path = run_dir / "Procedure.docx"
         write_procedure_docx(
-            markdown_text=md,
+            markdown_text=polished_md,
             sources=sources,
             output_path=docx_path,
             run_id=run_id,
