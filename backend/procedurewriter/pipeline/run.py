@@ -47,6 +47,9 @@ from procedurewriter.db import get_default_style_profile
 from procedurewriter.llm.providers import LLMProvider
 from procedurewriter.models.style_profile import StyleProfile
 
+# Content generalization
+from procedurewriter.pipeline.content_generalizer import ContentGeneralizer
+
 logger = logging.getLogger(__name__)
 
 
@@ -844,6 +847,25 @@ def run_pipeline(
                 polished_md = md
         else:
             polished_md = md
+
+        # ---------------------------------------------------------------------
+        # CONTENT GENERALIZATION: Remove department-specific content
+        # ---------------------------------------------------------------------
+        # Generalize hospital-specific content (phone numbers, room refs, etc.)
+        # to make procedures universal for all Danish emergency medicine doctors
+        generalizer = ContentGeneralizer(use_lokal_markers=True)
+        polished_md, gen_stats = generalizer.generalize(polished_md)
+        if gen_stats.total_replacements > 0:
+            logger.info(
+                "Generalized content: %d replacements (phones=%d, rooms=%d, locations=%d, hospitals=%d)",
+                gen_stats.total_replacements,
+                gen_stats.phone_numbers,
+                gen_stats.room_references,
+                gen_stats.location_references,
+                gen_stats.hospital_references,
+            )
+            # Update the procedure.md file with generalized content
+            write_text(procedure_md_path, polished_md)
 
         docx_path = run_dir / "Procedure.docx"
         write_procedure_docx(
