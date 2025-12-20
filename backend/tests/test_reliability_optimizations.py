@@ -64,6 +64,22 @@ class TestFTS5PhraseSearch:
         assert "[" not in result
         assert "]" not in result
 
+    def test_prepare_fts_query_escapes_slashes(self) -> None:
+        """Forward/back slashes should be escaped/removed."""
+        from procedurewriter.pipeline.library_search import LibrarySearchProvider
+
+        provider = LibrarySearchProvider()
+        # Slashes can break FTS5 - e.g., "defibrillering/kardiovertering"
+        result = provider._prepare_fts_query("Manuel defibrillering/kardiovertering")
+
+        # Should not contain slashes
+        assert "/" not in result
+        assert "\\" not in result
+        # Should have individual terms
+        assert "Manuel" in result
+        assert "defibrillering" in result
+        assert "kardiovertering" in result
+
     def test_prepare_fts_query_phrase_boost_disabled(self) -> None:
         """With phrase_boost=False, no automatic phrase wrapping."""
         from procedurewriter.pipeline.library_search import LibrarySearchProvider

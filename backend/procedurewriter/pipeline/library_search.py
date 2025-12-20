@@ -195,7 +195,8 @@ class LibrarySearchProvider:
         import re
 
         # Remove FTS5 special characters except quotes (for phrase detection)
-        clean = re.sub(r'[\(\)\[\]\{\}\*\-\+\:\;\,\.\!\?]', ' ', query)
+        # Include / and \ as they can break FTS5 queries
+        clean = re.sub(r'[\(\)\[\]\{\}\*\-\+\:\;\,\.\!\?\/\\]', ' ', query)
         clean = clean.strip()
 
         if not clean:
