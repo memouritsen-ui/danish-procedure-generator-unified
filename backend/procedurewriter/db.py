@@ -296,6 +296,26 @@ def init_db(db_path: Path) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_runs_status ON meta_analysis_runs(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_runs_created ON meta_analysis_runs(created_at_utc)")
 
+        # Style profiles table for LLM-powered document formatting
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS style_profiles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                is_default BOOLEAN DEFAULT FALSE,
+                created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL,
+                tone_config TEXT NOT NULL,
+                structure_config TEXT NOT NULL,
+                formatting_config TEXT NOT NULL,
+                visual_config TEXT NOT NULL,
+                original_prompt TEXT
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_style_profiles_default ON style_profiles(is_default)")
+
 
 def set_secret(db_path: Path, *, name: str, value: str) -> None:
     now = utc_now_iso()
@@ -825,3 +845,156 @@ def list_meta_analysis_runs(db_path: Path, limit: int = 100) -> list[MetaAnalysi
             (limit,),
         ).fetchall()
     return [_row_to_meta_run(r) for r in rows]
+
+
+# =============================================================================
+# Style Profile Functions
+# =============================================================================
+
+
+def create_style_profile(
+    db_path: Path,
+    *,
+    name: str,
+    tone_config: dict[str, Any],
+    structure_config: dict[str, Any],
+    formatting_config: dict[str, Any],
+    visual_config: dict[str, Any],
+    description: str | None = None,
+    original_prompt: str | None = None,
+) -> str:
+    """Create a new style profile."""
+    import uuid
+    profile_id = str(uuid.uuid4())
+    now = utc_now_iso()
+
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO style_profiles
+            (id, name, description, is_default, created_at_utc, updated_at_utc,
+             tone_config, structure_config, formatting_config, visual_config, original_prompt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                profile_id,
+                name,
+                description,
+                False,
+                now,
+                now,
+                json.dumps(tone_config),
+                json.dumps(structure_config),
+                json.dumps(formatting_config),
+                json.dumps(visual_config),
+                original_prompt,
+            ),
+        )
+        conn.commit()
+    return profile_id
+
+
+def get_style_profile(db_path: Path, profile_id: str) -> dict[str, Any] | None:
+    """Get a style profile by ID."""
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT * FROM style_profiles WHERE id = ?",
+            (profile_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_style_profile(row)
+
+
+def _row_to_style_profile(row: sqlite3.Row) -> dict[str, Any]:
+    """Convert a database row to a style profile dict."""
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "description": row["description"],
+        "is_default": bool(row["is_default"]),
+        "created_at_utc": row["created_at_utc"],
+        "updated_at_utc": row["updated_at_utc"],
+        "tone_config": json.loads(row["tone_config"]),
+        "structure_config": json.loads(row["structure_config"]),
+        "formatting_config": json.loads(row["formatting_config"]),
+        "visual_config": json.loads(row["visual_config"]),
+        "original_prompt": row["original_prompt"],
+    }
+
+
+def list_style_profiles(db_path: Path) -> list[dict[str, Any]]:
+    """List all style profiles."""
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT * FROM style_profiles ORDER BY name"
+        )
+        return [_row_to_style_profile(row) for row in cursor.fetchall()]
+
+
+def update_style_profile(
+    db_path: Path,
+    profile_id: str,
+    **updates: Any,
+) -> bool:
+    """Update a style profile. Returns True if updated."""
+    allowed_fields = {
+        "name", "description", "tone_config", "structure_config",
+        "formatting_config", "visual_config", "original_prompt"
+    }
+    updates = {k: v for k, v in updates.items() if k in allowed_fields}
+    if not updates:
+        return False
+
+    # JSON-encode dict fields
+    for key in ["tone_config", "structure_config", "formatting_config", "visual_config"]:
+        if key in updates and isinstance(updates[key], dict):
+            updates[key] = json.dumps(updates[key])
+
+    updates["updated_at_utc"] = utc_now_iso()
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+    values = list(updates.values()) + [profile_id]
+
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            f"UPDATE style_profiles SET {set_clause} WHERE id = ?",
+            values,
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def delete_style_profile(db_path: Path, profile_id: str) -> bool:
+    """Delete a style profile. Returns True if deleted."""
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "DELETE FROM style_profiles WHERE id = ?",
+            (profile_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def get_default_style_profile(db_path: Path) -> dict[str, Any] | None:
+    """Get the default style profile."""
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT * FROM style_profiles WHERE is_default = 1 LIMIT 1"
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_style_profile(row)
+
+
+def set_default_style_profile(db_path: Path, profile_id: str) -> None:
+    """Set a profile as the default (unsets any existing default)."""
+    with _connect(db_path) as conn:
+        conn.execute("UPDATE style_profiles SET is_default = 0")
+        conn.execute(
+            "UPDATE style_profiles SET is_default = 1 WHERE id = ?",
+            (profile_id,),
+        )
+        conn.commit()
