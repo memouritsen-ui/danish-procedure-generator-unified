@@ -285,6 +285,10 @@ def api_run(run_id: str) -> RunDetail:
     procedure_md_path = Path(run.run_dir) / "procedure.md"
     procedure_md = procedure_md_path.read_text(encoding="utf-8") if procedure_md_path.exists() else None
 
+    # Check for meta-analysis report
+    meta_analysis_path = Path(run.run_dir) / "Procedure_MetaAnalysis.docx"
+    has_meta_analysis = meta_analysis_path.exists()
+
     source_count: int | None = None
     sources_path = Path(run.run_dir) / "sources.jsonl"
     if sources_path.exists():
@@ -320,6 +324,7 @@ def api_run(run_id: str) -> RunDetail:
         total_cost_usd=run.total_cost_usd,
         total_input_tokens=run.total_input_tokens,
         total_output_tokens=run.total_output_tokens,
+        has_meta_analysis_report=has_meta_analysis,
     )
 
 
@@ -343,6 +348,21 @@ def api_docx(run_id: str) -> FileResponse:
     # Use procedure name for download filename
     filename = f"{_sanitize_filename(run.procedure)}.docx"
     return FileResponse(path=str(docx), filename=filename, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.get("/api/runs/{run_id}/docx/meta-analysis")
+def api_meta_analysis_docx(run_id: str) -> FileResponse:
+    """Download the meta-analysis report document."""
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    docx_path = Path(run.run_dir) / "Procedure_MetaAnalysis.docx"
+    if not docx_path.exists():
+        raise HTTPException(status_code=404, detail="Meta-analysis document not found for this run.")
+
+    filename = f"{_sanitize_filename(run.procedure)}_MetaAnalysis.docx"
+    return FileResponse(path=str(docx_path), filename=filename, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 @app.get("/api/runs/{run_id}/manifest")

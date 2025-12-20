@@ -21,9 +21,9 @@ if TYPE_CHECKING:
     from procedurewriter.agents.meta_analysis.bias_agent import BiasAssessmentAgent
     from procedurewriter.agents.meta_analysis.pico_extractor import PICOExtractor
     from procedurewriter.agents.meta_analysis.screener_agent import StudyScreenerAgent
+    from procedurewriter.agents.meta_analysis.stats_extractor import StatisticsExtractorAgent
     from procedurewriter.agents.meta_analysis.synthesizer_agent import (
         EvidenceSynthesizerAgent,
-        SynthesisOutput,
     )
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,8 @@ class MetaAnalysisOrchestrator(BaseAgent[OrchestratorInput, OrchestratorOutput])
     1. PICO extraction from study abstracts
     2. Screening against user's PICO query
     3. Bias assessment using RoB 2.0
-    4. Evidence synthesis with DerSimonian-Laird
+    4. Statistics extraction (if needed)
+    5. Evidence synthesis with DerSimonian-Laird
 
     Uses lazy imports to avoid circular dependencies and reduce
     initial load time when only specific agents are needed.
@@ -104,6 +105,7 @@ class MetaAnalysisOrchestrator(BaseAgent[OrchestratorInput, OrchestratorOutput])
         self._pico_extractor: PICOExtractor | None = None
         self._screener: StudyScreenerAgent | None = None
         self._bias_agent: BiasAssessmentAgent | None = None
+        self._stats_extractor: StatisticsExtractorAgent | None = None
         self._synthesizer: EvidenceSynthesizerAgent | None = None
 
     @property
@@ -143,6 +145,16 @@ class MetaAnalysisOrchestrator(BaseAgent[OrchestratorInput, OrchestratorOutput])
             )
             self._bias_agent = BiasAssessmentAgent(self._llm, self._model)
         return self._bias_agent
+
+    @property
+    def stats_extractor(self) -> StatisticsExtractorAgent:
+        """Get or create statistics extractor (lazy import)."""
+        if self._stats_extractor is None:
+            from procedurewriter.agents.meta_analysis.stats_extractor import (
+                StatisticsExtractorAgent,
+            )
+            self._stats_extractor = StatisticsExtractorAgent(self._llm, self._model)
+        return self._stats_extractor
 
     @property
     def synthesizer(self) -> EvidenceSynthesizerAgent:
@@ -185,6 +197,9 @@ class MetaAnalysisOrchestrator(BaseAgent[OrchestratorInput, OrchestratorOutput])
             PICOExtractionInput,
         )
         from procedurewriter.agents.meta_analysis.screener_agent import ScreeningInput
+        from procedurewriter.agents.meta_analysis.stats_extractor import (
+            StatsExtractionInput,
+        )
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
             SynthesisInput,
         )
@@ -252,13 +267,36 @@ class MetaAnalysisOrchestrator(BaseAgent[OrchestratorInput, OrchestratorOutput])
                 "overall_risk": bias_result.output.assessment.overall.value,
             })
 
-            # Create StudyResult for synthesis
-            # Use provided effect size/variance or defaults
-            effect_size = study_source.get("effect_size", 0.5)
-            variance = study_source.get("variance", 0.04)
-            ci_lower = study_source.get("ci_lower", effect_size - 1.96 * (variance ** 0.5))
-            ci_upper = study_source.get("ci_upper", effect_size + 1.96 * (variance ** 0.5))
+            # Stage 4: Statistics Extraction (if needed)
+            provided_effect = study_source.get("effect_size")
 
+            if provided_effect is not None:
+                # Use provided stats
+                effect_size = provided_effect
+                variance = study_source.get("variance", 0.04)
+                ci_lower = study_source.get("ci_lower", effect_size - 1.96 * (variance ** 0.5))
+                ci_upper = study_source.get("ci_upper", effect_size + 1.96 * (variance ** 0.5))
+                
+                stats_metrics = StatisticalMetrics(
+                    effect_size=effect_size,
+                    effect_size_type="OR",
+                    variance=variance,
+                    confidence_interval_lower=ci_lower,
+                    confidence_interval_upper=ci_upper,
+                    weight=0.0,
+                )
+            else:
+                # Extract using agent
+                stats_input = StatsExtractionInput(
+                    study_id=study_id,
+                    title=title,
+                    abstract=abstract,
+                    outcome_of_interest=input_data.outcome_of_interest,
+                )
+                stats_result = self.stats_extractor.execute(stats_input)
+                stats_metrics = stats_result.output
+
+            # Create StudyResult for synthesis
             study_result = StudyResult(
                 study_id=study_id,
                 title=title,
@@ -268,19 +306,12 @@ class MetaAnalysisOrchestrator(BaseAgent[OrchestratorInput, OrchestratorOutput])
                 sample_size=study_source.get("sample_size", 100),
                 pico=pico_data,
                 risk_of_bias=bias_result.output.assessment,
-                statistics=StatisticalMetrics(
-                    effect_size=effect_size,
-                    effect_size_type="OR",
-                    variance=variance,
-                    confidence_interval_lower=ci_lower,
-                    confidence_interval_upper=ci_upper,
-                    weight=0.0,  # Will be computed during synthesis
-                ),
+                statistics=stats_metrics,
                 detected_language=pico_data.detected_language,
             )
             included_studies.append(study_result)
 
-        # Stage 4: Evidence Synthesis
+        # Stage 5: Evidence Synthesis
         synthesis_input = SynthesisInput(
             studies=included_studies,
             outcome_of_interest=input_data.outcome_of_interest,

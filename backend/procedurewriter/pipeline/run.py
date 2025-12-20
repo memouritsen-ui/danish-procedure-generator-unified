@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from procedurewriter.agents.meta_analysis.orchestrator import (
+    MetaAnalysisOrchestrator,
+    OrchestratorInput,
+)
+from procedurewriter.agents.meta_analysis.screener_agent import PICOQuery
 from procedurewriter.agents.models import PipelineInput as AgentPipelineInput
 from procedurewriter.agents.models import SourceReference
 from procedurewriter.config_store import load_yaml
@@ -13,7 +19,7 @@ from procedurewriter.db import LibrarySourceRow
 from procedurewriter.llm import get_session_tracker, reset_session_tracker
 from procedurewriter.llm.providers import get_llm_client
 from procedurewriter.pipeline.citations import validate_citations
-from procedurewriter.pipeline.docx_writer import write_procedure_docx
+from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx, write_procedure_docx
 from procedurewriter.pipeline.events import EventType, get_emitter, remove_emitter
 from procedurewriter.pipeline.evidence import build_evidence_report, enforce_evidence_policy
 from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
@@ -29,6 +35,8 @@ from procedurewriter.pipeline.sources import make_source_id, to_jsonl_record, wr
 from procedurewriter.pipeline.types import SourceRecord
 from procedurewriter.pipeline.writer import write_procedure_markdown
 from procedurewriter.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def source_record_to_reference(
@@ -633,10 +641,12 @@ def run_pipeline(
         ):
             try:
                 import asyncio
+
                 from anthropic import AsyncAnthropic
+
                 from procedurewriter.pipeline.evidence_verifier import (
-                    verify_all_citations,
                     summary_to_dict,
+                    verify_all_citations,
                 )
 
                 emitter.emit(EventType.PROGRESS, {"message": "Verifying evidence", "stage": "verification"})
@@ -747,6 +757,88 @@ def run_pipeline(
             template_path=settings.docx_template_path,
             quality_score=quality_score,
         )
+
+        # ---------------------------------------------------------------------
+        # AUTOMATED COCHRANE META-ANALYSIS
+        # ---------------------------------------------------------------------
+        if settings.use_llm and not settings.dummy_mode:
+            # 1. Filter for quantitative sources (PubMed + High Evidence)
+            quantitative_candidates = []
+            for src in sources:
+                if src.kind != "pubmed":
+                    continue
+                
+                # Check evidence level
+                level = src.extra.get("evidence_level", "").lower()
+                is_quant = any(x in level for x in ["meta_analysis", "systematic_review", "rct", "randomized"])
+                
+                # Also check publication types if available
+                pub_types = [t.lower() for t in src.extra.get("publication_types", [])]
+                is_quant_pub = any("randomized" in t or "meta-analysis" in t for t in pub_types)
+                
+                if is_quant or is_quant_pub:
+                    # Load text content
+                    if src.normalized_path and Path(src.normalized_path).exists():
+                        text = Path(src.normalized_path).read_text(encoding="utf-8")
+                        quantitative_candidates.append({
+                            "study_id": src.source_id,
+                            "title": src.title,
+                            "abstract": text[:3000], # Limit to abstract-ish length
+                            "source": "pubmed"
+                        })
+
+            # 2. Run Meta-Analysis if enough sources found
+            if len(quantitative_candidates) >= 2:
+                emitter.emit(EventType.PROGRESS, {
+                    "message": f"Running automated meta-analysis on {len(quantitative_candidates)} studies", 
+                    "stage": "meta_analysis"
+                })
+                
+                try:
+                    # Infer PICO from context
+                    ma_pico = PICOQuery(
+                        population=context or "Patients",
+                        intervention=procedure,
+                        comparison="Standard Care",
+                        outcome="Primary Clinical Outcome"
+                    )
+                    
+                    ma_input = OrchestratorInput(
+                        query=ma_pico,
+                        study_sources=quantitative_candidates,
+                        outcome_of_interest="Primary Clinical Outcome",
+                        run_id=run_id
+                    )
+                    
+                    # Instantiate orchestrator
+                    ma_orchestrator = MetaAnalysisOrchestrator(
+                        llm=llm, # Re-use the LLM client from above
+                        emitter=emitter
+                    )
+                    
+                    # Execute
+                    ma_result = ma_orchestrator.execute(ma_input)
+                    
+                    # Save JSON Report
+                    ma_report_path = run_dir / "synthesis_report.json"
+                    # synthesis output is a Pydantic model, need to serialize
+                    # Using model_dump (v2) or dict (v1) - assuming v2 based on imports
+                    synthesis_dict = ma_result.output.model_dump() if hasattr(ma_result.output, "model_dump") else ma_result.output.dict()
+                    write_json(ma_report_path, synthesis_dict)
+                    
+                    # Save Word Document
+                    ma_docx_path = run_dir / "Procedure_MetaAnalysis.docx"
+                    write_meta_analysis_docx(
+                        output=ma_result.output,
+                        output_path=ma_docx_path,
+                        run_id=run_id
+                    )
+
+                    orchestrator_cost += ma_result.stats.cost_usd
+                    
+                except Exception as e:
+                    logger.error(f"Meta-analysis failed: {e}")
+                    emitter.emit(EventType.ERROR, {"error": f"Meta-analysis failed: {str(e)}"})
 
         write_json(
             run_dir / "run_summary.json",

@@ -108,10 +108,15 @@ export default function RunPage() {
                 </div>
               </div>
             )}
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 12 }} className="row">
               <a href={`/api/runs/${encodeURIComponent(runId)}/docx`} download>
                 <button>Download DOCX</button>
               </a>
+              {run.has_meta_analysis_report && (
+                 <a href={`/api/runs/${encodeURIComponent(runId)}/docx/meta-analysis`} download style={{ marginLeft: '10px' }}>
+                    <button>Download Meta-Analyse DOCX</button>
+                 </a>
+              )}
             </div>
             <div style={{ marginTop: 12 }} className="row">
               <a href={`/api/runs/${encodeURIComponent(runId)}/bundle`}>

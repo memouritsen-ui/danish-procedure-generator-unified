@@ -42,6 +42,7 @@ class RunDetail(BaseModel):
     total_cost_usd: float | None = None
     total_input_tokens: int | None = None
     total_output_tokens: int | None = None
+    has_meta_analysis_report: bool = False
 
 
 class SourceRecord(BaseModel):
