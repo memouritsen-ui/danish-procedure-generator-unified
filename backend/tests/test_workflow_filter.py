@@ -323,3 +323,88 @@ class TestBatchFiltering:
         for result in results:
             assert isinstance(result, tuple)
             assert len(result) == 2
+
+
+class TestWorkflowFilterPreservesStepNumbers:
+    """Test that workflow filter handles numbered steps correctly."""
+
+    def test_keeps_step_number_with_clinical_content(self):
+        """Step numbers should stay with their clinical content."""
+        from procedurewriter.pipeline.workflow_filter import WorkflowFilter
+
+        wf = WorkflowFilter()
+
+        content = "2. Identificer 5. interkostalrum."
+        clinical, workflow = wf.filter_workflow_content(content)
+
+        # The "2." should stay with the clinical content
+        assert "2." in clinical or "Identificer" in clinical
+        # Clinical content should not be empty
+        assert clinical.strip() != ""
+
+    def test_removes_entire_workflow_step(self):
+        """When entire step is workflow, the number is removed too."""
+        from procedurewriter.pipeline.workflow_filter import WorkflowFilter
+
+        wf = WorkflowFilter()
+
+        content = "5. Ring til bagvagt ved komplikationer."
+        clinical, workflow = wf.filter_workflow_content(content)
+
+        # Entire step is workflow, so nothing clinical remains
+        assert "bagvagt" not in clinical.lower()
+        # Workflow should contain the step content
+        assert "bagvagt" in workflow.lower()
+        # No orphaned "5." in clinical output
+        assert clinical.strip() == "" or "5." not in clinical
+
+
+class TestWorkflowFilterMissingPatterns:
+    """Test that new workflow patterns are detected."""
+
+    def test_detects_kontakt_anaestesi(self):
+        """Should detect 'kontakt anæstesi' as workflow."""
+        from procedurewriter.pipeline.workflow_filter import WorkflowFilter
+
+        wf = WorkflowFilter()
+
+        content = "Kontakt anæstesi ved sedationsbehov."
+        clinical, workflow = wf.filter_workflow_content(content)
+
+        assert "anæstesi" in workflow.lower() or "anaestesi" in workflow.lower()
+        assert clinical.strip() == "" or "anæstesi" not in clinical.lower()
+
+    def test_detects_aftal_med_teamet(self):
+        """Should detect 'aftal med teamet' as workflow."""
+        from procedurewriter.pipeline.workflow_filter import WorkflowFilter
+
+        wf = WorkflowFilter()
+
+        content = "Aftal med teamet om patientovervågning."
+        clinical, workflow = wf.filter_workflow_content(content)
+
+        assert "teamet" in workflow.lower()
+        assert clinical.strip() == "" or "teamet" not in clinical.lower()
+
+    def test_detects_aftal_rollefordeling(self):
+        """Should detect 'aftal rollefordeling' as workflow."""
+        from procedurewriter.pipeline.workflow_filter import WorkflowFilter
+
+        wf = WorkflowFilter()
+
+        content = "Aftal rollefordeling med sygeplejepersonale."
+        clinical, workflow = wf.filter_workflow_content(content)
+
+        assert "rollefordeling" in workflow.lower()
+        assert clinical.strip() == "" or "rollefordeling" not in clinical.lower()
+
+    def test_detects_kontakt_with_alternate_spelling(self):
+        """Should detect 'kontakt anaestesi' (without æ) as workflow."""
+        from procedurewriter.pipeline.workflow_filter import WorkflowFilter
+
+        wf = WorkflowFilter()
+
+        content = "Kontakt anaestesi ved behov."
+        clinical, workflow = wf.filter_workflow_content(content)
+
+        assert "anaestesi" in workflow.lower()

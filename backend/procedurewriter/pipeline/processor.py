@@ -126,14 +126,57 @@ class PipelineProcessor:
             workflow_removed = [s.strip() for s in segments if s.strip()]
 
         # Phase 2: Deduplicate
-        # WorkflowFilter joins segments with spaces, so split by sentence endings
-        sentences = re.split(r"(?<=[.!?])\s+", clinical_content.strip())
-        sentences = [s.strip() for s in sentences if s.strip()]
-        if sentences:
-            deduped_sentences = self._deduplicator.deduplicate(sentences)
-            filtered_content = " ".join(deduped_sentences)
+        # Split by actual line breaks to preserve structure
+        lines = clinical_content.strip().split("\n")
+
+        # Separate markdown structure from content lines
+        content_lines = []
+        structure_map = []  # Track position and type of each line
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                # Empty line - preserve for paragraph breaks
+                structure_map.append(("empty", ""))
+            elif self._is_markdown_heading(stripped):
+                # Markdown heading - preserve as-is, don't deduplicate
+                structure_map.append(("heading", stripped))
+            elif self._is_markdown_bullet(stripped):
+                # Bullet point - deduplicate content but preserve structure
+                structure_map.append(("content", stripped))
+                content_lines.append(stripped)
+            else:
+                # Regular content - deduplicate
+                structure_map.append(("content", stripped))
+                content_lines.append(stripped)
+
+        # Deduplicate only the content lines (not headings or structure)
+        if content_lines:
+            deduped_content = self._deduplicator.deduplicate(content_lines)
+            deduped_set = set(deduped_content)
+
+            # Rebuild with structure preserved
+            filtered_lines = []
+            for line_type, line_text in structure_map:
+                if line_type == "heading":
+                    # Always keep headings
+                    filtered_lines.append(line_text)
+                elif line_type == "empty":
+                    # Keep empty lines for structure
+                    filtered_lines.append("")
+                elif line_type == "content":
+                    # Only keep if deduplicator kept it
+                    if line_text in deduped_set:
+                        filtered_lines.append(line_text)
+                        deduped_set.discard(line_text)  # Remove to handle duplicates correctly
+
+            # Preserve markdown paragraph breaks
+            filtered_content = self._preserve_paragraph_breaks(filtered_lines)
         else:
             filtered_content = ""
+
+        # Renumber steps after filtering
+        filtered_content = self._renumber_steps(filtered_content)
 
         # Phase 3: Validate anatomical content
         anatomical_validation = self._validator.validate(procedure_name, filtered_content)
@@ -233,6 +276,41 @@ class PipelineProcessor:
         """
         return self._prompt_enhancer.enhance(original_prompt, procedure_name)
 
+    def _renumber_steps(self, content: str) -> str:
+        """Renumber steps sequentially after filtering.
+
+        Handles patterns like:
+        - "1. Step text"
+        - "1) Step text"
+
+        Args:
+            content: Content with potentially non-sequential step numbers
+
+        Returns:
+            Content with renumbered steps (1, 2, 3, ...)
+        """
+        lines = content.split("\n")
+        result_lines = []
+        current_step = 1
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                result_lines.append(line)
+                continue
+
+            # Match numbered step patterns: "1. text" or "1) text"
+            match = re.match(r"^(\d+)([.\)])\s*(.*)$", stripped)
+            if match:
+                separator = match.group(2)  # "." or ")"
+                text = match.group(3)
+                result_lines.append(f"{current_step}{separator} {text}")
+                current_step += 1
+            else:
+                result_lines.append(line)
+
+        return "\n".join(result_lines)
+
     def _generate_suggestions(
         self, validation: ValidationResult, quality_score: float
     ) -> list[str]:
@@ -271,3 +349,67 @@ class PipelineProcessor:
             )
 
         return suggestions
+
+    def _is_markdown_separator(self, line: str) -> bool:
+        """Check if line represents a markdown structural element.
+
+        Args:
+            line: Line to check
+
+        Returns:
+            True if line is empty or markdown structure
+        """
+        # Empty lines are structural separators in markdown
+        return not line.strip()
+
+    def _is_markdown_heading(self, line: str) -> bool:
+        """Check if line is a markdown heading.
+
+        Args:
+            line: Line to check
+
+        Returns:
+            True if line is a markdown heading (starts with #)
+        """
+        return line.strip().startswith("#")
+
+    def _is_markdown_bullet(self, line: str) -> bool:
+        """Check if line is a markdown bullet point.
+
+        Args:
+            line: Line to check
+
+        Returns:
+            True if line is a bullet point (starts with - or *)
+        """
+        stripped = line.strip()
+        return stripped.startswith("- ") or stripped.startswith("* ")
+
+    def _preserve_paragraph_breaks(self, lines: list[str]) -> str:
+        """Preserve paragraph breaks (double newlines) in markdown content.
+
+        Args:
+            lines: List of content lines
+
+        Returns:
+            Content with paragraph breaks preserved
+        """
+        result = []
+        previous_was_heading = False
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Check if this is a markdown heading
+            is_heading = stripped.startswith("#")
+
+            # Add double newline before headings (except the first one)
+            if is_heading and result:
+                # Add blank line before heading for paragraph separation
+                if result and result[-1] != "":
+                    result.append("")
+
+            result.append(line)
+            previous_was_heading = is_heading
+
+        return "\n".join(result)

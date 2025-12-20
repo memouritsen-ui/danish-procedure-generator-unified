@@ -17,8 +17,9 @@ WORKFLOW_PATTERNS: list[tuple[str, Pattern[str]]] = [
     ("ring_til_bagvagt", re.compile(r"ring\s+til\s+bagvagt", re.I)),
     ("kontakt_bagvagt", re.compile(r"kontakt\s+bagvagt", re.I)),
     ("kontakt_forvagt", re.compile(r"kontakt\s+forvagt", re.I)),
-    ("tilkald_anaestesi", re.compile(r"tilkald\s+an[æa]stesi", re.I)),
-    ("ring_til_anaestesi", re.compile(r"ring\s+til\s+an[æa]stesi", re.I)),
+    ("tilkald_anaestesi", re.compile(r"tilkald\s+an(?:æ|ae?)stesi", re.I)),
+    ("ring_til_anaestesi", re.compile(r"ring\s+til\s+an(?:æ|ae?)stesi", re.I)),
+    ("kontakt_anaestesi", re.compile(r"kontakt\s+an(?:æ|ae?)stesi", re.I)),
 
     # Phone numbers and contact with phone
     ("telefon", re.compile(r"tlf\.?\s*\d+", re.I)),
@@ -34,6 +35,7 @@ WORKFLOW_PATTERNS: list[tuple[str, Pattern[str]]] = [
     # Role/team organization
     ("rollefordeling", re.compile(r"aftal\s+rollefordeling", re.I)),
     ("rollefordeling_alt", re.compile(r"rollefordeling", re.I)),
+    ("aftal_med_teamet", re.compile(r"aftal\s+(med\s+)?teamet", re.I)),
     ("teamleder", re.compile(r"teamleder", re.I)),
 
     # Colleague/assistance
@@ -176,9 +178,10 @@ class WorkflowFilter:
             else:
                 # Split by sentence-ending punctuation, but not abbreviations
                 # Don't split on periods followed by digits (e.g., "tlf. 12345")
+                # Don't split after digit+period (e.g., "5. interkostalrum")
                 # Don't split on lowercase letters followed by period (likely abbreviation)
                 sentence_parts = re.split(
-                    r"(?<=[.!?])(?!\s*\d)\s+",
+                    r"(?<=[.!?])(?<!\d\.)(?!\s*\d)\s+",
                     line
                 )
                 segments.extend([s.strip() for s in sentence_parts if s.strip()])
@@ -186,24 +189,13 @@ class WorkflowFilter:
         return segments
 
     def _join_segments(self, segments: list[str]) -> str:
-        """Join segments back into coherent text."""
+        """Join segments back into coherent text, preserving structure."""
         if not segments:
             return ""
 
-        result_parts: list[str] = []
-        for seg in segments:
-            if re.match(r"^\d+\.\s+", seg):
-                # Numbered item - put on own line
-                result_parts.append(seg)
-            elif re.match(r"^[-•]\s+", seg):
-                # Bullet - put on own line
-                result_parts.append(seg)
-            else:
-                result_parts.append(seg)
-
-        # Join with appropriate separators
-        result = " ".join(result_parts)
-        return result.strip()
+        # Preserve original structure by joining with newlines
+        # This maintains document formatting and readability
+        return "\n".join(seg.strip() for seg in segments if seg.strip())
 
     def _match_workflow_pattern(self, text: str) -> str | None:
         """Check if text matches any workflow pattern.

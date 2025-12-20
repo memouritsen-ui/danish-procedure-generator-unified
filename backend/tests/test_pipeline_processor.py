@@ -6,6 +6,8 @@ Integrates all Phase 1-4 components into a unified processing flow.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 
@@ -453,6 +455,134 @@ class TestPipelineProcessorWithRealContent:
         # Workflow should be filtered
         assert "bagvagt" not in result.filtered_content.lower()
         assert "lokal retningslinje" not in result.filtered_content.lower()
+
+
+class TestPipelineProcessorPreservesStructure:
+    """Test that processor preserves document structure."""
+
+    def test_preserves_line_breaks(self):
+        """Processor should preserve line breaks in filtered content."""
+        from procedurewriter.pipeline.processor import PipelineProcessor
+
+        processor = PipelineProcessor()
+
+        content = """Identificer 5. interkostalrum.
+Marker triangle of safety.
+Indsæt nålen i 45 graders vinkel."""
+
+        result = processor.process("pleuradræn", content)
+
+        # Line breaks should be preserved
+        assert "\n" in result.filtered_content
+        lines = result.filtered_content.strip().split("\n")
+        assert len(lines) >= 3
+
+
+class TestPipelineProcessorRenumbering:
+    """Test that processor renumbers steps after filtering."""
+
+    def test_renumbers_steps_after_workflow_removal(self):
+        """Steps should be renumbered sequentially after filtering."""
+        from procedurewriter.pipeline.processor import PipelineProcessor
+
+        processor = PipelineProcessor()
+
+        content = """1. Identificer 5. interkostalrum.
+2. Ring til bagvagt ved komplikationer.
+3. Marker triangle of safety.
+4. Følg lokal retningslinje.
+5. Indsæt nålen."""
+
+        result = processor.process("pleuradræn", content)
+
+        # After removing steps 2 and 4 (workflow), should renumber to 1, 2, 3
+        lines = result.filtered_content.strip().split("\n")
+        step_numbers = []
+        for line in lines:
+            match = re.match(r"^(\d+)\.", line.strip())
+            if match:
+                step_numbers.append(int(match.group(1)))
+
+        # Should be sequential: 1, 2, 3
+        assert step_numbers == [1, 2, 3], f"Expected [1, 2, 3], got {step_numbers}"
+
+    def test_renumbers_with_parenthesis_style(self):
+        """Should also renumber steps like '1)' style."""
+        from procedurewriter.pipeline.processor import PipelineProcessor
+
+        processor = PipelineProcessor()
+
+        content = """1) Identificer interkostalrum.
+2) Ring til bagvagt.
+3) Marker triangle of safety."""
+
+        result = processor.process("pleuradræn", content)
+
+        lines = result.filtered_content.strip().split("\n")
+        step_numbers = []
+        for line in lines:
+            match = re.match(r"^(\d+)\)", line.strip())
+            if match:
+                step_numbers.append(int(match.group(1)))
+
+        # Steps 1 and 3 remain, should be 1, 2
+        assert step_numbers == [1, 2], f"Expected [1, 2], got {step_numbers}"
+
+
+class TestPipelineProcessorMarkdownPreservation:
+    """Test that processor preserves markdown structure."""
+
+    def test_preserves_markdown_headings(self):
+        """Markdown headings should be preserved."""
+        from procedurewriter.pipeline.processor import PipelineProcessor
+
+        processor = PipelineProcessor()
+
+        content = """## Fremgangsmåde
+1. Identificer 5. interkostalrum.
+2. Marker triangle of safety.
+
+## Komplikationer
+- Blødning
+- Infektion"""
+
+        result = processor.process("pleuradræn", content)
+
+        assert "## Fremgangsmåde" in result.filtered_content
+        assert "## Komplikationer" in result.filtered_content
+
+    def test_preserves_bullet_points(self):
+        """Bullet points should be preserved."""
+        from procedurewriter.pipeline.processor import PipelineProcessor
+
+        processor = PipelineProcessor()
+
+        content = """Indikationer:
+- Pneumothorax
+- Pleuraeffusion
+- Hæmothorax"""
+
+        result = processor.process("pleuradræn", content)
+
+        # Should have at least 3 bullet points
+        assert result.filtered_content.count("- ") >= 3 or result.filtered_content.count("-") >= 3
+
+    def test_preserves_paragraph_breaks(self):
+        """Double newlines (paragraph breaks) should be preserved."""
+        from procedurewriter.pipeline.processor import PipelineProcessor
+
+        processor = PipelineProcessor()
+
+        content = """## Section 1
+Content for section 1.
+
+## Section 2
+Content for section 2."""
+
+        result = processor.process("pleuradræn", content)
+
+        # Should preserve paragraph structure
+        assert "\n\n" in result.filtered_content or result.filtered_content.count("##") == 2
 
 
 class TestPhase5ModulesImport:
