@@ -110,7 +110,7 @@ class EditorAgent(BaseAgent[EditorInput, EditorOutput]):
                     ),
                 ],
                 temperature=0.3,
-                max_tokens=5000,
+                max_tokens=8000,
             )
 
             # Parse response

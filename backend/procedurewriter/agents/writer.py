@@ -115,7 +115,7 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
                     ),
                 ],
                 temperature=0.4,
-                max_tokens=4000,
+                max_tokens=8000,
             )
 
             content = response.content.strip()
