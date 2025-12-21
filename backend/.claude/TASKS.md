@@ -218,7 +218,7 @@ pytest tests/models/ -v && pytest tests/integration/test_models.py -v
 | P1-HF5 | Add `to_db_row()` method to Gate model | [x] | `pytest tests/models/test_gates.py -v` | 21 tests pass |
 | P1-HF6 | Add `from_db_row()` classmethod to all models | [x] | `pytest tests/models/ -v` | 100 tests pass |
 | P1-HF7 | Remove all scattered `str()` calls from tests | [x] | `pytest tests/ -v` | 929 tests pass |
-| P1-HF8 | Add factory functions for test data | [ ] | `pytest tests/ -v` | DRY test setup |
+| P1-HF8 | Add factory functions for test data | [x] | `pytest tests/ -v` | 947 tests pass |
 
 **Design Decision (MAKE BEFORE STARTING)**:
 ```python
