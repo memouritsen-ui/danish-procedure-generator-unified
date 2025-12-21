@@ -396,6 +396,92 @@ class TestClaimDbConversion:
         assert isinstance(row[0], str)
         assert len(row[0]) == 36  # UUID string format
 
+    def test_from_db_row_reconstructs_claim(self):
+        """from_db_row() should reconstruct Claim from DB tuple."""
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        # Simulate DB row tuple in same order as to_db_row()
+        db_row = (
+            "550e8400-e29b-41d4-a716-446655440000",  # id
+            "test-run-123",  # run_id
+            "dose",  # claim_type
+            "amoxicillin 50 mg/kg/d",  # text
+            "50",  # normalized_value
+            "mg/kg/d",  # unit
+            '["SRC0023", "SRC0024"]',  # source_refs_json
+            15,  # line_number
+            0.9,  # confidence
+            "2024-12-21T12:00:00+00:00",  # created_at_utc
+        )
+
+        claim = Claim.from_db_row(db_row)
+
+        assert claim.id == UUID("550e8400-e29b-41d4-a716-446655440000")
+        assert claim.run_id == "test-run-123"
+        assert claim.claim_type == ClaimType.DOSE
+        assert claim.text == "amoxicillin 50 mg/kg/d"
+        assert claim.normalized_value == "50"
+        assert claim.unit == "mg/kg/d"
+        assert claim.source_refs == ["SRC0023", "SRC0024"]
+        assert claim.line_number == 15
+        assert claim.confidence == 0.9
+        assert claim.created_at == datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_from_db_row_with_null_optional_fields(self):
+        """from_db_row() should handle None values for optional fields."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        db_row = (
+            "550e8400-e29b-41d4-a716-446655440000",  # id
+            "test-run",  # run_id
+            "threshold",  # claim_type
+            "CURB-65 >= 3",  # text
+            None,  # normalized_value
+            None,  # unit
+            "[]",  # empty source_refs_json
+            10,  # line_number
+            0.85,  # confidence
+            "2024-12-21T12:00:00+00:00",  # created_at_utc
+        )
+
+        claim = Claim.from_db_row(db_row)
+
+        assert claim.normalized_value is None
+        assert claim.unit is None
+        assert claim.source_refs == []
+
+    def test_from_db_row_roundtrip(self):
+        """to_db_row() and from_db_row() should roundtrip correctly."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        original = Claim(
+            run_id="test-run",
+            claim_type=ClaimType.RED_FLAG,
+            text="Temperature > 38.5C",
+            normalized_value="38.5",
+            unit="C",
+            source_refs=["SRC0001"],
+            line_number=25,
+            confidence=0.95,
+        )
+
+        # Roundtrip: model -> DB row -> model
+        row = original.to_db_row()
+        reconstructed = Claim.from_db_row(row)
+
+        assert reconstructed.id == original.id
+        assert reconstructed.run_id == original.run_id
+        assert reconstructed.claim_type == original.claim_type
+        assert reconstructed.text == original.text
+        assert reconstructed.normalized_value == original.normalized_value
+        assert reconstructed.unit == original.unit
+        assert reconstructed.source_refs == original.source_refs
+        assert reconstructed.line_number == original.line_number
+        assert reconstructed.confidence == original.confidence
+
 
 class TestClaimHelpers:
     """Tests for any helper methods on Claim model."""

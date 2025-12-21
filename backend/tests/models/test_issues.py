@@ -402,6 +402,103 @@ class TestIssueDbConversion:
         assert row2[8] == 0  # auto_detected
         assert row2[9] == 1  # resolved
 
+    def test_from_db_row_reconstructs_issue(self):
+        """from_db_row() should reconstruct Issue from DB tuple."""
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.issues import Issue, IssueCode, IssueSeverity
+
+        # Simulate DB row tuple in same order as to_db_row()
+        db_row = (
+            "550e8400-e29b-41d4-a716-446655440000",  # id
+            "test-run-123",  # run_id
+            "S0-003",  # code
+            "s0",  # severity
+            "Dose claim has no source reference",  # message
+            42,  # line_number
+            "550e8400-e29b-41d4-a716-446655440001",  # claim_id
+            "SRC0023",  # source_id
+            1,  # auto_detected (int)
+            1,  # resolved (int)
+            "Added source reference",  # resolution_note
+            "2024-12-21T14:00:00+00:00",  # resolved_at_utc
+            "2024-12-21T12:00:00+00:00",  # created_at_utc
+        )
+
+        issue = Issue.from_db_row(db_row)
+
+        assert issue.id == UUID("550e8400-e29b-41d4-a716-446655440000")
+        assert issue.run_id == "test-run-123"
+        assert issue.code == IssueCode.DOSE_WITHOUT_EVIDENCE
+        assert issue.severity == IssueSeverity.S0
+        assert issue.message == "Dose claim has no source reference"
+        assert issue.line_number == 42
+        assert issue.claim_id == UUID("550e8400-e29b-41d4-a716-446655440001")
+        assert issue.source_id == "SRC0023"
+        assert issue.auto_detected is True
+        assert issue.resolved is True
+        assert issue.resolution_note == "Added source reference"
+        assert issue.resolved_at == datetime(2024, 12, 21, 14, 0, 0, tzinfo=timezone.utc)
+        assert issue.created_at == datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_from_db_row_with_null_optional_fields(self):
+        """from_db_row() should handle None values for optional fields."""
+        from procedurewriter.models.issues import Issue, IssueCode, IssueSeverity
+
+        db_row = (
+            "550e8400-e29b-41d4-a716-446655440000",  # id
+            "test-run",  # run_id
+            "S0-001",  # code
+            "s0",  # severity
+            "Minimal issue",  # message
+            None,  # line_number
+            None,  # claim_id
+            None,  # source_id
+            1,  # auto_detected
+            0,  # resolved
+            None,  # resolution_note
+            None,  # resolved_at_utc
+            "2024-12-21T12:00:00+00:00",  # created_at_utc
+        )
+
+        issue = Issue.from_db_row(db_row)
+
+        assert issue.line_number is None
+        assert issue.claim_id is None
+        assert issue.source_id is None
+        assert issue.auto_detected is True
+        assert issue.resolved is False
+        assert issue.resolution_note is None
+        assert issue.resolved_at is None
+
+    def test_from_db_row_roundtrip(self):
+        """to_db_row() and from_db_row() should roundtrip correctly."""
+        from procedurewriter.models.issues import Issue, IssueCode, IssueSeverity
+
+        original = Issue(
+            run_id="test-run",
+            code=IssueCode.CONFLICTING_DOSES,
+            severity=IssueSeverity.S0,
+            message="Same drug different doses",
+            line_number=100,
+            auto_detected=False,
+            resolved=False,
+        )
+
+        # Roundtrip: model -> DB row -> model
+        row = original.to_db_row()
+        reconstructed = Issue.from_db_row(row)
+
+        assert reconstructed.id == original.id
+        assert reconstructed.run_id == original.run_id
+        assert reconstructed.code == original.code
+        assert reconstructed.severity == original.severity
+        assert reconstructed.message == original.message
+        assert reconstructed.line_number == original.line_number
+        assert reconstructed.auto_detected == original.auto_detected
+        assert reconstructed.resolved == original.resolved
+
 
 class TestIssueResolution:
     """Tests for issue resolution workflow."""

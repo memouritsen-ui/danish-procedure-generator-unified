@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Sequence
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -108,6 +108,31 @@ class EvidenceChunk(BaseModel):
             self.created_at.isoformat(),
         )
 
+    @classmethod
+    def from_db_row(cls, row: Sequence) -> "EvidenceChunk":
+        """Reconstruct EvidenceChunk from database row tuple.
+
+        Args:
+            row: Tuple/sequence in same order as to_db_row() output:
+                (id, run_id, source_id, text, chunk_index, start_char, end_char,
+                 embedding_vector_json, metadata_json, created_at_utc)
+
+        Returns:
+            EvidenceChunk instance with all fields populated from DB row.
+        """
+        return cls(
+            id=UUID(row[0]),
+            run_id=row[1],
+            source_id=row[2],
+            text=row[3],
+            chunk_index=row[4],
+            start_char=row[5],
+            end_char=row[6],
+            embedding_vector=json.loads(row[7]) if row[7] else None,
+            metadata=json.loads(row[8]) if row[8] else {},
+            created_at=datetime.fromisoformat(row[9]),
+        )
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -177,6 +202,26 @@ class ClaimEvidenceLink(BaseModel):
             self.binding_type.value,
             self.binding_score,
             self.created_at.isoformat(),
+        )
+
+    @classmethod
+    def from_db_row(cls, row: Sequence) -> "ClaimEvidenceLink":
+        """Reconstruct ClaimEvidenceLink from database row tuple.
+
+        Args:
+            row: Tuple/sequence in same order as to_db_row() output:
+                (id, claim_id, evidence_chunk_id, binding_type, binding_score, created_at_utc)
+
+        Returns:
+            ClaimEvidenceLink instance with all fields populated from DB row.
+        """
+        return cls(
+            id=UUID(row[0]),
+            claim_id=UUID(row[1]),
+            evidence_chunk_id=UUID(row[2]),
+            binding_type=BindingType(row[3]),
+            binding_score=row[4],
+            created_at=datetime.fromisoformat(row[5]),
         )
 
     model_config = {

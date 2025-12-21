@@ -196,7 +196,7 @@ pytest tests/models/ -v && pytest tests/integration/test_models.py -v
 | P1-HF3 | Add `to_db_row()` method to ClaimEvidenceLink model | [x] | `pytest tests/models/test_evidence.py -v` | 22 tests pass |
 | P1-HF4 | Add `to_db_row()` method to Issue model | [x] | `pytest tests/models/test_issues.py -v` | 22 tests pass |
 | P1-HF5 | Add `to_db_row()` method to Gate model | [x] | `pytest tests/models/test_gates.py -v` | 21 tests pass |
-| P1-HF6 | Add `from_db_row()` classmethod to all models | [ ] | `pytest tests/models/ -v` | Reconstruct from DB |
+| P1-HF6 | Add `from_db_row()` classmethod to all models | [x] | `pytest tests/models/ -v` | 100 tests pass |
 | P1-HF7 | Remove all scattered `str()` calls from tests | [ ] | `pytest tests/ -v` | Use to_db_row() instead |
 | P1-HF8 | Add factory functions for test data | [ ] | `pytest tests/ -v` | DRY test setup |
 

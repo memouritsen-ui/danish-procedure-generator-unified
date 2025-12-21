@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Sequence
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -101,6 +101,31 @@ class Claim(BaseModel):
             self.line_number,
             self.confidence,
             self.created_at.isoformat(),
+        )
+
+    @classmethod
+    def from_db_row(cls, row: Sequence) -> "Claim":
+        """Reconstruct Claim from database row tuple.
+
+        Args:
+            row: Tuple/sequence in same order as to_db_row() output:
+                (id, run_id, claim_type, text, normalized_value, unit,
+                 source_refs_json, line_number, confidence, created_at_utc)
+
+        Returns:
+            Claim instance with all fields populated from DB row.
+        """
+        return cls(
+            id=UUID(row[0]),
+            run_id=row[1],
+            claim_type=ClaimType(row[2]),
+            text=row[3],
+            normalized_value=row[4],
+            unit=row[5],
+            source_refs=json.loads(row[6]) if row[6] else [],
+            line_number=row[7],
+            confidence=row[8],
+            created_at=datetime.fromisoformat(row[9]),
         )
 
     model_config = {

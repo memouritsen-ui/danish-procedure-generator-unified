@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Sequence
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -123,6 +124,30 @@ class Gate(BaseModel):
             self.message,
             self.created_at.isoformat(),
             self.evaluated_at.isoformat() if self.evaluated_at else None,
+        )
+
+    @classmethod
+    def from_db_row(cls, row: Sequence) -> "Gate":
+        """Reconstruct Gate from database row tuple.
+
+        Args:
+            row: Tuple/sequence in same order as to_db_row() output:
+                (id, run_id, gate_type, status, issues_checked, issues_failed,
+                 message, created_at_utc, evaluated_at_utc)
+
+        Returns:
+            Gate instance with all fields populated from DB row.
+        """
+        return cls(
+            id=UUID(row[0]),
+            run_id=row[1],
+            gate_type=GateType(row[2]),
+            status=GateStatus(row[3]),
+            issues_checked=row[4],
+            issues_failed=row[5],
+            message=row[6],
+            created_at=datetime.fromisoformat(row[7]),
+            evaluated_at=datetime.fromisoformat(row[8]) if row[8] else None,
         )
 
     model_config = {

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Sequence
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -182,6 +182,34 @@ class Issue(BaseModel):
             self.resolution_note,
             self.resolved_at.isoformat() if self.resolved_at else None,
             self.created_at.isoformat(),
+        )
+
+    @classmethod
+    def from_db_row(cls, row: Sequence) -> "Issue":
+        """Reconstruct Issue from database row tuple.
+
+        Args:
+            row: Tuple/sequence in same order as to_db_row() output:
+                (id, run_id, code, severity, message, line_number, claim_id, source_id,
+                 auto_detected, resolved, resolution_note, resolved_at_utc, created_at_utc)
+
+        Returns:
+            Issue instance with all fields populated from DB row.
+        """
+        return cls(
+            id=UUID(row[0]),
+            run_id=row[1],
+            code=IssueCode(row[2]),
+            severity=IssueSeverity(row[3]),
+            message=row[4],
+            line_number=row[5],
+            claim_id=UUID(row[6]) if row[6] else None,
+            source_id=row[7],
+            auto_detected=bool(row[8]),
+            resolved=bool(row[9]),
+            resolution_note=row[10],
+            resolved_at=datetime.fromisoformat(row[11]) if row[11] else None,
+            created_at=datetime.fromisoformat(row[12]),
         )
 
     model_config = {

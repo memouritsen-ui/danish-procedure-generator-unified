@@ -1,7 +1,7 @@
 # STATE.md - Current Project State
 
-**LAST UPDATED**: 2024-12-22 02:00 UTC
-**UPDATED BY**: Claude (P1-HF5 complete, 5/8 hotfix tasks done)
+**LAST UPDATED**: 2024-12-22 02:30 UTC
+**UPDATED BY**: Claude (P1-HF6 complete, 6/8 hotfix tasks done)
 
 ---
 
@@ -51,10 +51,10 @@ Must complete P1-HOTFIX (8 tasks) before starting Phase 2.
 ## CURRENT TASK
 
 ```
-TASK: P1-HF6 - Add from_db_row() classmethod to all models
+TASK: P1-HF7 - Remove all scattered str() calls from tests
 STATUS: NOT STARTED
 BLOCKED BY: None
-NEXT ACTION: Add from_db_row() to Claim model first
+NEXT ACTION: Find and remove str() calls for UUIDs in tests
 
 ⚠️ Phase 2 is BLOCKED until all P1-HF tasks are complete
 ```
@@ -76,6 +76,7 @@ NEXT ACTION: Add from_db_row() to Claim model first
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | P1-HF6: Add from_db_row() to all 5 models | 100 model tests pass |
 | 2024-12-22 | P1-HF5: Add to_db_row() to Gate model | 21 tests pass |
 | 2024-12-22 | P1-HF4: Add to_db_row() to Issue model | 22 tests pass |
 | 2024-12-22 | P1-HF3: Add to_db_row() to ClaimEvidenceLink model | 22 tests pass |

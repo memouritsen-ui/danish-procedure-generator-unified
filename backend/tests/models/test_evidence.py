@@ -282,6 +282,93 @@ class TestEvidenceChunkDbConversion:
         assert isinstance(row[0], str)
         assert len(row[0]) == 36  # UUID string format
 
+    def test_from_db_row_reconstructs_chunk(self):
+        """from_db_row() should reconstruct EvidenceChunk from DB tuple."""
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.evidence import EvidenceChunk
+
+        # Simulate DB row tuple in same order as to_db_row()
+        db_row = (
+            "550e8400-e29b-41d4-a716-446655440000",  # id
+            "test-run-123",  # run_id
+            "SRC0023",  # source_id
+            "Evidence text content here",  # text
+            2,  # chunk_index
+            100,  # start_char
+            200,  # end_char
+            "[0.1, 0.2, 0.3]",  # embedding_vector_json
+            '{"section": "treatment", "page": 5}',  # metadata_json
+            "2024-12-21T12:00:00+00:00",  # created_at_utc
+        )
+
+        chunk = EvidenceChunk.from_db_row(db_row)
+
+        assert chunk.id == UUID("550e8400-e29b-41d4-a716-446655440000")
+        assert chunk.run_id == "test-run-123"
+        assert chunk.source_id == "SRC0023"
+        assert chunk.text == "Evidence text content here"
+        assert chunk.chunk_index == 2
+        assert chunk.start_char == 100
+        assert chunk.end_char == 200
+        assert chunk.embedding_vector == [0.1, 0.2, 0.3]
+        assert chunk.metadata == {"section": "treatment", "page": 5}
+        assert chunk.created_at == datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_from_db_row_with_null_optional_fields(self):
+        """from_db_row() should handle None values for optional fields."""
+        from procedurewriter.models.evidence import EvidenceChunk
+
+        db_row = (
+            "550e8400-e29b-41d4-a716-446655440000",  # id
+            "test-run",  # run_id
+            "SRC0001",  # source_id
+            "Minimal chunk",  # text
+            0,  # chunk_index
+            None,  # start_char
+            None,  # end_char
+            None,  # embedding_vector_json
+            "{}",  # metadata_json (empty)
+            "2024-12-21T12:00:00+00:00",  # created_at_utc
+        )
+
+        chunk = EvidenceChunk.from_db_row(db_row)
+
+        assert chunk.start_char is None
+        assert chunk.end_char is None
+        assert chunk.embedding_vector is None
+        assert chunk.metadata == {}
+
+    def test_from_db_row_roundtrip(self):
+        """to_db_row() and from_db_row() should roundtrip correctly."""
+        from procedurewriter.models.evidence import EvidenceChunk
+
+        original = EvidenceChunk(
+            run_id="test-run",
+            source_id="SRC0023",
+            text="Evidence text for roundtrip",
+            chunk_index=5,
+            start_char=500,
+            end_char=600,
+            embedding_vector=[0.5, 0.6, 0.7],
+            metadata={"page": 10},
+        )
+
+        # Roundtrip: model -> DB row -> model
+        row = original.to_db_row()
+        reconstructed = EvidenceChunk.from_db_row(row)
+
+        assert reconstructed.id == original.id
+        assert reconstructed.run_id == original.run_id
+        assert reconstructed.source_id == original.source_id
+        assert reconstructed.text == original.text
+        assert reconstructed.chunk_index == original.chunk_index
+        assert reconstructed.start_char == original.start_char
+        assert reconstructed.end_char == original.end_char
+        assert reconstructed.embedding_vector == original.embedding_vector
+        assert reconstructed.metadata == original.metadata
+
 
 class TestEvidenceChunkHelpers:
     """Tests for helper methods on EvidenceChunk."""
@@ -506,3 +593,67 @@ class TestClaimEvidenceLinkDbConversion:
         assert len(row[0]) == 36  # UUID string format
         assert len(row[1]) == 36
         assert len(row[2]) == 36
+
+    def test_from_db_row_reconstructs_link(self):
+        """from_db_row() should reconstruct ClaimEvidenceLink from DB tuple."""
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.evidence import BindingType, ClaimEvidenceLink
+
+        # Simulate DB row tuple in same order as to_db_row()
+        db_row = (
+            "550e8400-e29b-41d4-a716-446655440010",  # id
+            "550e8400-e29b-41d4-a716-446655440001",  # claim_id
+            "550e8400-e29b-41d4-a716-446655440002",  # evidence_chunk_id
+            "semantic",  # binding_type
+            0.92,  # binding_score
+            "2024-12-21T12:00:00+00:00",  # created_at_utc
+        )
+
+        link = ClaimEvidenceLink.from_db_row(db_row)
+
+        assert link.id == UUID("550e8400-e29b-41d4-a716-446655440010")
+        assert link.claim_id == UUID("550e8400-e29b-41d4-a716-446655440001")
+        assert link.evidence_chunk_id == UUID("550e8400-e29b-41d4-a716-446655440002")
+        assert link.binding_type == BindingType.SEMANTIC
+        assert link.binding_score == 0.92
+        assert link.created_at == datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_from_db_row_all_binding_types(self):
+        """from_db_row() should handle all binding types correctly."""
+        from procedurewriter.models.evidence import BindingType, ClaimEvidenceLink
+
+        for binding_type in BindingType:
+            db_row = (
+                "550e8400-e29b-41d4-a716-446655440010",
+                "550e8400-e29b-41d4-a716-446655440001",
+                "550e8400-e29b-41d4-a716-446655440002",
+                binding_type.value,
+                0.8,
+                "2024-12-21T12:00:00+00:00",
+            )
+
+            link = ClaimEvidenceLink.from_db_row(db_row)
+            assert link.binding_type == binding_type
+
+    def test_from_db_row_roundtrip(self):
+        """to_db_row() and from_db_row() should roundtrip correctly."""
+        from procedurewriter.models.evidence import BindingType, ClaimEvidenceLink
+
+        original = ClaimEvidenceLink(
+            claim_id="550e8400-e29b-41d4-a716-446655440001",
+            evidence_chunk_id="550e8400-e29b-41d4-a716-446655440002",
+            binding_type=BindingType.MANUAL,
+            binding_score=0.95,
+        )
+
+        # Roundtrip: model -> DB row -> model
+        row = original.to_db_row()
+        reconstructed = ClaimEvidenceLink.from_db_row(row)
+
+        assert reconstructed.id == original.id
+        assert reconstructed.claim_id == original.claim_id
+        assert reconstructed.evidence_chunk_id == original.evidence_chunk_id
+        assert reconstructed.binding_type == original.binding_type
+        assert reconstructed.binding_score == original.binding_score

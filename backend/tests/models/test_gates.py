@@ -362,6 +362,84 @@ class TestGateDbConversion:
             row = gate.to_db_row()
             assert row[2] == gate_type.value
 
+    def test_from_db_row_reconstructs_gate(self):
+        """from_db_row() should reconstruct Gate from DB tuple."""
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.gates import Gate, GateStatus, GateType
+
+        # Simulate DB row tuple in same order as to_db_row()
+        db_row = (
+            "550e8400-e29b-41d4-a716-446655440000",  # id
+            "test-run-123",  # run_id
+            "s0_safety",  # gate_type
+            "pass",  # status
+            15,  # issues_checked
+            0,  # issues_failed
+            "All safety checks passed",  # message
+            "2024-12-21T12:00:00+00:00",  # created_at_utc
+            "2024-12-21T12:05:00+00:00",  # evaluated_at_utc
+        )
+
+        gate = Gate.from_db_row(db_row)
+
+        assert gate.id == UUID("550e8400-e29b-41d4-a716-446655440000")
+        assert gate.run_id == "test-run-123"
+        assert gate.gate_type == GateType.S0_SAFETY
+        assert gate.status == GateStatus.PASS
+        assert gate.issues_checked == 15
+        assert gate.issues_failed == 0
+        assert gate.message == "All safety checks passed"
+        assert gate.created_at == datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+        assert gate.evaluated_at == datetime(2024, 12, 21, 12, 5, 0, tzinfo=timezone.utc)
+
+    def test_from_db_row_with_null_optional_fields(self):
+        """from_db_row() should handle None values for optional fields."""
+        from procedurewriter.models.gates import Gate, GateStatus, GateType
+
+        db_row = (
+            "550e8400-e29b-41d4-a716-446655440000",  # id
+            "test-run",  # run_id
+            "s1_quality",  # gate_type
+            "pending",  # status
+            0,  # issues_checked
+            0,  # issues_failed
+            None,  # message
+            "2024-12-21T12:00:00+00:00",  # created_at_utc
+            None,  # evaluated_at_utc
+        )
+
+        gate = Gate.from_db_row(db_row)
+
+        assert gate.message is None
+        assert gate.evaluated_at is None
+
+    def test_from_db_row_roundtrip(self):
+        """to_db_row() and from_db_row() should roundtrip correctly."""
+        from procedurewriter.models.gates import Gate, GateStatus, GateType
+
+        original = Gate(
+            run_id="test-run",
+            gate_type=GateType.FINAL,
+            status=GateStatus.FAIL,
+            issues_checked=20,
+            issues_failed=3,
+            message="3 issues remain",
+        )
+
+        # Roundtrip: model -> DB row -> model
+        row = original.to_db_row()
+        reconstructed = Gate.from_db_row(row)
+
+        assert reconstructed.id == original.id
+        assert reconstructed.run_id == original.run_id
+        assert reconstructed.gate_type == original.gate_type
+        assert reconstructed.status == original.status
+        assert reconstructed.issues_checked == original.issues_checked
+        assert reconstructed.issues_failed == original.issues_failed
+        assert reconstructed.message == original.message
+
 
 class TestGateValidation:
     """Tests for gate validation logic."""
