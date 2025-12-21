@@ -327,19 +327,19 @@ def run_pipeline(
                 )
             )
 
-        if not settings.dummy_mode:
-            source_n = _append_seed_url_sources(
-                allowlist=allowlist,
-                http=http,
-                run_dir=run_dir,
-                source_n=source_n,
-                sources=sources,
-                warnings=warnings,
-                evidence_hierarchy=evidence_hierarchy,
-                procedure=procedure,
-                context=context,
-                stats=seed_url_stats,
-            )
+        source_n = _append_seed_url_sources_helper(
+            allowlist=allowlist,
+            http=http,
+            run_dir=run_dir,
+            source_n=source_n,
+            sources=sources,
+            warnings=warnings,
+            evidence_hierarchy=evidence_hierarchy,
+            procedure=procedure,
+            context=context,
+            seed_url_stats=seed_url_stats,
+            dummy_mode=settings.dummy_mode,
+        )
 
         if settings.dummy_mode:
             source_id = make_source_id(source_n)
@@ -375,244 +375,55 @@ def run_pipeline(
             )
 
         # Search international sources (SerpAPI Google Scholar) before local guidelines.
+        source_n = _append_international_sources_helper(
+            procedure=procedure,
+            context=context,
+            http=http,
+            run_dir=run_dir,
+            source_n=source_n,
+            sources=sources,
+            warnings=warnings,
+            evidence_hierarchy=evidence_hierarchy,
+            evidence_policy=evidence_policy,
+            serpapi_api_key=serpapi_api_key,
+            settings=settings,
+            availability_stats=availability_stats,
+            dummy_mode=settings.dummy_mode,
+            emitter=emitter,
+        )
+
+        # Search Danish guideline library FIRST (priority 1000 - highest)
         if not settings.dummy_mode:
-            emitter.emit(EventType.PROGRESS, {"message": "Searching international guidelines", "stage": "international_search"})
-            query_text = " ".join([procedure, context or ""]).strip()
-            effective_serpapi_api_key = serpapi_api_key or settings.serpapi_api_key
-            source_n = _append_international_sources(
-                query=query_text,
-                http=http,
+            emitter.emit(EventType.PROGRESS, {"message": "Searching Danish guideline library", "stage": "library_search"})
+            source_n = _append_library_search_results(
+                settings=settings,
+                procedure=procedure,
+                context=context,
+                run_dir=run_dir,
+                source_n=source_n,
+                sources=sources,
+                evidence_hierarchy=evidence_hierarchy,
+            )
+
+        # Search PubMed (priority 100 - fallback for international research)
+        if not settings.dummy_mode:
+            emitter.emit(EventType.PROGRESS, {"message": "Searching PubMed for evidence", "stage": "pubmed_search"})
+            source_n = _append_pubmed_search_results(
+                settings=settings,
+                procedure=procedure,
+                context=context,
                 run_dir=run_dir,
                 source_n=source_n,
                 sources=sources,
                 warnings=warnings,
                 evidence_hierarchy=evidence_hierarchy,
-                max_per_tier=5,
-                strict_mode=evidence_policy == "strict",
-                serpapi_api_key=effective_serpapi_api_key,
-                serpapi_base_url=settings.serpapi_base_url,
-                serpapi_engine=settings.serpapi_engine,
-                allow_html_fallback=settings.allow_html_fallback_international,
+                http=http,
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key,
+                ollama_base_url=ollama_base_url,
+                ncbi_api_key=ncbi_api_key,
                 availability_stats=availability_stats,
             )
-
-        # Search Danish guideline library FIRST (priority 1000 - highest)
-        if not settings.dummy_mode:
-            emitter.emit(EventType.PROGRESS, {"message": "Searching Danish guideline library", "stage": "library_search"})
-            library_provider = LibrarySearchProvider(settings.resolved_guideline_library_path)
-            if library_provider.available():
-                query_text = " ".join([procedure, context or ""]).strip()
-                library_results = library_provider.search(query_text, limit=15)
-
-                for lib_result in library_results:
-                    source_id = make_source_id(source_n)
-                    source_n += 1
-
-                    # Get extracted text content
-                    text_content = lib_result.get_text_content()
-                    if not text_content:
-                        continue  # Skip documents without extracted text
-
-                    # Read raw content (HTML or PDF)
-                    raw_path = lib_result.local_path / "original.html"
-                    if not raw_path.exists():
-                        raw_path = lib_result.local_path / "original.pdf"
-                    if not raw_path.exists():
-                        # Use extracted text as raw
-                        raw_bytes = text_content.encode("utf-8")
-                        raw_suffix = ".txt"
-                    else:
-                        raw_bytes = raw_path.read_bytes()
-                        raw_suffix = raw_path.suffix
-
-                    written = write_source_files(
-                        run_dir=run_dir,
-                        source_id=source_id,
-                        raw_bytes=raw_bytes,
-                        raw_suffix=raw_suffix,
-                        normalized_text=text_content,
-                    )
-
-                    # Parse year from publish_year field
-                    year_val = lib_result.publish_year
-                    year: int | None = None
-                    if year_val:
-                        with contextlib.suppress(ValueError):
-                            year = int(year_val[:4]) if len(year_val) >= 4 else int(year_val)
-
-                    # Classify evidence level - Danish guidelines get priority 1000
-                    library_evidence_level = evidence_hierarchy.classify_source(
-                        url=lib_result.url,
-                        kind="danish_guideline",
-                        title=lib_result.title,
-                    )
-
-                    sources.append(
-                        SourceRecord(
-                            source_id=source_id,
-                            fetched_at_utc=_utc_now_iso(),
-                            kind="danish_guideline",
-                            title=lib_result.title,
-                            year=year,
-                            url=lib_result.url,
-                            doi=None,
-                            pmid=None,
-                            raw_path=str(written.raw_path),
-                            normalized_path=str(written.normalized_path),
-                            raw_sha256=written.raw_sha256,
-                            normalized_sha256=written.normalized_sha256,
-                            extraction_notes=f"Danish guideline library: {lib_result.source_name} (doc_id={lib_result.doc_id})",
-                            terms_licence_note="Danish regional/national clinical guideline. Respect source terms.",
-                            extra={
-                                "library_source_id": lib_result.source_id,
-                                "library_doc_id": lib_result.doc_id,
-                                "category": lib_result.category,
-                                "relevance_score": lib_result.relevance_score,
-                                "evidence_level": library_evidence_level.level_id,
-                                "evidence_badge": library_evidence_level.badge,
-                                "evidence_badge_color": library_evidence_level.badge_color,
-                                "evidence_priority": library_evidence_level.priority,
-                            },
-                        )
-                    )
-
-        # Search PubMed (priority 100 - fallback for international research)
-        if not settings.dummy_mode:
-            emitter.emit(EventType.PROGRESS, {"message": "Searching PubMed for evidence", "stage": "pubmed_search"})
-            pubmed = PubMedClient(
-                http,
-                tool=settings.ncbi_tool,
-                email=settings.ncbi_email,
-                api_key=ncbi_api_key or settings.ncbi_api_key,
-            )
-
-            # Get LLM for term expansion if available (improves search quality)
-            term_expansion_llm = None
-            if settings.use_llm and (openai_api_key or anthropic_api_key):
-                try:
-                    term_expansion_llm = get_llm_client(
-                        provider=settings.llm_provider,
-                        openai_api_key=openai_api_key,
-                        anthropic_api_key=anthropic_api_key,
-                        ollama_base_url=ollama_base_url or settings.ollama_base_url,
-                    )
-                except Exception as e:
-                    logger.warning("Could not create LLM for term expansion: %s", e)
-
-            expanded_terms = _expand_procedure_terms(
-                procedure=procedure,
-                context=context,
-                llm=term_expansion_llm,
-                model=settings.llm_model,
-            )
-            queries = _build_pubmed_queries(expanded_terms=expanded_terms)
-            candidates: list[dict[str, Any]] = []
-            seen_pmids: set[str] = set()
-            pubmed_warnings: list[str] = []
-            query_tokens = _tokenize_for_relevance(" ".join(expanded_terms))
-
-            for q in queries:
-                try:
-                    pmids, search_resp = pubmed.search(q, retmax=25)
-                except Exception as e:  # noqa: BLE001
-                    pubmed_warnings.append(f"PubMed search failed for query={q!r}: {e}")
-                    continue
-                if not pmids:
-                    continue
-                try:
-                    fetched_articles, fetch_resp = pubmed.fetch(pmids)
-                except Exception as e:  # noqa: BLE001
-                    pubmed_warnings.append(f"PubMed fetch failed for query={q!r}: {e}")
-                    continue
-                for fetched in fetched_articles:
-                    art = fetched.article
-                    if art.pmid in seen_pmids:
-                        continue
-                    seen_pmids.add(art.pmid)
-                    # Get evidence hierarchy boost for this publication
-                    hierarchy_boost = evidence_hierarchy.get_priority_boost(
-                        publication_types=art.publication_types
-                    )
-                    candidates.append(
-                        {
-                            "fetched": fetched,
-                            "fetch_resp": fetch_resp,
-                            "search_query": q,
-                            "search_cache_path": search_resp.cache_path,
-                            "score": _pubmed_evidence_score(art.publication_types) + hierarchy_boost,
-                            "relevance": _pubmed_relevance_score(query_tokens, art.title, art.abstract),
-                            "has_abstract": bool(art.abstract),
-                            "year": art.year or 0,
-                            "hierarchy_boost": hierarchy_boost,
-                        }
-                    )
-                if len(candidates) >= 40:
-                    break
-
-            def _is_pubmed_review(pub_types: list[str]) -> bool:
-                return any(
-                    str(pt).lower() in {"systematic review", "meta-analysis"}
-                    for pt in pub_types
-                    if pt
-                )
-
-            availability_stats["pubmed_candidates"] = len(candidates)
-            availability_stats["pubmed_review_candidates"] = sum(
-                1 for c in candidates
-                if _is_pubmed_review(c["fetched"].article.publication_types)
-            )
-
-            candidates.sort(key=lambda c: (c["score"], c["relevance"], c["has_abstract"], c["year"]), reverse=True)
-            selected = candidates[:12]
-
-            for c in selected:
-                fetched = c["fetched"]
-                fetch_resp = c["fetch_resp"]
-                q = str(c["search_query"])
-                search_cache_path = str(c["search_cache_path"])
-                art = fetched.article
-
-                source_id = make_source_id(source_n)
-                source_n += 1
-                normalized = normalize_pubmed(art.title, art.abstract, art.journal, art.year)
-                written = write_source_files(
-                    run_dir=run_dir,
-                    source_id=source_id,
-                    raw_bytes=fetched.raw_xml,
-                    raw_suffix=".xml",
-                    normalized_text=normalized,
-                )
-                # Classify evidence level for PubMed source
-                pubmed_evidence_level = evidence_hierarchy.classify_source(
-                    publication_types=art.publication_types
-                )
-                sources.append(
-                    SourceRecord(
-                        source_id=source_id,
-                        fetched_at_utc=fetch_resp.fetched_at_utc,
-                        kind="pubmed",
-                        title=art.title,
-                        year=art.year,
-                        url=f"https://pubmed.ncbi.nlm.nih.gov/{art.pmid}/",
-                        doi=art.doi,
-                        pmid=art.pmid,
-                        raw_path=str(written.raw_path),
-                        normalized_path=str(written.normalized_path),
-                        raw_sha256=written.raw_sha256,
-                        normalized_sha256=written.normalized_sha256,
-                        extraction_notes=f"PubMed via NCBI E-utilities. Search cache: {search_cache_path}",
-                        terms_licence_note="PubMed abstract/metadata. Tjek rettigheder for fuldtekst.",
-                        extra={
-                            "search_query": q,
-                            "publication_types": art.publication_types,
-                            "evidence_level": pubmed_evidence_level.level_id,
-                            "evidence_badge": pubmed_evidence_level.badge,
-                            "evidence_badge_color": pubmed_evidence_level.badge_color,
-                            "evidence_priority": pubmed_evidence_level.priority,
-                        },
-                    )
-                )
-            warnings.extend(pubmed_warnings)
 
         if not sources:
             source_id = make_source_id(1)
@@ -2665,3 +2476,324 @@ def _pubmed_relevance_score(query_tokens: set[str], title: str | None, abstract:
     if abstract:
         score += 1 * len(query_tokens & _tokenize_for_relevance(abstract))
     return score
+
+def _append_library_search_results(
+    *,
+    settings: Settings,
+    procedure: str,
+    context: str | None,
+    run_dir: Path,
+    source_n: int,
+    sources: list[SourceRecord],
+    evidence_hierarchy: EvidenceHierarchy,
+) -> int:
+    """Search Danish guideline library and append results to sources."""
+    library_provider = LibrarySearchProvider(settings.resolved_guideline_library_path)
+    if not library_provider.available():
+        return source_n
+
+    query_text = " ".join([procedure, context or ""]).strip()
+    library_results = library_provider.search(query_text, limit=15)
+
+    for lib_result in library_results:
+        source_id = make_source_id(source_n)
+        source_n += 1
+
+        # Get extracted text content
+        text_content = lib_result.get_text_content()
+        if not text_content:
+            continue  # Skip documents without extracted text
+
+        # Read raw content (HTML or PDF)
+        raw_path = lib_result.local_path / "original.html"
+        if not raw_path.exists():
+            raw_path = lib_result.local_path / "original.pdf"
+        if not raw_path.exists():
+            # Use extracted text as raw
+            raw_bytes = text_content.encode("utf-8")
+            raw_suffix = ".txt"
+        else:
+            raw_bytes = raw_path.read_bytes()
+            raw_suffix = raw_path.suffix
+
+        written = write_source_files(
+            run_dir=run_dir,
+            source_id=source_id,
+            raw_bytes=raw_bytes,
+            raw_suffix=raw_suffix,
+            normalized_text=text_content,
+        )
+
+        # Parse year from publish_year field
+        year_val = lib_result.publish_year
+        year: int | None = None
+        if year_val:
+            with contextlib.suppress(ValueError):
+                year = int(year_val[:4]) if len(year_val) >= 4 else int(year_val)
+
+        # Classify evidence level - Danish guidelines get priority 1000
+        library_evidence_level = evidence_hierarchy.classify_source(
+            url=lib_result.url,
+            kind="danish_guideline",
+            title=lib_result.title,
+        )
+
+        sources.append(
+            SourceRecord(
+                source_id=source_id,
+                fetched_at_utc=_utc_now_iso(),
+                kind="danish_guideline",
+                title=lib_result.title,
+                year=year,
+                url=lib_result.url,
+                doi=None,
+                pmid=None,
+                raw_path=str(written.raw_path),
+                normalized_path=str(written.normalized_path),
+                raw_sha256=written.raw_sha256,
+                normalized_sha256=written.normalized_sha256,
+                extraction_notes=f"Danish guideline library: {lib_result.source_name} (doc_id={lib_result.doc_id})",
+                terms_licence_note="Danish regional/national clinical guideline. Respect source terms.",
+                extra={
+                    "library_source_id": lib_result.source_id,
+                    "library_doc_id": lib_result.doc_id,
+                    "category": lib_result.category,
+                    "relevance_score": lib_result.relevance_score,
+                    "evidence_level": library_evidence_level.level_id,
+                    "evidence_badge": library_evidence_level.badge,
+                    "evidence_badge_color": library_evidence_level.badge_color,
+                    "evidence_priority": library_evidence_level.priority,
+                },
+            )
+        )
+    return source_n
+
+
+def _append_pubmed_search_results(
+    *,
+    settings: Settings,
+    procedure: str,
+    context: str | None,
+    run_dir: Path,
+    source_n: int,
+    sources: list[SourceRecord],
+    warnings: list[str],
+    evidence_hierarchy: EvidenceHierarchy,
+    http: CachedHttpClient,
+    openai_api_key: str | None,
+    anthropic_api_key: str | None,
+    ollama_base_url: str | None,
+    ncbi_api_key: str | None,
+    availability_stats: dict[str, int] | None,
+) -> int:
+    """Search PubMed and append results to sources."""
+    pubmed = PubMedClient(
+        http,
+        tool=settings.ncbi_tool,
+        email=settings.ncbi_email,
+        api_key=ncbi_api_key or settings.ncbi_api_key,
+    )
+
+    # Get LLM for term expansion if available (improves search quality)
+    term_expansion_llm = None
+    if settings.use_llm and (openai_api_key or anthropic_api_key):
+        try:
+            term_expansion_llm = get_llm_client(
+                provider=settings.llm_provider,
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key,
+                ollama_base_url=ollama_base_url or settings.ollama_base_url,
+            )
+        except Exception as e:
+            logger.warning("Could not create LLM for term expansion: %s", e)
+
+    expanded_terms = _expand_procedure_terms(
+        procedure=procedure,
+        context=context,
+        llm=term_expansion_llm,
+        model=settings.llm_model,
+    )
+    queries = _build_pubmed_queries(expanded_terms=expanded_terms)
+    candidates: list[dict[str, Any]] = []
+    seen_pmids: set[str] = set()
+    pubmed_warnings: list[str] = []
+    query_tokens = _tokenize_for_relevance(" ".join(expanded_terms))
+
+    for q in queries:
+        try:
+            pmids, search_resp = pubmed.search(q, retmax=25)
+        except Exception as e:  # noqa: BLE001
+            pubmed_warnings.append(f"PubMed search failed for query={q!r}: {e}")
+            continue
+        if not pmids:
+            continue
+        try:
+            fetched_articles, fetch_resp = pubmed.fetch(pmids)
+        except Exception as e:  # noqa: BLE001
+            pubmed_warnings.append(f"PubMed fetch failed for query={q!r}: {e}")
+            continue
+        for fetched in fetched_articles:
+            art = fetched.article
+            if art.pmid in seen_pmids:
+                continue
+            seen_pmids.add(art.pmid)
+            # Get evidence hierarchy boost for this publication
+            hierarchy_boost = evidence_hierarchy.get_priority_boost(
+                publication_types=art.publication_types
+            )
+            candidates.append(
+                {
+                    "fetched": fetched,
+                    "fetch_resp": fetch_resp,
+                    "search_query": q,
+                    "search_cache_path": search_resp.cache_path,
+                    "score": _pubmed_evidence_score(art.publication_types) + hierarchy_boost,
+                    "relevance": _pubmed_relevance_score(query_tokens, art.title, art.abstract),
+                    "has_abstract": bool(art.abstract),
+                    "year": art.year or 0,
+                    "hierarchy_boost": hierarchy_boost,
+                }
+            )
+        if len(candidates) >= 40:
+            break
+
+    def _is_pubmed_review(pub_types: list[str]) -> bool:
+        return any(
+            str(pt).lower() in {"systematic review", "meta-analysis"}
+            for pt in pub_types
+            if pt
+        )
+
+    if availability_stats is not None:
+        availability_stats["pubmed_candidates"] = len(candidates)
+        availability_stats["pubmed_review_candidates"] = sum(
+            1 for c in candidates
+            if _is_pubmed_review(c["fetched"].article.publication_types)
+        )
+
+    candidates.sort(key=lambda c: (c["score"], c["relevance"], c["has_abstract"], c["year"]), reverse=True)
+    selected = candidates[:12]
+
+    for c in selected:
+        fetched = c["fetched"]
+        fetch_resp = c["fetch_resp"]
+        q = str(c["search_query"])
+        search_cache_path = str(c["search_cache_path"])
+        art = fetched.article
+
+        source_id = make_source_id(source_n)
+        source_n += 1
+        normalized = normalize_pubmed(art.title, art.abstract, art.journal, art.year)
+        written = write_source_files(
+            run_dir=run_dir,
+            source_id=source_id,
+            raw_bytes=fetched.raw_xml,
+            raw_suffix=".xml",
+            normalized_text=normalized,
+        )
+        # Classify evidence level for PubMed source
+        pubmed_evidence_level = evidence_hierarchy.classify_source(
+            publication_types=art.publication_types
+        )
+        sources.append(
+            SourceRecord(
+                source_id=source_id,
+                fetched_at_utc=fetch_resp.fetched_at_utc,
+                kind="pubmed",
+                title=art.title,
+                year=art.year,
+                url=f"https://pubmed.ncbi.nlm.nih.gov/{art.pmid}/",
+                doi=art.doi,
+                pmid=art.pmid,
+                raw_path=str(written.raw_path),
+                normalized_path=str(written.normalized_path),
+                raw_sha256=written.raw_sha256,
+                normalized_sha256=written.normalized_sha256,
+                extraction_notes=f"PubMed via NCBI E-utilities. Search cache: {search_cache_path}",
+                terms_licence_note="PubMed abstract/metadata. Tjek rettigheder for fuldtekst.",
+                extra={
+                    "search_query": q,
+                    "publication_types": art.publication_types,
+                    "evidence_level": pubmed_evidence_level.level_id,
+                    "evidence_badge": pubmed_evidence_level.badge,
+                    "evidence_badge_color": pubmed_evidence_level.badge_color,
+                    "evidence_priority": pubmed_evidence_level.priority,
+                },
+            )
+        )
+    warnings.extend(pubmed_warnings)
+    return source_n
+
+def _append_seed_url_sources_helper(
+    *,
+    allowlist: dict[str, Any],
+    http: CachedHttpClient,
+    run_dir: Path,
+    source_n: int,
+    sources: list[SourceRecord],
+    warnings: list[str],
+    evidence_hierarchy: EvidenceHierarchy,
+    procedure: str,
+    context: str | None,
+    seed_url_stats: dict[str, int],
+    dummy_mode: bool,
+) -> int:
+    """Process seed URLs from the allowlist and append to sources."""
+    if dummy_mode:
+        return source_n
+        
+    return _append_seed_url_sources(
+        allowlist=allowlist,
+        http=http,
+        run_dir=run_dir,
+        source_n=source_n,
+        sources=sources,
+        warnings=warnings,
+        evidence_hierarchy=evidence_hierarchy,
+        procedure=procedure,
+        context=context,
+        stats=seed_url_stats,
+    )
+
+
+def _append_international_sources_helper(
+    *,
+    procedure: str,
+    context: str | None,
+    http: CachedHttpClient,
+    run_dir: Path,
+    source_n: int,
+    sources: list[SourceRecord],
+    warnings: list[str],
+    evidence_hierarchy: EvidenceHierarchy,
+    evidence_policy: str,
+    serpapi_api_key: str | None,
+    settings: Settings,
+    availability_stats: dict[str, int],
+    dummy_mode: bool,
+    emitter: Any,
+) -> int:
+    """Search international sources and append to sources list."""
+    if dummy_mode:
+        return source_n
+        
+    emitter.emit(EventType.PROGRESS, {"message": "Searching international guidelines", "stage": "international_search"})
+    query_text = " ".join([procedure, context or ""]).strip()
+    effective_serpapi_api_key = serpapi_api_key or settings.serpapi_api_key
+    
+    return _append_international_sources(
+        query=query_text,
+        http=http,
+        run_dir=run_dir,
+        source_n=source_n,
+        sources=sources,
+        warnings=warnings,
+        evidence_hierarchy=evidence_hierarchy,
+        max_per_tier=5,
+        strict_mode=evidence_policy == "strict",
+        serpapi_api_key=effective_serpapi_api_key,
+        serpapi_base_url=settings.serpapi_base_url,
+        serpapi_engine=settings.serpapi_engine,
+        allow_html_fallback=settings.allow_html_fallback_international,
+        availability_stats=availability_stats,
+    )

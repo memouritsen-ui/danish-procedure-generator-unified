@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -246,8 +247,8 @@ async def api_ingest_pdf(file: UploadFile) -> IngestResponse:
     raw_bytes = await file.read()
     write_bytes(raw_path, raw_bytes)
 
-    pages = extract_pdf_pages(raw_path)
-    normalized_text = normalize_pdf_pages(pages)
+    pages = await run_in_threadpool(extract_pdf_pages, raw_path)
+    normalized_text = await run_in_threadpool(normalize_pdf_pages, pages)
     normalized_path = settings.uploads_dir / f"{source_id}.txt"
     write_text(normalized_path, normalized_text)
 
@@ -283,8 +284,8 @@ async def api_ingest_docx(file: UploadFile) -> IngestResponse:
     raw_bytes = await file.read()
     write_bytes(raw_path, raw_bytes)
 
-    blocks = extract_docx_blocks(raw_path)
-    normalized_text = normalize_docx_blocks(blocks)
+    blocks = await run_in_threadpool(extract_docx_blocks, raw_path)
+    normalized_text = await run_in_threadpool(normalize_docx_blocks, blocks)
     normalized_path = settings.uploads_dir / f"{source_id}.txt"
     write_text(normalized_path, normalized_text)
 
@@ -311,6 +312,16 @@ async def api_ingest_docx(file: UploadFile) -> IngestResponse:
     return IngestResponse(source_id=source_id)
 
 
+def _fetch_url_sync(url: str, cache_dir: Path) -> Any:
+    from procedurewriter.pipeline.fetcher import CachedHttpClient
+
+    http = CachedHttpClient(cache_dir=cache_dir)
+    try:
+        return http.get(url)
+    finally:
+        http.close()
+
+
 @app.post("/api/ingest/url", response_model=IngestResponse)
 async def api_ingest_url(req: IngestUrlRequest) -> IngestResponse:
     allowlist = config_store.load_yaml(settings.allowlist_path)
@@ -319,17 +330,12 @@ async def api_ingest_url(req: IngestUrlRequest) -> IngestResponse:
         raise HTTPException(status_code=400, detail="URL not allowed by allowlist")
 
     source_id = f"LIB_{uuid.uuid4().hex}"
-    from procedurewriter.pipeline.fetcher import CachedHttpClient
 
-    http = CachedHttpClient(cache_dir=settings.cache_dir)
-    try:
-        resp = http.get(req.url)
-    finally:
-        http.close()
+    resp = await run_in_threadpool(_fetch_url_sync, req.url, settings.cache_dir)
 
     raw_path = settings.uploads_dir / f"{source_id}.html"
     write_bytes(raw_path, resp.content)
-    normalized_text = normalize_html(resp.content)
+    normalized_text = await run_in_threadpool(normalize_html, resp.content)
     normalized_path = settings.uploads_dir / f"{source_id}.txt"
     write_text(normalized_path, normalized_text)
 
@@ -493,7 +499,8 @@ async def api_upload_protocol(
         content = await file.read()
         temp_path.write_bytes(content)
 
-        protocol_id = upload_protocol(
+        protocol_id = await run_in_threadpool(
+            upload_protocol,
             settings.db_path,
             temp_path,
             name=name,

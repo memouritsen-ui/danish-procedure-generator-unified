@@ -20,8 +20,6 @@ from typing import TYPE_CHECKING, Any
 
 from procedurewriter.agents.base import AgentResult, BaseAgent
 from procedurewriter.agents.models import ResearcherInput, ResearcherOutput, SourceReference
-from procedurewriter.pipeline.pubmed import PubMedClient
-from procedurewriter.pipeline.fetcher import CachedHttpClient
 
 if TYPE_CHECKING:
     from procedurewriter.llm.providers import LLMProvider
@@ -103,8 +101,8 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
         self,
         llm: LLMProvider,
         model: str | None = None,
-        pubmed_client: PubMedClient | None = None,
-        http_client: CachedHttpClient | None = None,
+        pubmed_client: object | None = None,
+        http_client: object | None = None,
         library_path: Path | str | None = None,
         serpapi_key: str | None = None,
     ):
@@ -114,18 +112,16 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
         Args:
             llm: LLM provider for search term generation and ranking
             model: Model to use for LLM calls
-            pubmed_client: PubMed client (created if not provided)
-            http_client: HTTP client for API calls (created if not provided)
+            pubmed_client: PubMed client (created lazily if not provided)
+            http_client: HTTP client for API calls (created lazily if not provided)
             library_path: Path to Danish guideline library
             serpapi_key: SerpAPI key for Cochrane/Google Scholar
         """
         super().__init__(llm, model)
 
-        # Initialize HTTP client
-        self._http = http_client or CachedHttpClient()
-
-        # Initialize PubMed client
-        self._pubmed = pubmed_client or PubMedClient(self._http)
+        # Store injected clients (or None for lazy creation)
+        self._http = http_client
+        self._pubmed = pubmed_client
 
         # Danish guideline library path
         self._library_path = Path(library_path) if library_path else Path.home() / "guideline_harvester" / "library"
@@ -134,6 +130,23 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
         self._serpapi_key = serpapi_key
 
         logger.info(f"ResearcherAgent initialized with library at {self._library_path}")
+
+    def _get_http_client(self) -> Any:
+        """Get or create HTTP client lazily."""
+        if self._http is None:
+            from procedurewriter.pipeline.fetcher import CachedHttpClient
+            from procedurewriter.settings import settings
+            cache_dir = Path(settings.cache_dir) if hasattr(settings, 'cache_dir') else Path.home() / ".cache" / "procedurewriter"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            self._http = CachedHttpClient(cache_dir=cache_dir)
+        return self._http
+
+    def _get_pubmed_client(self) -> Any:
+        """Get or create PubMed client lazily."""
+        if self._pubmed is None:
+            from procedurewriter.pipeline.pubmed import PubMedClient
+            self._pubmed = PubMedClient(self._get_http_client())
+        return self._pubmed
 
     def execute(self, input_data: ResearcherInput) -> AgentResult[ResearcherOutput]:
         """
@@ -366,7 +379,7 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                     "om": "json",
                 }
 
-                response = self._http.get(url, params=params)
+                response = self._get_http_client().get(url, params=params)
                 if response.status_code != 200:
                     continue
 
@@ -412,10 +425,10 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
             for term in search_terms[:2]:
                 query = f"{term} AND (systematic review[pt] OR meta-analysis[pt])"
 
-                pmids, _ = self._pubmed.search(query, retmax=max_results)
+                pmids, _ = self._get_pubmed_client().search(query, retmax=max_results)
 
                 if pmids:
-                    articles = self._pubmed.fetch(pmids)
+                    articles = self._get_pubmed_client().fetch(pmids)
 
                     for article in articles:
                         source = SourceReference(
@@ -460,7 +473,7 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                     "num": str(max_results),
                 }
 
-                response = self._http.get(url, params=params)
+                response = self._get_http_client().get(url, params=params)
                 if response.status_code != 200:
                     continue
 
@@ -497,10 +510,10 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
 
         try:
             for term in search_terms[:3]:
-                pmids, _ = self._pubmed.search(term, retmax=max_results // 2)
+                pmids, _ = self._get_pubmed_client().search(term, retmax=max_results // 2)
 
                 if pmids:
-                    articles = self._pubmed.fetch(pmids)
+                    articles = self._get_pubmed_client().fetch(pmids)
 
                     for article in articles:
                         # Classify evidence tier based on publication type

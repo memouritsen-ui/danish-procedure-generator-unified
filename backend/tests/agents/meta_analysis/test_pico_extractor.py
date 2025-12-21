@@ -244,7 +244,12 @@ class TestConfidenceGating:
         })
         mock_llm = self._create_mock_llm(llm_response)
 
-        extractor = PICOExtractor(llm=mock_llm)
+        # Test with raise_on_low_confidence=True to verify exception is raised
+        extractor = PICOExtractor(
+            llm=mock_llm,
+            raise_on_low_confidence=True,  # Explicitly enable exception raising
+            confidence_threshold=0.85,  # Original threshold
+        )
         input_data = PICOExtractionInput(
             study_id="LowConf2023",
             title="Ambiguous study",
@@ -257,6 +262,38 @@ class TestConfidenceGating:
         assert exc_info.value.confidence == 0.72
         assert exc_info.value.study_id == "LowConf2023"
         assert "threshold" in exc_info.value.reason.lower() or "confidence" in exc_info.value.reason.lower()
+
+    def test_low_confidence_returns_data_by_default(self) -> None:
+        """Low confidence should return data (not raise) by default."""
+        from procedurewriter.agents.meta_analysis.pico_extractor import (
+            PICOExtractionInput,
+            PICOExtractor,
+        )
+
+        llm_response = json.dumps({
+            "population": "Elderly patients",
+            "intervention": "New treatment",
+            "comparison": "Standard care",
+            "outcome": "Mortality",
+            "confidence": 0.40,  # Below default threshold of 0.50
+            "population_mesh": [],
+            "intervention_mesh": [],
+            "outcome_mesh": [],
+            "detected_language": "en",
+        })
+        mock_llm = self._create_mock_llm(llm_response)
+
+        # Default behavior: no exception, returns low confidence data
+        extractor = PICOExtractor(llm=mock_llm)
+        input_data = PICOExtractionInput(
+            study_id="LowConf2024",
+            title="Another study",
+            abstract="Study abstract...",
+        )
+
+        result = extractor.execute(input_data)
+        assert result.output.confidence == 0.40
+        assert result.output.population == "Elderly patients"
 
     def test_confidence_threshold_is_configurable(self) -> None:
         """Confidence threshold should be configurable."""
@@ -348,7 +385,12 @@ class TestMultiPassExtraction:
 
         mock_llm = self._create_mock_llm_sequence([first_response, second_response])
 
-        extractor = PICOExtractor(llm=mock_llm, enable_self_correction=True)
+        # Set threshold to 0.85 to trigger self-correction on first pass (0.70)
+        extractor = PICOExtractor(
+            llm=mock_llm,
+            enable_self_correction=True,
+            confidence_threshold=0.85,  # Explicit threshold to trigger self-correction
+        )
         input_data = PICOExtractionInput(
             study_id="SelfCorrect2023",
             title="Metformin in T2DM",
