@@ -13,6 +13,7 @@ Claim Types (from Phase 0 spec):
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated
@@ -81,6 +82,26 @@ class Claim(BaseModel):
     def is_high_confidence(self) -> bool:
         """Check if claim has high confidence (>= 0.8)."""
         return self.confidence >= 0.8
+
+    def to_db_row(self) -> tuple:
+        """Convert model to database row tuple.
+
+        Returns tuple matching claims table column order:
+        (id, run_id, claim_type, text, normalized_value, unit,
+         source_refs_json, line_number, confidence, created_at_utc)
+        """
+        return (
+            str(self.id),
+            self.run_id,
+            self.claim_type.value,
+            self.text,
+            self.normalized_value,
+            self.unit,
+            json.dumps(self.source_refs),
+            self.line_number,
+            self.confidence,
+            self.created_at.isoformat(),
+        )
 
     model_config = {
         "json_schema_extra": {

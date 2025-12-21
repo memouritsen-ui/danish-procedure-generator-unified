@@ -309,6 +309,94 @@ class TestClaimWithThresholdDetails:
         assert "CURB-65" in claim.text
 
 
+class TestClaimDbConversion:
+    """Tests for database conversion methods."""
+
+    def test_to_db_row_returns_correct_tuple(self):
+        """to_db_row() should return tuple matching DB column order."""
+        import json
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        fixed_id = UUID("550e8400-e29b-41d4-a716-446655440000")
+        fixed_time = datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+
+        claim = Claim(
+            id=fixed_id,
+            run_id="test-run-123",
+            claim_type=ClaimType.DOSE,
+            text="amoxicillin 50 mg/kg/d",
+            normalized_value="50",
+            unit="mg/kg/d",
+            source_refs=["SRC0023", "SRC0024"],
+            line_number=15,
+            confidence=0.9,
+            created_at=fixed_time,
+        )
+
+        row = claim.to_db_row()
+
+        # Verify tuple structure matches DB schema
+        assert isinstance(row, tuple)
+        assert len(row) == 10
+
+        # Verify each field
+        assert row[0] == "550e8400-e29b-41d4-a716-446655440000"  # id (str)
+        assert row[1] == "test-run-123"  # run_id
+        assert row[2] == "dose"  # claim_type (enum value)
+        assert row[3] == "amoxicillin 50 mg/kg/d"  # text
+        assert row[4] == "50"  # normalized_value
+        assert row[5] == "mg/kg/d"  # unit
+        assert row[6] == '["SRC0023", "SRC0024"]'  # source_refs_json
+        assert row[7] == 15  # line_number
+        assert row[8] == 0.9  # confidence
+        assert row[9] == "2024-12-21T12:00:00+00:00"  # created_at_utc
+
+    def test_to_db_row_with_null_optional_fields(self):
+        """to_db_row() should handle None values for optional fields."""
+        import json
+        from uuid import UUID
+
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        claim = Claim(
+            run_id="test-run",
+            claim_type=ClaimType.THRESHOLD,
+            text="CURB-65 >= 3",
+            normalized_value=None,
+            unit=None,
+            source_refs=[],
+            line_number=10,
+            confidence=0.85,
+        )
+
+        row = claim.to_db_row()
+
+        assert row[4] is None  # normalized_value
+        assert row[5] is None  # unit
+        assert row[6] == "[]"  # empty source_refs_json
+
+    def test_to_db_row_id_is_string(self):
+        """to_db_row() should convert UUID id to string."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        claim = Claim(
+            run_id="test-run",
+            claim_type=ClaimType.DOSE,
+            text="test",
+            line_number=1,
+            confidence=0.9,
+        )
+
+        row = claim.to_db_row()
+
+        # First element should be string, not UUID
+        assert isinstance(row[0], str)
+        assert len(row[0]) == 36  # UUID string format
+
+
 class TestClaimHelpers:
     """Tests for any helper methods on Claim model."""
 

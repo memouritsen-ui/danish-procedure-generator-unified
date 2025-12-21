@@ -51,10 +51,10 @@ Must complete P1-HOTFIX (8 tasks) before starting Phase 2.
 ## CURRENT TASK
 
 ```
-TASK: P1-HF1 - Add to_db_row() method to Claim model
+TASK: P1-HF2 - Add to_db_row() method to EvidenceChunk model
 STATUS: NOT STARTED
 BLOCKED BY: None
-NEXT ACTION: Fix architectural debt before proceeding to Phase 2
+NEXT ACTION: Add to_db_row() to EvidenceChunk model
 
 ⚠️ Phase 2 is BLOCKED until all P1-HF tasks are complete
 ```
@@ -76,6 +76,7 @@ NEXT ACTION: Fix architectural debt before proceeding to Phase 2
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | P1-HF1: Add to_db_row() to Claim model | 20 tests pass |
 | 2024-12-22 | P1-012: Integration test for all models | 9 tests pass |
 | 2024-12-22 | P1-011: Migration rollback scripts | 13 tests pass |
 | 2024-12-22 | P1-006 to P1-010: All SQLite migrations | 21 tests pass |
@@ -126,8 +127,8 @@ None currently blocked.
 
 ## TEST STATUS
 
-**Last Run**: 2024-12-22
-**Result**: 899 tests passed, 1 skipped
+**Last Run**: 2024-12-22 (updated)
+**Result**: 902 tests passed, 1 skipped
 
 **Verification**:
 ```bash
