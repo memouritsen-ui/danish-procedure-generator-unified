@@ -115,10 +115,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include meta-analysis router
+# Include routers
 from procedurewriter.api.meta_analysis import router as meta_analysis_router
+from procedurewriter.routers import keys as keys_router
 
 app.include_router(meta_analysis_router)
+app.include_router(keys_router.router)
 
 
 @app.on_event("startup")
@@ -786,112 +788,6 @@ def _effective_ncbi_api_key() -> str | None:
 
 def _effective_anthropic_api_key() -> str | None:
     return get_secret(settings.db_path, name=_ANTHROPIC_SECRET_NAME) or os.getenv("ANTHROPIC_API_KEY")
-
-
-@app.get("/api/keys/openai", response_model=ApiKeyInfo)
-def api_get_openai_key() -> ApiKeyInfo:
-    key = _effective_openai_api_key()
-    if not key:
-        return ApiKeyInfo(present=False, masked=None)
-    return ApiKeyInfo(present=True, masked=mask_secret(key))
-
-
-@app.put("/api/keys/openai", response_model=ApiKeyInfo)
-def api_set_openai_key(req: ApiKeySetRequest) -> ApiKeyInfo:
-    set_secret(settings.db_path, name=_OPENAI_SECRET_NAME, value=req.api_key.strip())
-    return api_get_openai_key()
-
-
-@app.delete("/api/keys/openai", response_model=ApiKeyInfo)
-def api_delete_openai_key() -> ApiKeyInfo:
-    delete_secret(settings.db_path, name=_OPENAI_SECRET_NAME)
-    return api_get_openai_key()
-
-
-@app.get("/api/keys/openai/status", response_model=ApiKeyStatus)
-def api_openai_status() -> ApiKeyStatus:
-    key = _effective_openai_api_key()
-    if not key:
-        return ApiKeyStatus(present=False, ok=False, message="No OpenAI API key configured.")
-    try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=key, timeout=10.0, max_retries=0)
-        _ = client.models.list()
-        return ApiKeyStatus(present=True, ok=True, message="OK")
-    except Exception as e:  # noqa: BLE001
-        return ApiKeyStatus(present=True, ok=False, message=str(e))
-
-
-@app.get("/api/keys/ncbi", response_model=ApiKeyInfo)
-def api_get_ncbi_key() -> ApiKeyInfo:
-    key = _effective_ncbi_api_key()
-    if not key:
-        return ApiKeyInfo(present=False, masked=None)
-    return ApiKeyInfo(present=True, masked=mask_secret(key))
-
-
-@app.put("/api/keys/ncbi", response_model=ApiKeyInfo)
-def api_set_ncbi_key(req: ApiKeySetRequest) -> ApiKeyInfo:
-    set_secret(settings.db_path, name=_NCBI_SECRET_NAME, value=req.api_key.strip())
-    return api_get_ncbi_key()
-
-
-@app.delete("/api/keys/ncbi", response_model=ApiKeyInfo)
-def api_delete_ncbi_key() -> ApiKeyInfo:
-    delete_secret(settings.db_path, name=_NCBI_SECRET_NAME)
-    return api_get_ncbi_key()
-
-
-@app.get("/api/keys/ncbi/status", response_model=ApiKeyStatus)
-def api_ncbi_status() -> ApiKeyStatus:
-    key = _effective_ncbi_api_key()
-    present = bool(key)
-    from procedurewriter.pipeline.fetcher import CachedHttpClient
-
-    http = CachedHttpClient(cache_dir=settings.cache_dir, timeout_s=10.0, max_retries=1, backoff_s=0.6)
-    try:
-        ok, message = check_ncbi_status(http=http, tool=settings.ncbi_tool, email=settings.ncbi_email, api_key=key)
-        return ApiKeyStatus(present=present, ok=ok, message=message)
-    except Exception as e:  # noqa: BLE001
-        return ApiKeyStatus(present=present, ok=False, message=str(e))
-    finally:
-        http.close()
-
-
-@app.get("/api/keys/anthropic", response_model=ApiKeyInfo)
-def api_get_anthropic_key() -> ApiKeyInfo:
-    key = _effective_anthropic_api_key()
-    if not key:
-        return ApiKeyInfo(present=False, masked=None)
-    return ApiKeyInfo(present=True, masked=mask_secret(key))
-
-
-@app.put("/api/keys/anthropic", response_model=ApiKeyInfo)
-def api_set_anthropic_key(req: ApiKeySetRequest) -> ApiKeyInfo:
-    set_secret(settings.db_path, name=_ANTHROPIC_SECRET_NAME, value=req.api_key.strip())
-    return api_get_anthropic_key()
-
-
-@app.delete("/api/keys/anthropic", response_model=ApiKeyInfo)
-def api_delete_anthropic_key() -> ApiKeyInfo:
-    delete_secret(settings.db_path, name=_ANTHROPIC_SECRET_NAME)
-    return api_get_anthropic_key()
-
-
-@app.get("/api/keys/anthropic/status", response_model=ApiKeyStatus)
-def api_anthropic_status() -> ApiKeyStatus:
-    key = _effective_anthropic_api_key()
-    if not key:
-        return ApiKeyStatus(present=False, ok=False, message="No Anthropic API key configured.")
-    try:
-        from anthropic import Anthropic
-        Anthropic(api_key=key)  # Validate key format by instantiating
-        return ApiKeyStatus(present=True, ok=True, message="OK (key format valid)")
-    except ImportError:
-        return ApiKeyStatus(present=True, ok=False, message="anthropic package not installed")
-    except Exception as e:  # noqa: BLE001
-        return ApiKeyStatus(present=True, ok=False, message=str(e))
 
 
 @app.post("/api/ingest/pdf", response_model=IngestResponse)
