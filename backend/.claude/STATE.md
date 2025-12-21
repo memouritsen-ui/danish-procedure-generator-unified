@@ -1,7 +1,7 @@
 # STATE.md - Current Project State
 
-**LAST UPDATED**: 2024-12-22 02:30 UTC
-**UPDATED BY**: Claude (P1-HF6 complete, 6/8 hotfix tasks done)
+**LAST UPDATED**: 2024-12-22 03:00 UTC
+**UPDATED BY**: Claude (P1-HF7 complete, 7/8 hotfix tasks done)
 
 ---
 
@@ -51,12 +51,12 @@ Must complete P1-HOTFIX (8 tasks) before starting Phase 2.
 ## CURRENT TASK
 
 ```
-TASK: P1-HF7 - Remove all scattered str() calls from tests
+TASK: P1-HF8 - Add factory functions for test data
 STATUS: NOT STARTED
 BLOCKED BY: None
-NEXT ACTION: Find and remove str() calls for UUIDs in tests
+NEXT ACTION: Create factory functions for DRY test setup
 
-⚠️ Phase 2 is BLOCKED until all P1-HF tasks are complete
+⚠️ Phase 2 is BLOCKED until all P1-HF tasks are complete (1 remaining)
 ```
 
 ---
@@ -65,8 +65,8 @@ NEXT ACTION: Find and remove str() calls for UUIDs in tests
 
 | Date | Issue | Severity | Status |
 |------|-------|----------|--------|
-| 2024-12-22 | UUID/string type mismatch - 30+ scattered str() calls | HIGH | P1-HF1-HF7 |
-| 2024-12-22 | No model-to-DB conversion layer | HIGH | P1-HF1-HF6 |
+| 2024-12-22 | UUID/string type mismatch - 30+ scattered str() calls | HIGH | ✅ FIXED (P1-HF7) |
+| 2024-12-22 | No model-to-DB conversion layer | HIGH | ✅ FIXED (P1-HF1-HF6) |
 | 2024-12-22 | Tests retrofitted to match impl (backwards TDD) | MEDIUM | Documented |
 | 2024-12-22 | Skills not used (systematic-debugging skipped) | MEDIUM | Documented |
 
@@ -76,6 +76,7 @@ NEXT ACTION: Find and remove str() calls for UUIDs in tests
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | P1-HF7: Remove scattered str() calls from tests | 929 tests pass |
 | 2024-12-22 | P1-HF6: Add from_db_row() to all 5 models | 100 model tests pass |
 | 2024-12-22 | P1-HF5: Add to_db_row() to Gate model | 21 tests pass |
 | 2024-12-22 | P1-HF4: Add to_db_row() to Issue model | 22 tests pass |
