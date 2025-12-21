@@ -239,6 +239,7 @@ def run_pipeline(
         availability_stats: dict[str, int] = {
             "nice_candidates": 0,
             "cochrane_candidates": 0,
+            "scholar_candidates": 0,
             "pubmed_candidates": 0,
             "pubmed_review_candidates": 0,
         }
@@ -386,10 +387,9 @@ def run_pipeline(
                 evidence_hierarchy=evidence_hierarchy,
                 max_per_tier=5,
                 strict_mode=evidence_policy == "strict",
-                nice_api_key=settings.nice_api_key,
-                cochrane_api_key=settings.cochrane_api_key,
-                nice_api_base_url=settings.nice_api_base_url,
-                cochrane_api_base_url=settings.cochrane_api_base_url,
+                serpapi_api_key=settings.serpapi_api_key,
+                serpapi_base_url=settings.serpapi_base_url,
+                serpapi_engine=settings.serpapi_engine,
                 allow_html_fallback=settings.allow_html_fallback_international,
                 availability_stats=availability_stats,
             )
@@ -1739,26 +1739,25 @@ def _append_international_sources(
     evidence_hierarchy: EvidenceHierarchy,
     max_per_tier: int = 5,
     strict_mode: bool = False,
-    nice_api_key: str | None = None,
-    cochrane_api_key: str | None = None,
-    nice_api_base_url: str | None = None,
-    cochrane_api_base_url: str | None = None,
+    serpapi_api_key: str | None = None,
+    serpapi_base_url: str | None = None,
+    serpapi_engine: str = "google_scholar",
     allow_html_fallback: bool = False,
     availability_stats: dict[str, int] | None = None,
 ) -> int:
     aggregator = InternationalSourceAggregator(
         http_client=http,
         strict_mode=strict_mode,
-        nice_api_key=nice_api_key,
-        cochrane_api_key=cochrane_api_key,
-        nice_api_base_url=nice_api_base_url,
-        cochrane_api_base_url=cochrane_api_base_url,
+        serpapi_api_key=serpapi_api_key,
+        serpapi_base_url=serpapi_base_url,
+        serpapi_engine=serpapi_engine,
         allow_html_fallback=allow_html_fallback,
     )
     results, stats = aggregator.search_all_with_stats(query, max_per_tier=max_per_tier)
     if availability_stats is not None:
         availability_stats["nice_candidates"] += stats.get("nice_candidates", 0)
         availability_stats["cochrane_candidates"] += stats.get("cochrane_candidates", 0)
+        availability_stats["scholar_candidates"] += stats.get("scholar_candidates", 0)
     if not results:
         warnings.append("No international sources found (NICE/Cochrane).")
         return source_n

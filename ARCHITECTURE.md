@@ -46,6 +46,7 @@ This project consolidates 4 medical textbook generator projects into a unified s
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │                    PIPELINE (v1.0)                    │   │
 │  │  - PubMed search (NCBI API)                          │   │
+│  │  - International sources (SerpAPI Google Scholar)     │   │
 │  │  - Source ingestion (PDF, DOCX, URL)                 │   │
 │  │  - Citation validation (per-sentence)                │   │
 │  │  - Evidence report (BM25 + embeddings)               │   │

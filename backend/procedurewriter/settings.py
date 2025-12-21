@@ -68,11 +68,10 @@ class Settings(BaseSettings):
     ncbi_tool: str = "danish-procedure-generator"
     ncbi_api_key: str | None = None
 
-    # NICE/Cochrane API settings (institutional access)
-    nice_api_key: str | None = None
-    cochrane_api_key: str | None = None
-    nice_api_base_url: str = "https://api.nice.org.uk"
-    cochrane_api_base_url: str = "https://api.onlinelibrary.wiley.com"
+    # SerpAPI Google Scholar settings (international source discovery)
+    serpapi_api_key: str | None = None
+    serpapi_base_url: str = "https://serpapi.com/search.json"
+    serpapi_engine: str = "google_scholar"
     allow_html_fallback_international: bool = False
 
     # Wiley TDM (full-text PDF) settings

@@ -59,7 +59,7 @@ Tier 4 (Danish Context) - KEEP but DEMOTE
 
 **Implementation**:
 - Create `procedurewriter/pipeline/international_sources.py`
-- Add NICE API integration
+- Add SerpAPI Google Scholar integration for NICE/Cochrane discovery
 - Add Cochrane Library search
 - Weight international sources higher in retrieval
 - Danish sources become "local adaptation" layer, not primary content

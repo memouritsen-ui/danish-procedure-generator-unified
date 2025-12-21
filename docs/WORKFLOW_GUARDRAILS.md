@@ -13,6 +13,11 @@
 - Default LLM model is GPT-5.2 for gold-standard output quality.
 - Pricing: $15/MTok input, $60/MTok output.
 
+### International Source Discovery
+- Use SerpAPI Google Scholar for NICE + Cochrane discovery.
+- Requires `SERPAPI_API_KEY` (or `PROCEDUREWRITER_SERPAPI_API_KEY`) in strict mode.
+- HTML fallback is allowed only when explicitly enabled and not in strict mode.
+
 ### Citation Format
 - All citations MUST use format: `[S:SRC0001]` (not `[SRC0001]`).
 - StyleAgent must preserve all citations during polishing.
