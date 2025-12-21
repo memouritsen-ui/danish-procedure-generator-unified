@@ -431,3 +431,78 @@ class TestClaimEvidenceLink:
             binding_score=0.7,
         )
         assert boundary.is_strong_binding is True
+
+
+class TestClaimEvidenceLinkDbConversion:
+    """Tests for database conversion methods on ClaimEvidenceLink."""
+
+    def test_to_db_row_returns_correct_tuple(self):
+        """to_db_row() should return tuple matching DB column order."""
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.evidence import BindingType, ClaimEvidenceLink
+
+        fixed_id = UUID("550e8400-e29b-41d4-a716-446655440010")
+        fixed_claim_id = UUID("550e8400-e29b-41d4-a716-446655440001")
+        fixed_chunk_id = UUID("550e8400-e29b-41d4-a716-446655440002")
+        fixed_time = datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+
+        link = ClaimEvidenceLink(
+            id=fixed_id,
+            claim_id=fixed_claim_id,
+            evidence_chunk_id=fixed_chunk_id,
+            binding_type=BindingType.SEMANTIC,
+            binding_score=0.92,
+            created_at=fixed_time,
+        )
+
+        row = link.to_db_row()
+
+        # Verify tuple structure matches DB schema
+        assert isinstance(row, tuple)
+        assert len(row) == 6
+
+        # Verify each field
+        assert row[0] == "550e8400-e29b-41d4-a716-446655440010"  # id (str)
+        assert row[1] == "550e8400-e29b-41d4-a716-446655440001"  # claim_id (str)
+        assert row[2] == "550e8400-e29b-41d4-a716-446655440002"  # evidence_chunk_id (str)
+        assert row[3] == "semantic"  # binding_type (enum value)
+        assert row[4] == 0.92  # binding_score
+        assert row[5] == "2024-12-21T12:00:00+00:00"  # created_at_utc
+
+    def test_to_db_row_all_binding_types(self):
+        """to_db_row() should handle all binding types correctly."""
+        from procedurewriter.models.evidence import BindingType, ClaimEvidenceLink
+
+        for binding_type in BindingType:
+            link = ClaimEvidenceLink(
+                claim_id="550e8400-e29b-41d4-a716-446655440001",
+                evidence_chunk_id="550e8400-e29b-41d4-a716-446655440002",
+                binding_type=binding_type,
+                binding_score=0.8,
+            )
+
+            row = link.to_db_row()
+            assert row[3] == binding_type.value
+
+    def test_to_db_row_uuids_are_strings(self):
+        """to_db_row() should convert all UUID fields to strings."""
+        from procedurewriter.models.evidence import BindingType, ClaimEvidenceLink
+
+        link = ClaimEvidenceLink(
+            claim_id="550e8400-e29b-41d4-a716-446655440001",
+            evidence_chunk_id="550e8400-e29b-41d4-a716-446655440002",
+            binding_type=BindingType.KEYWORD,
+            binding_score=0.75,
+        )
+
+        row = link.to_db_row()
+
+        # All UUID fields should be strings
+        assert isinstance(row[0], str)  # id
+        assert isinstance(row[1], str)  # claim_id
+        assert isinstance(row[2], str)  # evidence_chunk_id
+        assert len(row[0]) == 36  # UUID string format
+        assert len(row[1]) == 36
+        assert len(row[2]) == 36

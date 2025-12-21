@@ -164,6 +164,21 @@ class ClaimEvidenceLink(BaseModel):
         """Check if this is a strong binding (score >= 0.7)."""
         return self.binding_score >= 0.7
 
+    def to_db_row(self) -> tuple:
+        """Convert model to database row tuple.
+
+        Returns tuple matching claim_evidence_links table column order:
+        (id, claim_id, evidence_chunk_id, binding_type, binding_score, created_at_utc)
+        """
+        return (
+            str(self.id),
+            str(self.claim_id),
+            str(self.evidence_chunk_id),
+            self.binding_type.value,
+            self.binding_score,
+            self.created_at.isoformat(),
+        )
+
     model_config = {
         "json_schema_extra": {
             "examples": [

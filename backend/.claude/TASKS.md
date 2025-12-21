@@ -193,7 +193,7 @@ pytest tests/models/ -v && pytest tests/integration/test_models.py -v
 |----|------|--------|--------------|-------|
 | P1-HF1 | Add `to_db_row()` method to Claim model | [x] | `pytest tests/models/test_claims.py -v` | 20 tests pass |
 | P1-HF2 | Add `to_db_row()` method to EvidenceChunk model | [x] | `pytest tests/models/test_evidence.py -v` | 19 tests pass |
-| P1-HF3 | Add `to_db_row()` method to ClaimEvidenceLink model | [ ] | `pytest tests/models/test_evidence.py -v` | Single conversion point |
+| P1-HF3 | Add `to_db_row()` method to ClaimEvidenceLink model | [x] | `pytest tests/models/test_evidence.py -v` | 22 tests pass |
 | P1-HF4 | Add `to_db_row()` method to Issue model | [ ] | `pytest tests/models/test_issues.py -v` | Single conversion point |
 | P1-HF5 | Add `to_db_row()` method to Gate model | [ ] | `pytest tests/models/test_gates.py -v` | Single conversion point |
 | P1-HF6 | Add `from_db_row()` classmethod to all models | [ ] | `pytest tests/models/ -v` | Reconstruct from DB |
