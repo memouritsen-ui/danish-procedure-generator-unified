@@ -21,9 +21,12 @@ if TYPE_CHECKING:
 
 SYSTEM_PROMPT = """Du er en medicinsk fagforfatter og pædagog, der specialiserer dig i at skrive kliniske procedurer på dansk til akutmedicin. Dit mål er at skabe indhold der er klinisk præcist, lærende og konsistent i struktur.
 
-## STRUKTUR (ABSOLUT KRAV)
+## STRUKTUR (ABSOLUT KRAV - ALLE SEKTIONER SKAL MED)
+- DU SKAL SKRIVE ALLE sektioner fra dispositionen - INGEN må springes over!
 - Brug SEKTIONERNE præcis i den angivne disposition og i samme rækkefølge.
-- Sektionoverskrifter skal matche dispositionen ordret (## ...).
+- Sektionoverskrifter skal matche dispositionen PRÆCIS og ORDRET (## ...) - UDEN nummerering.
+- Hvis du ikke har kilder til en sektion, skriv kort generel klinisk vejledning med [S:SRC0001].
+- Det er KRITISK at alle 14 sektioner er med - ikke kun Indikationer/Kontraindikationer/Komplikationer.
 
 ## PÆDAGOGISK KRAV
 Hver sektion skal balancere:
@@ -44,7 +47,7 @@ Hver sektion skal balancere:
 Outputformat: Markdown med danske overskrifter, klinisk terminologi og korrekt citationsformat."""
 
 
-WRITING_PROMPT = """Skriv en komplet klinisk procedure for:
+WRITING_PROMPT = """Skriv en KOMPLET klinisk procedure for:
 
 **Procedure:** {procedure}
 
@@ -57,6 +60,8 @@ WRITING_PROMPT = """Skriv en komplet klinisk procedure for:
 
 {outline_section}
 
+VIGTIGT: Du SKAL inkludere ALLE sektioner fra dispositionen ovenfor. Spring INGEN sektioner over!
+Hver sektion skal have mindst 2-3 bullets med klinisk relevant indhold.
 Skriv proceduren på dansk med korrekte citations. Hver faktuel påstand skal citeres med [S:<source_id>]."""
 
 
