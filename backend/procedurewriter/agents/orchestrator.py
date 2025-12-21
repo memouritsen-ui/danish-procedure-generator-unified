@@ -235,6 +235,7 @@ class AgentOrchestrator:
                 claim_chunks = self._extract_claims(current_content)
 
                 validator_total_cost = 0.0
+                last_validator_stats = None
                 if claim_chunks:
                     for chunk_idx, claims in enumerate(claim_chunks):
                         if chunk_idx > 0:
@@ -248,8 +249,10 @@ class AgentOrchestrator:
                             )
                         )
                         validator_total_cost += validator_result.stats.cost_usd
+                        last_validator_stats = validator_result.stats
 
-                    self._stats.add_agent_stats(f"Validator_iter{iteration}", validator_result.stats)
+                    if last_validator_stats:
+                        self._stats.add_agent_stats(f"Validator_iter{iteration}", last_validator_stats)
                 else:
                     logger.warning("No claims found to validate in content")
 
