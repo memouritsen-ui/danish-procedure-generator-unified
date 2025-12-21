@@ -57,10 +57,10 @@ class Settings(BaseSettings):
         """Get the default model name for the configured provider."""
         defaults = {
             LLMProviderEnum.OPENAI: "gpt-5.2",
-            LLMProviderEnum.ANTHROPIC: "claude-3-5-sonnet-20241022",
+            LLMProviderEnum.ANTHROPIC: "claude-opus-4-5-20251101",
             LLMProviderEnum.OLLAMA: "llama3.1",
         }
-        return defaults.get(self.llm_provider, "gpt-4o-mini")
+        return defaults.get(self.llm_provider, "gpt-5.2")
 
     @property
     def resolved_data_dir(self) -> Path:
