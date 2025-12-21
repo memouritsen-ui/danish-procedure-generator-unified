@@ -27,6 +27,12 @@ from procedurewriter.pipeline.stages.s01_termexpand import (
     TermExpandOutput,
     TermExpandStage,
 )
+from procedurewriter.pipeline.stages.s02_retrieve import (
+    RetrieveInput,
+    RetrieveOutput,
+    RetrieveStage,
+    SourceInfo,
+)
 
 __all__ = [
     "PipelineStage",
@@ -36,4 +42,8 @@ __all__ = [
     "TermExpandInput",
     "TermExpandOutput",
     "TermExpandStage",
+    "RetrieveInput",
+    "RetrieveOutput",
+    "RetrieveStage",
+    "SourceInfo",
 ]
