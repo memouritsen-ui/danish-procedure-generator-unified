@@ -1,7 +1,7 @@
 # STATE.md - Current Project State
 
-**LAST UPDATED**: 2024-12-22 03:30 UTC
-**UPDATED BY**: Claude (P1-HOTFIX COMPLETE! 8/8 tasks, Phase 2 UNBLOCKED)
+**LAST UPDATED**: 2024-12-22 00:40 UTC
+**UPDATED BY**: Claude (P2-001 complete, Bootstrap stage with 12 tests)
 
 ---
 
@@ -12,15 +12,15 @@
 ║  PHASE 0: VALIDATION                         ✅ COMPLETE   ║
 ║  PHASE 1: DATA MODELS & MIGRATIONS           ✅ COMPLETE   ║
 ║  PHASE 1 HOTFIX: ARCHITECTURAL DEBT          ✅ COMPLETE   ║
-║  PHASE 2: PIPELINE STAGES                    ⏳ READY      ║
+║  PHASE 2: PIPELINE STAGES                    🔄 IN PROGRESS║
 ║  PHASE 3: CLAIM SYSTEM                       ⏳ PENDING    ║
 ║  PHASE 4: EVAL SUITE                         ⏳ PENDING    ║
 ║  PHASE 5: API & BUNDLE                       ⏳ PENDING    ║
 ╚════════════════════════════════════════════════════════════╝
 ```
 
-**✅ MILESTONE REACHED**: Phase 1 HOTFIX complete (8/8 tasks).
-All architectural debt addressed. Phase 2 is now READY to begin.
+**🔄 IN PROGRESS**: Phase 2 - Pipeline Stages (1/12 tasks).
+P2-001 complete: Bootstrap stage with PipelineStage base class.
 
 ---
 
@@ -51,12 +51,12 @@ All architectural debt addressed. Phase 2 is now READY to begin.
 ## CURRENT TASK
 
 ```
-TASK: P2-001 - Create PipelineStage base class
+TASK: P2-002 - Create Stage 01: TermExpand
 STATUS: NOT STARTED
 BLOCKED BY: None
-NEXT ACTION: Start Phase 2! Read TASKS.md for P2-001 requirements
+NEXT ACTION: Create TermExpand stage for Danish→English term expansion
 
-✅ Phase 1 HOTFIX complete - Phase 2 is now READY
+✅ P2-001 complete - Bootstrap stage created with 12 tests
 ```
 
 ---
@@ -76,6 +76,7 @@ NEXT ACTION: Start Phase 2! Read TASKS.md for P2-001 requirements
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | P2-001: Create Stage 00: Bootstrap | 12 tests pass (959 total) |
 | 2024-12-22 | **P1-HOTFIX COMPLETE** (8/8 tasks) | Phase 2 UNBLOCKED |
 | 2024-12-22 | P1-HF8: Add factory functions for test data | 947 tests pass |
 | 2024-12-22 | P1-HF7: Remove scattered str() calls from tests | 929 tests pass |
@@ -135,8 +136,8 @@ None currently blocked.
 
 ## TEST STATUS
 
-**Last Run**: 2024-12-22 (updated)
-**Result**: 911 tests passed, 1 skipped
+**Last Run**: 2024-12-22 (P2-001 complete)
+**Result**: 959 tests passed, 1 skipped
 
 **Verification**:
 ```bash
@@ -234,7 +235,7 @@ When starting a new session:
 
 | Session | Started At | Ended At | Tasks Completed | Context % |
 |---------|------------|----------|-----------------|-----------|
-| (current) | - | - | 0 | ~28% |
+| (current) | 2024-12-22 | - | 1 | ~20% |
 
 **RULES** (from CLAUDE.md):
 - Max 4 tasks per session
@@ -257,5 +258,5 @@ git status
 
 ---
 
-**State Version**: 1.6
-**Next Update Required After**: Completing P2-001 or Phase 2 milestone
+**State Version**: 1.7
+**Next Update Required After**: Completing P2-002 or next task
