@@ -11,12 +11,16 @@
 ╔════════════════════════════════════════════════════════════╗
 ║  PHASE 0: VALIDATION                         ✅ COMPLETE   ║
 ║  PHASE 1: DATA MODELS & MIGRATIONS           ✅ COMPLETE   ║
-║  PHASE 2: PIPELINE STAGES                    ⏳ PENDING    ║
+║  PHASE 1 HOTFIX: ARCHITECTURAL DEBT          ⚠️ BLOCKING   ║
+║  PHASE 2: PIPELINE STAGES                    🔒 BLOCKED    ║
 ║  PHASE 3: CLAIM SYSTEM                       ⏳ PENDING    ║
 ║  PHASE 4: EVAL SUITE                         ⏳ PENDING    ║
 ║  PHASE 5: API & BUNDLE                       ⏳ PENDING    ║
 ╚════════════════════════════════════════════════════════════╝
 ```
+
+**⚠️ BLOCKING ISSUE**: Phase 1 completed with architectural debt.
+Must complete P1-HOTFIX (8 tasks) before starting Phase 2.
 
 ---
 
@@ -47,11 +51,24 @@
 ## CURRENT TASK
 
 ```
-TASK: P2-001 - Create Stage 00: Bootstrap
+TASK: P1-HF1 - Add to_db_row() method to Claim model
 STATUS: NOT STARTED
 BLOCKED BY: None
-NEXT ACTION: Begin Phase 2 - Pipeline Stages implementation
+NEXT ACTION: Fix architectural debt before proceeding to Phase 2
+
+⚠️ Phase 2 is BLOCKED until all P1-HF tasks are complete
 ```
+
+---
+
+## ISSUES DETECTED
+
+| Date | Issue | Severity | Status |
+|------|-------|----------|--------|
+| 2024-12-22 | UUID/string type mismatch - 30+ scattered str() calls | HIGH | P1-HF1-HF7 |
+| 2024-12-22 | No model-to-DB conversion layer | HIGH | P1-HF1-HF6 |
+| 2024-12-22 | Tests retrofitted to match impl (backwards TDD) | MEDIUM | Documented |
+| 2024-12-22 | Skills not used (systematic-debugging skipped) | MEDIUM | Documented |
 
 ---
 

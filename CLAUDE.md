@@ -31,6 +31,40 @@
 - Make changes without reading STATE.md first
 - Forget to update STATE.md after completing tasks
 - Start new tasks with uncommitted changes
+- Apply band-aid fixes (see ANTI-PATTERNS in TASKS.md)
+- Retrofit tests to match implementation (TDD means tests define interface)
+
+---
+
+## 🛑 DESIGN BEFORE FIX
+
+**When tests fail, DO NOT immediately fix the symptom.**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  WHEN TESTS FAIL - FOLLOW THIS SEQUENCE                    │
+├─────────────────────────────────────────────────────────────┤
+│  1. STOP - Don't change anything yet                       │
+│  2. READ the error message completely                      │
+│  3. ASK: Is this a design problem or implementation bug?   │
+│  4. If DESIGN: Fix in ONE place (add abstraction/method)   │
+│  5. If IMPLEMENTATION: Fix the specific bug                │
+│  6. Run tests ONCE                                         │
+│  7. If still failing, use systematic-debugging skill       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Red Flags (STOP if you see these):**
+- Adding the same fix in 5+ places → Need abstraction
+- Changing test to match implementation → TDD is backwards
+- Modified same file 3+ times → Guessing, not understanding
+- Using `str()` or type conversions scattered everywhere → Need conversion layer
+
+**Correct Response:**
+```bash
+# Use the skill
+Skill(superpowers:systematic-debugging)
+```
 
 ---
 
@@ -66,9 +100,11 @@ After completing EVERY task, you MUST execute this 6-step sequence:
 
 ## 🔄 ACTIVE REFACTORING: Auditable Medical Build System
 
-**Current Phase**: Phase 2 - Pipeline Stages (Phase 1 COMPLETE)
+**Current Phase**: Phase 1 HOTFIX - Architectural Debt (BLOCKING)
 **Phase 0 Status**: COMPLETE (Claim extraction feasibility proven)
-**Phase 1 Status**: COMPLETE (12/12 tasks, 113 tests, 3646 lines)
+**Phase 1 Status**: COMPLETE but with debt (12/12 tasks, 113 tests, 3646 lines)
+**Phase 1 HOTFIX**: 8 tasks to fix UUID handling and add conversion layer
+**Phase 2 Status**: BLOCKED until hotfix complete
 
 **Target Architecture**: 11-stage pipeline with claim traceability
 ```

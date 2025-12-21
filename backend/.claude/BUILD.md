@@ -205,6 +205,64 @@ pytest -k "test_name" -v  # By name pattern
 
 ---
 
+## LESSONS LEARNED (Phase 1 Post-Mortem)
+
+**Date**: 2024-12-22
+**Phase**: Phase 1 - Data Models & Migrations
+**Outcome**: Completed but with architectural debt
+
+### What Went Wrong
+
+| Issue | Evidence | Impact |
+|-------|----------|--------|
+| UUID/string type mismatch | 30+ `str()` calls scattered in tests | Technical debt, maintenance burden |
+| Enum values not coordinated | Tests changed to match impl, not vice versa | TDD violated, tests don't drive design |
+| Trial-and-error debugging | `test_models.py` modified 13 times | Wasted time, indicates guessing not understanding |
+| Skills not used | No systematic-debugging, no verification | Quality gates bypassed |
+| No commit until end | 3,421 lines uncommitted | Risk of losing work |
+
+### Root Causes
+
+1. **Speed over design**: Rushed to complete 12 tasks without pausing to design properly
+2. **Band-aid culture**: Fixed symptoms (add `str()`) instead of root cause (type conversion layer)
+3. **Skill ignorance**: Available skills (systematic-debugging) weren't invoked
+4. **Backwards TDD**: Tests written to pass, not to specify
+
+### Corrective Actions Taken
+
+1. Added **ANTI-PATTERNS** section to TASKS.md with detection/action rules
+2. Added **commit-after-every-task** rule (not just milestones)
+3. Added **re-read CLAUDE.md** step to refresh context
+4. Created **P1-HOTFIX** task to properly refactor UUID handling
+5. Added this **LESSONS LEARNED** section for future sessions
+
+### Design Decisions That Should Have Been Made First
+
+Before writing ANY Phase 1 code, these questions needed answers:
+
+| Question | Should Have Decided | What Actually Happened |
+|----------|---------------------|------------------------|
+| UUID storage format | "Store as TEXT, convert in model methods" | Inconsistent - sometimes UUID, sometimes string |
+| Enum naming convention | "Use S0/S1 codes as defined in Phase 0" | Random enum names invented during impl |
+| Model-to-DB contract | "Each model has to_db_row() and from_db_row()" | Raw SQL with manual conversions |
+| Test data strategy | "Factory functions for test models" | Inline construction with copy-paste |
+
+### For Future Phases
+
+**BEFORE writing any code for a phase:**
+1. List all design decisions that need to be made
+2. Make those decisions explicitly in STATE.md
+3. Get approval on the design
+4. THEN start implementation
+
+**WHEN tests fail:**
+1. STOP after first failure
+2. Use `Skill(superpowers:systematic-debugging)`
+3. Fix root cause, not symptom
+4. If you've changed the same file 3+ times, you're doing it wrong
+
+---
+
 ## EMERGENCY RECOVERY
 
 If project state is unclear:

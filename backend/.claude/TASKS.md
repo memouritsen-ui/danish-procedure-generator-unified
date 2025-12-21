@@ -48,6 +48,84 @@ feat: P1-001: Create Claim and ClaimType models
 
 ---
 
+## 🚨 IMMEDIATE FAIL: ANTI-PATTERNS
+
+The following patterns are **IMMEDIATE FAILURES**. If you catch yourself doing any of these, STOP and fix the design first.
+
+### Anti-Pattern 1: BAND-AID FIXES
+
+```python
+# ❌ WRONG: Scattering str() calls to fix type mismatches
+(str(claim.id), str(claim.run_id), str(chunk.id), ...)
+
+# ✅ RIGHT: Fix in ONE place with proper conversion layer
+class Claim:
+    def to_db_row(self) -> tuple:
+        return (str(self.id), str(self.run_id), ...)
+```
+
+**Detection**: If you're adding the same fix in 5+ places, you're band-aiding.
+**Action**: STOP. Design a proper abstraction. Add it in ONE place.
+
+### Anti-Pattern 2: RETROFITTING TESTS
+
+```python
+# ❌ WRONG: Change test to match whatever implementation did
+# Test originally had: IssueCode.UNBOUND_CLAIM
+# Changed to: IssueCode.DOSE_WITHOUT_EVIDENCE (because impl used that)
+
+# ✅ RIGHT: Test defines the interface, implementation matches
+# 1. Write test with desired enum value
+# 2. Create/modify enum to include that value
+# 3. Test passes because impl matches design
+```
+
+**Detection**: If you're changing tests to match implementation, you're backwards.
+**Action**: STOP. The test is the specification. Fix the implementation.
+
+### Anti-Pattern 3: TRIAL-AND-ERROR DEBUGGING
+
+```python
+# ❌ WRONG: Change something, run tests, repeat 13 times
+# (Evidence: server log shows file modified 13 times)
+
+# ✅ RIGHT: Use systematic-debugging skill
+# 1. Read the error message carefully
+# 2. Identify the root cause (not symptom)
+# 3. Fix the root cause in ONE change
+# 4. Run tests once
+```
+
+**Detection**: If you've modified the same file 3+ times for the same test, you're guessing.
+**Action**: STOP. Use `Skill(superpowers:systematic-debugging)`.
+
+### Anti-Pattern 4: SKIPPING SKILLS
+
+```
+# ❌ WRONG: Plow through tasks without using available skills
+# - No systematic-debugging when tests fail
+# - No verification-before-completion before marking done
+# - No reading model definitions before writing tests
+
+# ✅ RIGHT: Check for applicable skills BEFORE each action
+# - Tests failing? → Skill(superpowers:systematic-debugging)
+# - About to mark done? → Skill(superpowers:verification-before-completion)
+# - Writing tests? → READ the model/enum definitions FIRST
+```
+
+**Detection**: You're debugging without skills, or completing without verification.
+**Action**: STOP. Run the appropriate skill.
+
+### Enforcement
+
+If you detect ANY of these patterns:
+1. **STOP immediately**
+2. Document what went wrong in STATE.md under "ISSUES DETECTED"
+3. Fix the root cause, not the symptom
+4. Only then continue
+
+---
+
 ## LEGEND
 
 - `[x]` - COMPLETE (verified with tests)
@@ -102,6 +180,55 @@ python tests/phase0_validate_procedures.py
 ```bash
 pytest tests/models/ -v && pytest tests/integration/test_models.py -v
 # Expected: All tests pass, tables exist in DB
+```
+
+---
+
+## 🔧 PHASE 1 HOTFIX: ARCHITECTURAL DEBT ⚠️ BLOCKING
+
+**Priority**: MUST complete before Phase 2
+**Reason**: Phase 1 was completed with band-aid fixes that will cause ongoing problems
+
+| ID | Task | Status | Test Command | Notes |
+|----|------|--------|--------------|-------|
+| P1-HF1 | Add `to_db_row()` method to Claim model | [ ] | `pytest tests/models/test_claims.py -v` | Single conversion point |
+| P1-HF2 | Add `to_db_row()` method to EvidenceChunk model | [ ] | `pytest tests/models/test_evidence.py -v` | Single conversion point |
+| P1-HF3 | Add `to_db_row()` method to ClaimEvidenceLink model | [ ] | `pytest tests/models/test_evidence.py -v` | Single conversion point |
+| P1-HF4 | Add `to_db_row()` method to Issue model | [ ] | `pytest tests/models/test_issues.py -v` | Single conversion point |
+| P1-HF5 | Add `to_db_row()` method to Gate model | [ ] | `pytest tests/models/test_gates.py -v` | Single conversion point |
+| P1-HF6 | Add `from_db_row()` classmethod to all models | [ ] | `pytest tests/models/ -v` | Reconstruct from DB |
+| P1-HF7 | Remove all scattered `str()` calls from tests | [ ] | `pytest tests/ -v` | Use to_db_row() instead |
+| P1-HF8 | Add factory functions for test data | [ ] | `pytest tests/ -v` | DRY test setup |
+
+**Design Decision (MAKE BEFORE STARTING)**:
+```python
+# Each model will have:
+class Claim:
+    def to_db_row(self) -> tuple:
+        """Convert model to database row tuple."""
+        return (
+            str(self.id),  # UUID → TEXT
+            str(self.run_id),
+            self.claim_type.value,  # Enum → string
+            ...
+        )
+
+    @classmethod
+    def from_db_row(cls, row: sqlite3.Row) -> "Claim":
+        """Reconstruct model from database row."""
+        return cls(
+            id=uuid.UUID(row["id"]),
+            run_id=uuid.UUID(row["run_id"]),
+            claim_type=ClaimType(row["claim_type"]),
+            ...
+        )
+```
+
+**Verification**:
+```bash
+# After hotfix complete, there should be ZERO str() calls in tests for UUIDs
+grep -r "str(claim\|str(chunk\|str(link\|str(issue\|str(gate" tests/
+# Expected: No matches
 ```
 
 ---
