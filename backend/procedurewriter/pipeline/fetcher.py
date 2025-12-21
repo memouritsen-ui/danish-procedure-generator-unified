@@ -72,6 +72,8 @@ class CachedHttpClient:
             "www.cochranelibrary.com": 1.0,
             "cochranelibrary.com": 1.0,
             "api.onlinelibrary.wiley.com": 1.0,
+            # Wiley TDM API - polite crawling (1 req/sec)
+            "api.wiley.com": 1.0,
         }
         self._sleep_fn = sleep_fn
         self._last_request_at_by_host: dict[str, float] = {}

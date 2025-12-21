@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     cochrane_api_base_url: str = "https://api.onlinelibrary.wiley.com"
     allow_html_fallback_international: bool = False
 
+    # Wiley TDM (full-text PDF) settings
+    enable_wiley_tdm: bool = False
+    wiley_tdm_token: str | None = None
+    wiley_tdm_base_url: str = "https://api.wiley.com/onlinelibrary/tdm/v1"
+    wiley_tdm_max_downloads: int = 5
+    wiley_tdm_allow_non_wiley_doi: bool = False
+
     def get_default_model_for_provider(self) -> str:
         """Get the default model name for the configured provider."""
         defaults = {

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from procedurewriter.agents.meta_analysis.orchestrator import (
     MetaAnalysisOrchestrator,
@@ -632,6 +634,35 @@ def run_pipeline(
                 )
             )
 
+        wiley_tdm_stats: dict[str, int] | None = None
+        if not settings.dummy_mode:
+            tdm_token = _resolve_wiley_tdm_token(settings)
+            tdm_enabled = settings.enable_wiley_tdm or bool(tdm_token)
+            if tdm_enabled:
+                if not tdm_token:
+                    msg = (
+                        "Wiley TDM enabled but no token found. "
+                        "Set PROCEDUREWRITER_WILEY_TDM_TOKEN, TDM_API_TOKEN, or WILEY_TDM_TOKEN."
+                    )
+                    if evidence_policy == "strict":
+                        raise EvidencePolicyError(msg)
+                    warnings.append(msg)
+                else:
+                    wiley_tdm_stats = _apply_wiley_tdm_fulltext(
+                        sources=sources,
+                        http=http,
+                        run_dir=run_dir,
+                        token=tdm_token,
+                        base_url=settings.wiley_tdm_base_url,
+                        max_downloads=settings.wiley_tdm_max_downloads,
+                        allow_non_wiley_doi=settings.wiley_tdm_allow_non_wiley_doi,
+                        strict_mode=evidence_policy == "strict",
+                    )
+                    if wiley_tdm_stats.get("failed"):
+                        warnings.append(
+                            f"Wiley TDM failures: {wiley_tdm_stats['failed']} (check run logs)."
+                        )
+
         # Score all sources and add scoring data to extra fields
         source_dicts_for_scoring = [_source_record_to_scoring_dict(s) for s in sources]
         all_scored = rank_sources(source_dicts_for_scoring)
@@ -1086,6 +1117,8 @@ def run_pipeline(
             runtime["warnings"] = warnings[:20]
         if verification_result:
             runtime["evidence_verification"] = verification_result
+        if wiley_tdm_stats is not None:
+            runtime["wiley_tdm"] = wiley_tdm_stats
 
         manifest_path = run_dir / "run_manifest.json"
         manifest_hash = write_manifest(
@@ -2201,6 +2234,164 @@ def _compute_quantitative_evidence_context(
         )
 
     return "\n\n".join([s for s in [summary_text, sources_text] if s])
+
+
+_WILEY_DOI_PREFIXES = ("10.1002/", "10.1111/", "10.1113/")
+_DOI_RE = re.compile(r"(10\.\d{4,9}/[^\s\"'>]+)", re.IGNORECASE)
+
+
+def _resolve_wiley_tdm_token(settings: Settings) -> str | None:
+    """Resolve Wiley TDM token from settings or environment."""
+    if settings.wiley_tdm_token:
+        return settings.wiley_tdm_token
+    return os.environ.get("TDM_API_TOKEN") or os.environ.get("WILEY_TDM_TOKEN")
+
+
+def _extract_doi_from_url(url: str | None) -> str | None:
+    """Extract DOI from URL if present."""
+    if not url:
+        return None
+    match = _DOI_RE.search(url)
+    if not match:
+        return None
+    doi = match.group(1).strip()
+    return doi.rstrip(").,;")
+
+
+def _looks_like_wiley_source(url: str | None, doi: str | None) -> bool:
+    if doi and any(doi.lower().startswith(prefix) for prefix in _WILEY_DOI_PREFIXES):
+        return True
+    if url:
+        lowered = url.lower()
+        return any(host in lowered for host in ("wiley.com", "onlinelibrary.wiley.com", "cochranelibrary.com"))
+    return False
+
+
+def _apply_wiley_tdm_fulltext(
+    *,
+    sources: list[SourceRecord],
+    http: CachedHttpClient,
+    run_dir: Path,
+    token: str,
+    base_url: str,
+    max_downloads: int,
+    allow_non_wiley_doi: bool,
+    strict_mode: bool,
+) -> dict[str, int]:
+    """Download full-text PDFs via Wiley TDM API and update sources in place."""
+    stats = {
+        "attempted": 0,
+        "downloaded": 0,
+        "skipped_no_doi": 0,
+        "skipped_non_wiley": 0,
+        "skipped_already_tdm": 0,
+        "failed": 0,
+        "truncated": 0,
+    }
+    seen_dois: set[str] = set()
+    for idx, src in enumerate(sources):
+        if stats["downloaded"] >= max_downloads:
+            stats["truncated"] += 1
+            continue
+
+        doi = (src.doi or _extract_doi_from_url(src.url) or "").strip()
+        if not doi:
+            stats["skipped_no_doi"] += 1
+            continue
+        if doi in seen_dois:
+            continue
+        if not allow_non_wiley_doi and not _looks_like_wiley_source(src.url, doi):
+            stats["skipped_non_wiley"] += 1
+            continue
+        if src.extra.get("tdm_fulltext"):
+            stats["skipped_already_tdm"] += 1
+            continue
+
+        stats["attempted"] += 1
+        tdm_url = f"{base_url.rstrip('/')}/articles/{quote(doi)}"
+        try:
+            resp = http.get(
+                tdm_url,
+                headers={
+                    "Wiley-TDM-Client-Token": token,
+                    "Accept": "application/pdf",
+                },
+            )
+            status = int(getattr(resp, "status_code", 200))
+            if status != 200:
+                raise RuntimeError(f"Wiley TDM returned status {status}")
+            pdf_bytes = resp.content or b""
+            if not pdf_bytes:
+                raise RuntimeError("Wiley TDM returned empty PDF content.")
+
+            tmp_pdf_path = run_dir / "raw" / f"{src.source_id}_tdm.pdf"
+            tmp_pdf_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_pdf_path.write_bytes(pdf_bytes)
+            pages = extract_pdf_pages(tmp_pdf_path)
+            normalized_text = normalize_pdf_pages(pages)
+            with contextlib.suppress(FileNotFoundError):
+                tmp_pdf_path.unlink()
+
+            written = write_source_files(
+                run_dir=run_dir,
+                source_id=src.source_id,
+                raw_bytes=pdf_bytes,
+                raw_suffix=".pdf",
+                normalized_text=normalized_text,
+            )
+
+            new_extra = dict(src.extra)
+            new_extra.update(
+                {
+                    "tdm_fulltext": True,
+                    "tdm_doi": doi,
+                    "tdm_url": tdm_url,
+                    "tdm_downloaded_at_utc": _utc_now_iso(),
+                    "tdm_original_raw_path": src.raw_path,
+                    "tdm_original_normalized_path": src.normalized_path,
+                    "tdm_original_raw_sha256": src.raw_sha256,
+                    "tdm_original_normalized_sha256": src.normalized_sha256,
+                }
+            )
+
+            tdm_note = "Wiley TDM full-text accessed under text-and-data mining terms. Do not redistribute full text."
+            terms_note = (src.terms_licence_note or "").strip()
+            if terms_note:
+                terms_note = f"{terms_note} {tdm_note}"
+            else:
+                terms_note = tdm_note
+
+            extraction_notes = (src.extraction_notes or "").strip()
+            if extraction_notes:
+                extraction_notes = f"{extraction_notes} | Wiley TDM full-text applied."
+            else:
+                extraction_notes = "Wiley TDM full-text applied."
+
+            sources[idx] = SourceRecord(
+                source_id=src.source_id,
+                fetched_at_utc=_utc_now_iso(),
+                kind=src.kind,
+                title=src.title,
+                year=src.year,
+                url=src.url,
+                doi=doi,
+                pmid=src.pmid,
+                raw_path=str(written.raw_path),
+                normalized_path=str(written.normalized_path),
+                raw_sha256=written.raw_sha256,
+                normalized_sha256=written.normalized_sha256,
+                extraction_notes=extraction_notes,
+                terms_licence_note=terms_note,
+                extra=new_extra,
+            )
+            stats["downloaded"] += 1
+            seen_dois.add(doi)
+        except Exception as e:
+            stats["failed"] += 1
+            if strict_mode:
+                raise EvidencePolicyError(f"Wiley TDM download failed for DOI {doi}: {e}") from e
+
+    return stats
 
 
 _relevance_token_re = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+", re.UNICODE)
