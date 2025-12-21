@@ -1,5 +1,88 @@
 # Danish Procedure Generator - Project Instructions
 
+---
+
+## ⚠️ CRITICAL: SESSION START PROTOCOL
+
+**BEFORE DOING ANY WORK, YOU MUST:**
+
+1. **READ BUILD CONTROL DOCUMENTS** (in order):
+   ```
+   Read: backend/.claude/STATE.md   → Current project state
+   Read: backend/.claude/TASKS.md   → Find next task
+   Read: backend/.claude/BUILD.md   → Project context (if needed)
+   ```
+
+2. **VERIFY TEST STATUS**:
+   ```bash
+   cd backend && source .venv/bin/activate && pytest tests/ -x -q
+   ```
+
+3. **CHECK GIT STATUS**:
+   ```bash
+   git status && git log --oneline -3
+   ```
+
+4. **FIND CURRENT TASK** in TASKS.md and continue from there
+
+**DO NOT:**
+- Skip ahead in the task sequence
+- Mark tasks complete without running tests
+- Make changes without reading STATE.md first
+- Forget to update STATE.md after completing tasks
+
+---
+
+## 🔄 ACTIVE REFACTORING: Auditable Medical Build System
+
+**Current Phase**: Phase 1 - Data Models & Migrations
+**Phase 0 Status**: COMPLETE (Claim extraction feasibility proven)
+
+**Target Architecture**: 11-stage pipeline with claim traceability
+```
+00 Bootstrap → 01 TermExpand → 02 Retrieve → 03 Chunk →
+04 EvidenceNotes → 05 Draft → 06 ClaimExtract → 07 Bind →
+08 Evals → 09 ReviseLoop → 10 PackageRelease
+```
+
+**Control Documents**:
+| Document | Purpose |
+|----------|---------|
+| `backend/.claude/BUILD.md` | Master build context, API inventory, LLM config |
+| `backend/.claude/STATE.md` | Current state, recent completions, blocked tasks |
+| `backend/.claude/TASKS.md` | Numbered task checklist with test commands |
+
+---
+
+## 🛠️ TOOL USAGE REMINDERS
+
+**For Code Search** (not grep/find):
+```
+Task(subagent_type="Explore", prompt="Find X in codebase")
+```
+
+**For Symbolic Navigation**:
+```
+mcp__plugin_serena_serena__find_symbol(name_path="ClassName/method")
+mcp__plugin_serena_serena__get_symbols_overview(relative_path="file.py")
+```
+
+**For File Operations** (not cat/sed/echo):
+```
+Read(file_path="/absolute/path")
+Edit(file_path, old_string, new_string)
+Write(file_path, content)
+```
+
+**For Testing**:
+```bash
+pytest tests/ -x -q           # All tests, stop on first failure
+pytest tests/file.py -v       # Single file
+pytest -k "test_name" -v      # By name pattern
+```
+
+---
+
 ## Overview
 
 Evidence-based Danish medical emergency procedure generator using a 5-agent LLM pipeline with meta-analysis capabilities.
@@ -26,7 +109,7 @@ backend/
 │   │   └── context.py    # Shared state
 │   ├── llm/              # Provider abstraction
 │   └── db.py             # SQLite + encryption
-├── tests/                # 66 test files
+├── tests/                # 77 test files
 └── config/               # YAML configurations
 ```
 

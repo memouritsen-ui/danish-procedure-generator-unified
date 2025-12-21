@@ -1,0 +1,217 @@
+# TASKS.md - Master Task Checklist
+
+**LAST UPDATED**: 2024-12-21 22:30 UTC
+
+---
+
+## TASK COMPLETION RULES
+
+1. **NEVER skip tasks** - Complete in order
+2. **NEVER mark complete without tests** - Run verification command
+3. **Update STATE.md** after completing any task
+4. **Commit after milestones** - After phase completion or 3+ tasks
+
+---
+
+## LEGEND
+
+- `[x]` - COMPLETE (verified with tests)
+- `[~]` - IN PROGRESS (currently working)
+- `[ ]` - PENDING (not started)
+- `[!]` - BLOCKED (see notes)
+
+---
+
+## PHASE 0: VALIDATION ✅ COMPLETE
+
+**Objective**: Prove claim extraction and evidence binding feasibility
+
+| ID | Task | Status | Test Command | Notes |
+|----|------|--------|--------------|-------|
+| P0-001 | Find 3 completed procedure runs | [x] | `ls data/runs/` | Found: Pneumoni, Akut astma, Thoraxdræn |
+| P0-002 | Extract claims from Pneumoni | [x] | `python tests/phase0_validate_procedures.py` | 42 claims extracted |
+| P0-003 | Extract claims from Akut astma | [x] | `python tests/phase0_validate_procedures.py` | 19 claims extracted |
+| P0-004 | Extract claims from Thoraxdræn | [x] | `python tests/phase0_validate_procedures.py` | 0 claims (surgical) |
+| P0-005 | Test evidence binding accuracy | [x] | `python tests/phase0_validate_procedures.py` | 100% binding rate |
+| P0-006 | Define S0/S1 issue taxonomy | [x] | Review `tests/phase0_validation_report.md` | 7 S0, 6 S1, 4 S2 |
+| P0-007 | Document validation results | [x] | File exists check | Report created |
+
+**Phase 0 Verification**:
+```bash
+python tests/phase0_validate_procedures.py
+# Expected: "VERDICT: Claim extraction is FEASIBLE"
+```
+
+---
+
+## PHASE 1: DATA MODELS & MIGRATIONS 🔄 IN PROGRESS
+
+**Objective**: Create Pydantic models and SQLite migrations for claim system
+
+| ID | Task | Status | Test Command | Notes |
+|----|------|--------|--------------|-------|
+| P1-001 | Create Claim and ClaimType models | [ ] | `pytest tests/models/test_claims.py -v` | In `models/claims.py` |
+| P1-002 | Create EvidenceChunk model | [ ] | `pytest tests/models/test_evidence.py -v` | In `models/evidence.py` |
+| P1-003 | Create ClaimEvidenceLink model | [ ] | `pytest tests/models/test_evidence.py -v` | Links claims to evidence |
+| P1-004 | Create Issue and IssueSeverity models | [ ] | `pytest tests/models/test_issues.py -v` | S0/S1/S2 severity |
+| P1-005 | Create Gate and GateStatus models | [ ] | `pytest tests/models/test_gates.py -v` | Pass/fail gates |
+| P1-006 | Write SQLite migration for claims table | [ ] | `sqlite3 data/procedurewriter.db ".schema claims"` | Alembic or manual |
+| P1-007 | Write SQLite migration for evidence_chunks | [ ] | `sqlite3 data/procedurewriter.db ".schema evidence_chunks"` | |
+| P1-008 | Write SQLite migration for claim_evidence_links | [ ] | `sqlite3 data/procedurewriter.db ".schema claim_evidence_links"` | |
+| P1-009 | Write SQLite migration for issues table | [ ] | `sqlite3 data/procedurewriter.db ".schema issues"` | |
+| P1-010 | Write SQLite migration for gates table | [ ] | `sqlite3 data/procedurewriter.db ".schema gates"` | |
+| P1-011 | Write migration rollback scripts | [ ] | Test rollback works | Safety net |
+| P1-012 | Integration test: create/read all models | [ ] | `pytest tests/integration/test_models.py -v` | End-to-end test |
+
+**Phase 1 Verification**:
+```bash
+pytest tests/models/ -v && pytest tests/integration/test_models.py -v
+# Expected: All tests pass, tables exist in DB
+```
+
+---
+
+## PHASE 2: PIPELINE STAGES ⏳ PENDING
+
+**Objective**: Implement 11-stage pipeline with gates
+
+| ID | Task | Status | Test Command | Notes |
+|----|------|--------|--------------|-------|
+| P2-001 | Create Stage 00: Bootstrap | [ ] | `pytest tests/stages/test_00_bootstrap.py` | Init run, dirs |
+| P2-002 | Create Stage 01: TermExpand | [ ] | `pytest tests/stages/test_01_termexpand.py` | Danish→English |
+| P2-003 | Create Stage 02: Retrieve | [ ] | `pytest tests/stages/test_02_retrieve.py` | Source fetching |
+| P2-004 | Create Stage 03: Chunk | [ ] | `pytest tests/stages/test_03_chunk.py` | Evidence chunking |
+| P2-005 | Create Stage 04: EvidenceNotes | [ ] | `pytest tests/stages/test_04_evidencenotes.py` | LLM summarization |
+| P2-006 | Create Stage 05: Draft | [ ] | `pytest tests/stages/test_05_draft.py` | Writer agent |
+| P2-007 | Create Stage 06: ClaimExtract | [ ] | `pytest tests/stages/test_06_claimextract.py` | Parse claims |
+| P2-008 | Create Stage 07: Bind | [ ] | `pytest tests/stages/test_07_bind.py` | Link to evidence |
+| P2-009 | Create Stage 08: Evals | [ ] | `pytest tests/stages/test_08_evals.py` | Run lints |
+| P2-010 | Create Stage 09: ReviseLoop | [ ] | `pytest tests/stages/test_09_reviseloop.py` | Max 3 iterations |
+| P2-011 | Create Stage 10: PackageRelease | [ ] | `pytest tests/stages/test_10_package.py` | ZIP bundle |
+| P2-012 | Wire stages into main pipeline | [ ] | `pytest tests/test_pipeline.py -v` | Integration |
+
+**Phase 2 Verification**:
+```bash
+pytest tests/stages/ -v && pytest tests/test_pipeline.py -v
+# Expected: All stage tests pass, pipeline runs end-to-end
+```
+
+---
+
+## PHASE 3: CLAIM SYSTEM ⏳ PENDING
+
+**Objective**: Implement claim extraction, normalization, and binding
+
+| ID | Task | Status | Test Command | Notes |
+|----|------|--------|--------------|-------|
+| P3-001 | Create ClaimExtractor class | [ ] | `pytest tests/claims/test_extractor.py` | Pattern-based |
+| P3-002 | Implement DOSE extraction | [ ] | `pytest tests/claims/test_dose.py` | mg/kg patterns |
+| P3-003 | Implement THRESHOLD extraction | [ ] | `pytest tests/claims/test_threshold.py` | Clinical thresholds |
+| P3-004 | Implement RECOMMENDATION extraction | [ ] | `pytest tests/claims/test_recommendation.py` | "bør", "skal" |
+| P3-005 | Implement CONTRAINDICATION extraction | [ ] | `pytest tests/claims/test_contraindication.py` | "må ikke" |
+| P3-006 | Implement RED_FLAG extraction | [ ] | `pytest tests/claims/test_redflag.py` | Warning signs |
+| P3-007 | Implement ALGORITHM_STEP extraction | [ ] | `pytest tests/claims/test_algorithmstep.py` | Numbered steps |
+| P3-008 | Create unit normalizer | [ ] | `pytest tests/claims/test_normalizer.py` | mg→mg, mcg→μg |
+| P3-009 | Create EvidenceBinder class | [ ] | `pytest tests/claims/test_binder.py` | Semantic matching |
+| P3-010 | Implement keyword binding | [ ] | `pytest tests/claims/test_binder.py` | Keyword overlap |
+| P3-011 | Implement semantic binding | [ ] | `pytest tests/claims/test_binder.py` | Embedding similarity |
+| P3-012 | Integration: extract + bind workflow | [ ] | `pytest tests/claims/test_integration.py` | End-to-end |
+
+**Phase 3 Verification**:
+```bash
+pytest tests/claims/ -v
+# Expected: All claim tests pass, 80%+ binding accuracy
+```
+
+---
+
+## PHASE 4: EVAL SUITE ⏳ PENDING
+
+**Objective**: Implement lints, gates, and issue tracking
+
+| ID | Task | Status | Test Command | Notes |
+|----|------|--------|--------------|-------|
+| P4-001 | Create Linter base class | [ ] | `pytest tests/evals/test_linter.py` | Abstract interface |
+| P4-002 | Implement citation_integrity lint | [ ] | `pytest tests/evals/test_citation.py` | [CIT-X] resolves |
+| P4-003 | Implement template_compliance lint | [ ] | `pytest tests/evals/test_template.py` | 14 sections |
+| P4-004 | Implement claim_coverage lint | [ ] | `pytest tests/evals/test_coverage.py` | All claims bound |
+| P4-005 | Implement unit_check lint | [ ] | `pytest tests/evals/test_units.py` | Valid SI units |
+| P4-006 | Implement overconfidence lint | [ ] | `pytest tests/evals/test_overconfidence.py` | Strong language check |
+| P4-007 | Implement conflict_detection lint | [ ] | `pytest tests/evals/test_conflict.py` | Same topic conflicts |
+| P4-008 | Implement recency_check lint | [ ] | `pytest tests/evals/test_recency.py` | >5 years flagged |
+| P4-009 | Create GateEvaluator class | [ ] | `pytest tests/evals/test_gates.py` | Pass/fail logic |
+| P4-010 | Implement S0 gate (safety) | [ ] | `pytest tests/evals/test_gates.py` | S0=0 required |
+| P4-011 | Implement S1 gate (quality) | [ ] | `pytest tests/evals/test_gates.py` | S1=0 required |
+| P4-012 | Create IssueCollector class | [ ] | `pytest tests/evals/test_issues.py` | Aggregate issues |
+
+**Phase 4 Verification**:
+```bash
+pytest tests/evals/ -v
+# Expected: All eval tests pass, gates block on S0/S1
+```
+
+---
+
+## PHASE 5: API & BUNDLE ⏳ PENDING
+
+**Objective**: Create new API endpoints and release bundle
+
+| ID | Task | Status | Test Command | Notes |
+|----|------|--------|--------------|-------|
+| P5-001 | Create GET /api/runs/{id}/claims | [ ] | `pytest tests/api/test_claims_endpoint.py` | Return claims |
+| P5-002 | Create GET /api/runs/{id}/issues | [ ] | `pytest tests/api/test_issues_endpoint.py` | Return issues |
+| P5-003 | Create GET /api/runs/{id}/gates | [ ] | `pytest tests/api/test_gates_endpoint.py` | Return gate status |
+| P5-004 | Create GET /api/runs/{id}/bundle | [ ] | `pytest tests/api/test_bundle_endpoint.py` | ZIP download |
+| P5-005 | Create GET /api/runs/{id}/manifest | [ ] | `pytest tests/api/test_manifest_endpoint.py` | Checksums |
+| P5-006 | Create GET /api/runs/{id}/evidence-notes | [ ] | `pytest tests/api/test_notes_endpoint.py` | LLM summaries |
+| P5-007 | Create GET /api/runs/{id}/chunks | [ ] | `pytest tests/api/test_chunks_endpoint.py` | Evidence chunks |
+| P5-008 | Implement ZipBuilder class | [ ] | `pytest tests/bundle/test_builder.py` | Create ZIP |
+| P5-009 | Implement ManifestBuilder class | [ ] | `pytest tests/bundle/test_manifest.py` | Checksums, versions |
+| P5-010 | Integration test: full bundle | [ ] | `pytest tests/integration/test_bundle.py` | End-to-end |
+| P5-011 | Demo: "Anafylaksi behandling" | [ ] | Manual verification | Produces valid ZIP |
+| P5-012 | Documentation: Danish audit guide | [ ] | File exists check | README.md |
+
+**Phase 5 Verification**:
+```bash
+pytest tests/api/ tests/bundle/ -v
+# Expected: All endpoint tests pass, demo ZIP valid
+```
+
+---
+
+## FINAL VERIFICATION
+
+After all phases complete:
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Verify demo procedure
+curl -X POST http://localhost:8000/api/write \
+  -H "Content-Type: application/json" \
+  -d '{"procedure_name": "Anafylaksi behandling"}'
+
+# Download bundle
+curl http://localhost:8000/api/runs/{run_id}/bundle -o release.zip
+
+# Verify bundle contents
+unzip -l release.zip
+```
+
+---
+
+## TASK COUNT SUMMARY
+
+| Phase | Total | Complete | Remaining |
+|-------|-------|----------|-----------|
+| P0: Validation | 7 | 7 | 0 |
+| P1: Data Models | 12 | 0 | 12 |
+| P2: Pipeline Stages | 12 | 0 | 12 |
+| P3: Claim System | 12 | 0 | 12 |
+| P4: Eval Suite | 12 | 0 | 12 |
+| P5: API & Bundle | 12 | 0 | 12 |
+| **TOTAL** | **67** | **7** | **60** |
+
+---
+
+**Next Task**: P1-001 - Create Claim and ClaimType models
