@@ -4,8 +4,7 @@ Following TDD: Tests written before implementation.
 """
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -199,7 +198,7 @@ class TestMetaAnalysisResultPersistence:
 
     def test_create_meta_analysis_run(self, tmp_path) -> None:
         """Should be able to create meta-analysis run record."""
-        from procedurewriter.db import init_db, create_meta_analysis_run, get_meta_analysis_run
+        from procedurewriter.db import create_meta_analysis_run, get_meta_analysis_run, init_db
 
         db_path = tmp_path / "test.db"
         init_db(db_path)
@@ -225,10 +224,10 @@ class TestMetaAnalysisResultPersistence:
     def test_update_meta_analysis_results(self, tmp_path) -> None:
         """Should be able to update run with synthesis results."""
         from procedurewriter.db import (
-            init_db,
             create_meta_analysis_run,
-            update_meta_analysis_results,
             get_meta_analysis_run,
+            init_db,
+            update_meta_analysis_results,
         )
 
         db_path = tmp_path / "test.db"

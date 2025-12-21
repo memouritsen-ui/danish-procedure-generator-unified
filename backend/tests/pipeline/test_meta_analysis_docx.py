@@ -5,9 +5,6 @@ Danish labels: "Inkluderede studier", "Risiko for bias", "Evidens-syntese"
 """
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock
-
 import pytest
 
 
@@ -22,15 +19,10 @@ class TestMetaAnalysisDocxWriterExists:
 
     def test_function_accepts_synthesis_output(self) -> None:
         """Function should accept SynthesisOutput as parameter."""
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
-        from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            SynthesisOutput,
-            PooledEstimate,
-            HeterogeneityMetrics,
-        )
-
         # Should not raise
         import inspect
+
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
         sig = inspect.signature(write_meta_analysis_docx)
         params = list(sig.parameters.keys())
         assert "synthesis" in params or "output" in params
@@ -43,10 +35,10 @@ class TestCochraneSections:
     def synthesis_output(self):
         """Create sample synthesis output for testing."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            SynthesisOutput,
-            PooledEstimate,
-            HeterogeneityMetrics,
             ForestPlotEntry,
+            HeterogeneityMetrics,
+            PooledEstimate,
+            SynthesisOutput,
         )
 
         return SynthesisOutput(
@@ -106,8 +98,9 @@ class TestCochraneSections:
 
     def test_docx_has_danish_section_headers(self, tmp_path, orchestrator_output) -> None:
         """Generated DOCX should have Danish section headers."""
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
         from docx import Document
+
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
 
         output_path = tmp_path / "meta_analysis.docx"
 
@@ -127,8 +120,9 @@ class TestCochraneSections:
 
     def test_docx_contains_pooled_estimate(self, tmp_path, orchestrator_output) -> None:
         """DOCX should contain pooled effect estimate."""
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
         from docx import Document
+
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
 
         output_path = tmp_path / "meta_analysis.docx"
 
@@ -152,8 +146,9 @@ class TestCochraneSections:
 
     def test_docx_contains_heterogeneity_metrics(self, tmp_path, orchestrator_output) -> None:
         """DOCX should contain I² heterogeneity statistic."""
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
         from docx import Document
+
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
 
         output_path = tmp_path / "meta_analysis.docx"
 
@@ -178,8 +173,9 @@ class TestCochraneSections:
 
     def test_docx_contains_grade_summary(self, tmp_path, orchestrator_output) -> None:
         """DOCX should contain GRADE certainty summary."""
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
         from docx import Document
+
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
 
         output_path = tmp_path / "meta_analysis.docx"
 
@@ -197,8 +193,9 @@ class TestCochraneSections:
 
     def test_docx_lists_excluded_studies(self, tmp_path, orchestrator_output) -> None:
         """DOCX should list excluded studies with reasons."""
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
         from docx import Document
+
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
 
         output_path = tmp_path / "meta_analysis.docx"
 
@@ -223,10 +220,10 @@ class TestForestPlotTable:
     def synthesis_output(self):
         """Create sample synthesis output with forest plot data."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            SynthesisOutput,
-            PooledEstimate,
-            HeterogeneityMetrics,
             ForestPlotEntry,
+            HeterogeneityMetrics,
+            PooledEstimate,
+            SynthesisOutput,
         )
 
         return SynthesisOutput(
@@ -273,9 +270,10 @@ class TestForestPlotTable:
 
     def test_docx_has_forest_plot_table(self, tmp_path, synthesis_output) -> None:
         """DOCX should contain a table with forest plot data."""
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
-        from procedurewriter.agents.meta_analysis.orchestrator import OrchestratorOutput
         from docx import Document
+
+        from procedurewriter.agents.meta_analysis.orchestrator import OrchestratorOutput
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
 
         output_path = tmp_path / "meta_analysis.docx"
         orchestrator_output = OrchestratorOutput(
@@ -299,9 +297,10 @@ class TestForestPlotTable:
 
     def test_forest_table_has_study_rows(self, tmp_path, synthesis_output) -> None:
         """Forest plot table should have rows for each study."""
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
-        from procedurewriter.agents.meta_analysis.orchestrator import OrchestratorOutput
         from docx import Document
+
+        from procedurewriter.agents.meta_analysis.orchestrator import OrchestratorOutput
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
 
         output_path = tmp_path / "meta_analysis.docx"
         orchestrator_output = OrchestratorOutput(
@@ -339,9 +338,9 @@ class TestPRISMAFlowchart:
         """PRISMA flowchart counts should be calculable from output."""
         from procedurewriter.agents.meta_analysis.orchestrator import OrchestratorOutput
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            SynthesisOutput,
-            PooledEstimate,
             HeterogeneityMetrics,
+            PooledEstimate,
+            SynthesisOutput,
         )
 
         synthesis = SynthesisOutput(

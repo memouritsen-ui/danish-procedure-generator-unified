@@ -4,8 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from procedurewriter.llm.cached_provider import CachedLLMProvider
 from procedurewriter.llm.providers import LLMProviderType, LLMResponse
 

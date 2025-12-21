@@ -1,0 +1,37 @@
+PROTOKOL: Akut anafylaksi behandling
+
+Version: 2.1
+Godkendt af: Anæstesiologisk afdeling
+Dato: 2024-01-15
+
+INDIKATION
+Akut anafylaktisk reaktion med:
+- Luftvejsobstruktion
+- Kredsløbspåvirkning
+- Svær urticaria med systemiske symptomer
+
+KONTRAINDIKATION
+Ingen absolutte kontraindikationer ved livstruende anafylaksi.
+
+DOSERING
+Adrenalin (førstevalg):
+- Voksne: 0.5 mg intramuskulært i lårets yderside
+- Børn: 0.01 mg/kg (max 0.3 mg)
+- Gentages efter 5 minutter ved manglende effekt
+
+Antihistamin:
+- Clemastin 2 mg i.v. langsomt
+- Alternativt: Promethazin 25 mg i.v.
+
+Steroid:
+- Methylprednisolon 80 mg i.v.
+- Alternativt: Hydrocortison 200 mg i.v.
+
+Væskebehandling:
+- NaCl 0.9% 1000-2000 ml i.v. ved hypotension
+
+MONITORERING
+- Kontinuerlig pulsoximetri
+- Blodtryk hver 5. minut
+- EKG-overvågning
+- Observation minimum 4 timer efter behandling

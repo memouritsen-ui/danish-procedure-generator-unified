@@ -7,11 +7,9 @@ Includes I² calculation verification with known dataset.
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 
 
 class TestEndToEndMetaAnalysisPipeline:
@@ -85,8 +83,8 @@ class TestEndToEndMetaAnalysisPipeline:
             OrchestratorInput,
         )
         from procedurewriter.agents.meta_analysis.screener_agent import PICOQuery
-        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
         from procedurewriter.llm.providers import LLMResponse
+        from procedurewriter.pipeline.docx_writer import write_meta_analysis_docx
 
         # Create mock LLM with realistic responses
         mock_llm = MagicMock()
@@ -124,8 +122,8 @@ class TestEndToEndMetaAnalysisPipeline:
     def test_i_squared_calculation_accuracy(self, known_dataset_studies, pico_query) -> None:
         """I² calculation should return valid value."""
         from procedurewriter.agents.meta_analysis.synthesizer_agent import (
-            calculate_i_squared,
             calculate_cochrans_q,
+            calculate_i_squared,
         )
 
         # Known effects and variances
@@ -146,11 +144,13 @@ class TestEndToEndMetaAnalysisPipeline:
         else:
             # I² = (Q - df) / Q * 100
             expected_i2 = (q - df) / q * 100
-            assert abs(i_squared - expected_i2) < 0.1, f"I² calculation mismatch"
+            assert abs(i_squared - expected_i2) < 0.1, "I² calculation mismatch"
 
     def test_pooled_effect_within_study_bounds(self, known_dataset_studies, pico_query) -> None:
         """Pooled effect should be within range of individual study effects."""
-        from procedurewriter.agents.meta_analysis.synthesizer_agent import calculate_random_effects_pooled
+        from procedurewriter.agents.meta_analysis.synthesizer_agent import (
+            calculate_random_effects_pooled,
+        )
 
         effects = [s["effect_size"] for s in known_dataset_studies]
         variances = [s["variance"] for s in known_dataset_studies]
@@ -314,10 +314,10 @@ class TestDatabasePersistenceIntegration:
     def test_run_persisted_through_pipeline(self, tmp_path) -> None:
         """Meta-analysis run should be persisted to database."""
         from procedurewriter.db import (
-            init_db,
             create_meta_analysis_run,
-            update_meta_analysis_results,
             get_meta_analysis_run,
+            init_db,
+            update_meta_analysis_results,
         )
 
         db_path = tmp_path / "test.db"

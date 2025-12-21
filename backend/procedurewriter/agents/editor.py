@@ -51,7 +51,7 @@ Opgaver:
 1. Forbedr tekstens klarhed og læsbarhed
 2. Ret sproglige fejl (dansk)
 3. Sikr konsistent terminologi
-4. Behold alle citations [source_id]
+4. Behold alle citations [S:<source_id>]
 5. Foreslå konkrete ændringer
 
 Output format:

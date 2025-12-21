@@ -147,6 +147,8 @@ class PipelineInput(BaseModel):
     context: str | None = None
     max_iterations: int = Field(default=3, ge=1, le=5)
     quality_threshold: int = Field(default=8, ge=1, le=10)
+    outline: list[str] | None = Field(default=None, description="Section outline to enforce")
+    style_guide: str | None = Field(default=None, description="Style guide text for writers/editors")
 
 
 class PipelineOutput(BaseModel):

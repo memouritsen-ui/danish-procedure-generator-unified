@@ -183,14 +183,21 @@ class AgentOrchestrator:
                 # Step 2: Write procedure
                 self._emit(EventType.AGENT_START, {"agent": "Writer"})
                 logger.info("Running Writer agent...")
+                style_guide = input_data.style_guide or ""
+                if revision_suggestions:
+                    style_guide = (
+                        style_guide
+                        + "\n\nRevision notes:\n- "
+                        + "\n- ".join(revision_suggestions)
+                    ).strip()
+
                 writer_result = self._writer.execute(
                     WriterInput(
                         procedure_title=input_data.procedure_title,
                         context=input_data.context,
                         sources=current_sources,
-                        outline=(
-                            revision_suggestions if revision_suggestions else None
-                        ),
+                        outline=input_data.outline,
+                        style_guide=style_guide or None,
                     )
                 )
                 self._stats.add_agent_stats(f"Writer_iter{iteration}", writer_result.stats)
@@ -252,6 +259,7 @@ class AgentOrchestrator:
                         procedure_title=input_data.procedure_title,
                         content_markdown=current_content,
                         sources=current_sources,
+                        style_guide=input_data.style_guide,
                     )
                 )
                 self._stats.add_agent_stats(f"Editor_iter{iteration}", editor_result.stats)

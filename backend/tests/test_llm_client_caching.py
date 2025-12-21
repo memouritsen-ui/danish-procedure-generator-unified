@@ -5,8 +5,6 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from procedurewriter.llm.cached_provider import CachedLLMProvider
 from procedurewriter.llm.providers import (
     OpenAIProvider,

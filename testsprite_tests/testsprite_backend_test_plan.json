@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "get application status",
+    "description": "Verify that the /api/status endpoint returns the application status and configuration with correct schema and HTTP 200 status."
+  },
+  {
+    "id": "TC002",
+    "title": "list all procedure generation runs",
+    "description": "Test the /api/runs GET endpoint to ensure it returns a list of all procedure generation runs with correct HTTP 200 status."
+  },
+  {
+    "id": "TC003",
+    "title": "get run details by id",
+    "description": "Validate the /api/runs/{run_id} GET endpoint returns detailed information including quality score for a valid run_id and returns HTTP 404 for invalid run_id."
+  },
+  {
+    "id": "TC004",
+    "title": "start new procedure generation",
+    "description": "Test the /api/write POST endpoint to start a new procedure generation with required procedure field and optional context, verifying that a run ID is returned with HTTP 200 status."
+  },
+  {
+    "id": "TC005",
+    "title": "manage openai api key",
+    "description": "Verify CRUD operations on /api/keys/openai endpoint including getting key status, setting a new key, and deleting the key with appropriate responses and security."
+  },
+  {
+    "id": "TC006",
+    "title": "manage anthropic api key",
+    "description": "Verify CRUD operations on /api/keys/anthropic endpoint including getting key status, setting a new key, and deleting the key with appropriate responses and security."
+  },
+  {
+    "id": "TC007",
+    "title": "manage ncbi api key",
+    "description": "Verify CRUD operations on /api/keys/ncbi endpoint including getting key status, setting a new key, and deleting the key with appropriate responses and security."
+  },
+  {
+    "id": "TC008",
+    "title": "upload pdf document to library",
+    "description": "Test the /api/ingest/pdf POST endpoint to upload a PDF document, ensuring the document is processed and stored correctly in the source library."
+  },
+  {
+    "id": "TC009",
+    "title": "upload docx document to library",
+    "description": "Test the /api/ingest/docx POST endpoint to upload a DOCX document, ensuring the document is processed and stored correctly in the source library."
+  },
+  {
+    "id": "TC010",
+    "title": "ingest url to library",
+    "description": "Validate the /api/ingest/url POST endpoint to ingest a URL, ensuring the content is fetched, processed, and stored correctly in the source library."
+  }
+]

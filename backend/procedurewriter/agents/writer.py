@@ -19,37 +19,29 @@ if TYPE_CHECKING:
     pass
 
 
-SYSTEM_PROMPT = """Du er en medicinsk fagforfatter og pædagog, der specialiserer dig i at skrive kliniske procedurer på dansk til akutmedicin. Dit mål er at skabe indhold der både er klinisk præcist OG lærerigt.
+SYSTEM_PROMPT = """Du er en medicinsk fagforfatter og pædagog, der specialiserer dig i at skrive kliniske procedurer på dansk til akutmedicin. Dit mål er at skabe indhold der er klinisk præcist, lærende og konsistent i struktur.
 
-## PÆDAGOGISK STRUKTUR
-Hver sektion skal følge dette mønster:
+## STRUKTUR (ABSOLUT KRAV)
+- Brug SEKTIONERNE præcis i den angivne disposition og i samme rækkefølge.
+- Sektionoverskrifter skal matche dispositionen ordret (## ...).
+
+## PÆDAGOGISK KRAV
+Hver sektion skal balancere:
 1. **HANDLING** - Hvad skal gøres (konkret instruktion)
-2. **RATIONALE** - Hvorfor gøres det (klinisk begrundelse/læring)
+2. **RATIONALE** - Hvorfor gøres det (klinisk begrundelse)
 3. **EVIDENS** - Kildehenvisning med kontekst
 
-## CITATION-REGLER
-- Citér IKKE bare med [kilde_id] - forklar kildens relevans i teksten
-- Eksempel DÅRLIGT: "Brug 10 mg [PMC12345]"
-- Eksempel GODT: "Ifølge et randomiseret studie af Hansen et al. (2023) med 450 patienter viste dosis på 10 mg optimal effekt [PMC12345]"
+## CITATION-REGLER (STRIKT)
+- Brug KUN citations-tags i formatet [S:<source_id>].
+- Hver sætning eller bullet skal have mindst én citation.
+- Citér med kontekst (ikke bare et tal).
 
 ## FORMATERING
 - Brug standard Markdown: ## for hovedsektioner, ### for undersektioner
-- Undgå "mærkelige" bullets som ▪ eller → - brug kun - eller 1. 2. 3.
-- Hold afsnit korte og læsevenlige (3-5 linjer max)
+- Brug kun '-' eller nummerering (1., 2., 3.) til lister
 - Fremhæv sikkerhedsadvarsler med **ADVARSEL:** prefix
 
-## SEKTIONSSTRUKTUR
-- ## Indikationer
-- ## Kontraindikationer
-- ## Udstyr
-- ## Forberedelse
-- ## Fremgangsmåde (trin-for-trin)
-- ## Sikkerhedsboks
-- ## Komplikationer
-- ## Efterbehandling
-- ## Dokumentation
-
-Outputformat: Markdown med danske overskrifter, pædagogiske forklaringer, og kontekstualiserede citations."""
+Outputformat: Markdown med danske overskrifter, klinisk terminologi og korrekt citationsformat."""
 
 
 WRITING_PROMPT = """Skriv en komplet klinisk procedure for:
@@ -65,7 +57,7 @@ WRITING_PROMPT = """Skriv en komplet klinisk procedure for:
 
 {outline_section}
 
-Skriv proceduren på dansk med korrekte citations. Hver faktuel påstand skal citeres med [source_id]."""
+Skriv proceduren på dansk med korrekte citations. Hver faktuel påstand skal citeres med [S:<source_id>]."""
 
 
 class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
@@ -94,8 +86,8 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
                 context_section = f"**Kontekst:** {input_data.context}"
 
             sources_text = "\n".join(
-                f"- [{s.source_id}] {s.title} ({s.year or 'n/a'})"
-                for s in input_data.sources[:15]  # Limit sources
+                f"- [S:{s.source_id}] {s.title} ({s.year or 'n/a'})"
+                for s in input_data.sources[:15]
             )
 
             style_section = ""
@@ -104,7 +96,7 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
 
             outline_section = ""
             if input_data.outline:
-                outline_section = "**Foreslået disposition:**\n" + "\n".join(
+                outline_section = "**Disposition (brug disse overskrifter i rækkefølge):**\n" + "\n".join(
                     f"- {section}" for section in input_data.outline
                 )
 
@@ -167,7 +159,7 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
     def _extract_citations(self, content: str) -> list[str]:
         """Extract unique citation IDs from content."""
         # Find all [source_id] patterns
-        citations = re.findall(r"\[([a-zA-Z0-9_-]+)\]", content)
+        citations = re.findall(r"\[S:([^\]]+)\]", content)
         # Return unique citations in order of first appearance
         seen = set()
         unique = []

@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # Evidence verification (uses Anthropic Haiku)
     enable_evidence_verification: bool = True
 
+    # Evidence source requirements
+    require_international_sources: bool = True
+    require_danish_guidelines: bool = True
+
     # LLM Provider Configuration
     llm_provider: LLMProviderEnum = LLMProviderEnum.OPENAI
     use_llm: bool = True

@@ -1,0 +1,64 @@
+{
+  "buildCommand" : {
+    "command" : "build",
+    "skipDependencies" : false,
+    "style" : "buildOnly"
+  },
+  "configuredTargets" : [
+    {
+      "guid" : "ba23257938567406aed420a4a4e70934f41161a79d8d80b38c71f6e6348cd61e"
+    }
+  ],
+  "containerPath" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/DanishProcedureGenerator.xcodeproj",
+  "continueBuildingAfterErrors" : false,
+  "dependencyScope" : "workspace",
+  "enableIndexBuildArena" : false,
+  "hideShellScriptEnvironment" : false,
+  "parameters" : {
+    "action" : "build",
+    "activeArchitecture" : "arm64",
+    "activeRunDestination" : {
+      "disableOnlyActiveArch" : false,
+      "platform" : "macosx",
+      "sdk" : "macosx26.2",
+      "sdkVariant" : "macos",
+      "supportedArchitectures" : [
+        "arm64e",
+        "arm64",
+        "x86_64"
+      ],
+      "targetArchitecture" : "arm64"
+    },
+    "arenaInfo" : {
+      "buildIntermediatesPath" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex",
+      "buildProductsPath" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Products",
+      "derivedDataPath" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build",
+      "indexDataStoreFolderPath" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Index.noindex/DataStore",
+      "indexEnableDataStore" : true,
+      "indexPCHPath" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Index.noindex/PrecompiledHeaders",
+      "pchPath" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/PrecompiledHeaders"
+    },
+    "configurationName" : "Release",
+    "overrides" : {
+      "commandLine" : {
+        "table" : {
+
+        }
+      },
+      "synthesized" : {
+        "table" : {
+          "ACTION" : "build",
+          "ENABLE_PREVIEWS" : "NO",
+          "ENABLE_XOJIT_PREVIEWS" : "YES",
+          "ONLY_ACTIVE_ARCH" : "YES"
+        }
+      }
+    }
+  },
+  "schemeCommand" : "launch",
+  "showNonLoggedProgress" : true,
+  "useDryRun" : false,
+  "useImplicitDependencies" : true,
+  "useLegacyBuildLocations" : false,
+  "useParallelTargets" : true
+}

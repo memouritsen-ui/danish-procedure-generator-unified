@@ -273,7 +273,7 @@ async def get_meta_analysis_events(run_id: str) -> AsyncGenerator[dict[str, Any]
                     remove_emitter_on_completion(run_id)
                     break
 
-            except (asyncio.TimeoutError, Exception):
+            except (TimeoutError, Exception):
                 # Send keepalive on timeout
                 yield {"event": "keepalive", "data": {}}
     finally:

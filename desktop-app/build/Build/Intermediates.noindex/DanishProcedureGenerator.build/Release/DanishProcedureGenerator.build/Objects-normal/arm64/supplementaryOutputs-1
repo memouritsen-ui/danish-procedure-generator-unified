@@ -1,0 +1,12 @@
+{
+  "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/DanishProcedureGenerator/DanishProcedureGeneratorApp.swift" : {
+    "abi-baseline-json" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator.abi.json",
+    "const-values" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary.swiftconstvalues",
+    "dependencies" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary.d",
+    "diagnostics" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary.dia",
+    "objc-header" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-Swift.h",
+    "swiftdoc" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator.swiftdoc",
+    "swiftmodule" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator.swiftmodule",
+    "swiftsourceinfo" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator.swiftsourceinfo"
+  }
+}

@@ -1,0 +1,224 @@
+{
+  "tech_stack": ["Python 3.11+", "FastAPI", "SQLite", "React", "Vite", "TypeScript"],
+  "features": [
+    {
+      "name": "Status API",
+      "description": "Get application status and configuration",
+      "files": ["backend/procedurewriter/main.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/status": {
+            "get": {
+              "summary": "Get application status",
+              "responses": {
+                "200": {
+                  "description": "Application status and configuration",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "version": {"type": "string"},
+                          "dummy_mode": {"type": "boolean"},
+                          "use_llm": {"type": "boolean"},
+                          "llm_provider": {"type": "string"},
+                          "llm_model": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Runs API",
+      "description": "List and manage procedure generation runs",
+      "files": ["backend/procedurewriter/main.py", "backend/procedurewriter/db.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/runs": {
+            "get": {
+              "summary": "List all runs",
+              "responses": {
+                "200": {"description": "List of run summaries"}
+              }
+            }
+          },
+          "/api/runs/{run_id}": {
+            "get": {
+              "summary": "Get run details",
+              "parameters": [{"name": "run_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+              "responses": {
+                "200": {"description": "Run details with quality score"},
+                "404": {"description": "Run not found"}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Write API",
+      "description": "Start new procedure generation",
+      "files": ["backend/procedurewriter/main.py", "backend/procedurewriter/pipeline/run.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/write": {
+            "post": {
+              "summary": "Start procedure generation",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "procedure": {"type": "string"},
+                        "context": {"type": "string"}
+                      },
+                      "required": ["procedure"]
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {"description": "Run ID returned"}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "API Keys Management",
+      "description": "CRUD operations for API keys (OpenAI, Anthropic, NCBI)",
+      "files": ["backend/procedurewriter/main.py", "backend/procedurewriter/db.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/keys/openai": {
+            "get": {"summary": "Get OpenAI key status"},
+            "put": {"summary": "Set OpenAI key"},
+            "delete": {"summary": "Delete OpenAI key"}
+          },
+          "/api/keys/anthropic": {
+            "get": {"summary": "Get Anthropic key status"},
+            "put": {"summary": "Set Anthropic key"},
+            "delete": {"summary": "Delete Anthropic key"}
+          },
+          "/api/keys/ncbi": {
+            "get": {"summary": "Get NCBI key status"},
+            "put": {"summary": "Set NCBI key"},
+            "delete": {"summary": "Delete NCBI key"}
+          }
+        }
+      }
+    },
+    {
+      "name": "Document Ingestion",
+      "description": "Upload PDF, DOCX, or URL to library",
+      "files": ["backend/procedurewriter/main.py", "backend/procedurewriter/pipeline/ingest.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/ingest/pdf": {
+            "post": {
+              "summary": "Upload PDF to library",
+              "requestBody": {"content": {"multipart/form-data": {}}}
+            }
+          },
+          "/api/ingest/docx": {
+            "post": {
+              "summary": "Upload DOCX to library",
+              "requestBody": {"content": {"multipart/form-data": {}}}
+            }
+          },
+          "/api/ingest/url": {
+            "post": {
+              "summary": "Ingest URL to library",
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {"type": "object", "properties": {"url": {"type": "string"}}}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Configuration",
+      "description": "Get/set author guide and source allowlist YAML configs",
+      "files": ["backend/procedurewriter/main.py", "backend/procedurewriter/config_store.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/config/author_guide": {
+            "get": {"summary": "Get author guide YAML"},
+            "put": {"summary": "Set author guide YAML"}
+          },
+          "/api/config/source_allowlist": {
+            "get": {"summary": "Get source allowlist YAML"},
+            "put": {"summary": "Set source allowlist YAML"}
+          }
+        }
+      }
+    },
+    {
+      "name": "Run Artifacts",
+      "description": "Get DOCX, manifest, evidence, bundle, sources for a run",
+      "files": ["backend/procedurewriter/main.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/runs/{run_id}/docx": {"get": {"summary": "Download procedure DOCX"}},
+          "/api/runs/{run_id}/manifest": {"get": {"summary": "Get run manifest"}},
+          "/api/runs/{run_id}/evidence": {"get": {"summary": "Get evidence report"}},
+          "/api/runs/{run_id}/bundle": {"get": {"summary": "Download ZIP bundle"}},
+          "/api/runs/{run_id}/sources": {"get": {"summary": "Get source list"}}
+        }
+      }
+    },
+    {
+      "name": "Costs API",
+      "description": "Get aggregated cost summary",
+      "files": ["backend/procedurewriter/main.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/costs": {
+            "get": {
+              "summary": "Get cost summary",
+              "responses": {
+                "200": {
+                  "description": "Aggregated costs",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "total_runs": {"type": "integer"},
+                          "total_cost_usd": {"type": "number"},
+                          "total_tokens": {"type": "integer"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

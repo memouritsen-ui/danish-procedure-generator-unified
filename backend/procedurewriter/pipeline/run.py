@@ -26,17 +26,22 @@ from procedurewriter.pipeline.docx_writer import (
     write_source_analysis_docx,
 )
 from procedurewriter.pipeline.events import EventType, get_emitter, remove_emitter
-from procedurewriter.pipeline.evidence import build_evidence_report, enforce_evidence_policy
+from procedurewriter.pipeline.evidence import EvidencePolicyError, build_evidence_report, enforce_evidence_policy
 from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
 from procedurewriter.pipeline.fetcher import CachedHttpClient
 from procedurewriter.pipeline.io import write_json, write_jsonl, write_text
 from procedurewriter.pipeline.library_search import LibrarySearchProvider
 from procedurewriter.pipeline.manifest import update_manifest_artifact, write_manifest
-from procedurewriter.pipeline.normalize import normalize_html, normalize_pubmed
+from procedurewriter.pipeline.normalize import normalize_html, normalize_pdf_pages, normalize_pubmed, extract_pdf_pages
+from procedurewriter.pipeline.international_sources import InternationalSourceAggregator
 from procedurewriter.pipeline.pubmed import PubMedClient
 from procedurewriter.pipeline.retrieve import build_snippets, retrieve
 from procedurewriter.pipeline.source_scoring import SourceScore, rank_sources
 from procedurewriter.pipeline.sources import make_source_id, to_jsonl_record, write_source_files
+from procedurewriter.pipeline.structure_validator import (
+    StructureValidationError,
+    validate_required_sections,
+)
 from procedurewriter.pipeline.types import SourceRecord
 from procedurewriter.pipeline.writer import write_procedure_markdown
 from procedurewriter.settings import Settings
@@ -51,6 +56,8 @@ from procedurewriter.models.style_profile import StyleProfile
 from procedurewriter.pipeline.content_generalizer import ContentGeneralizer
 
 logger = logging.getLogger(__name__)
+
+_INTERNATIONAL_KINDS = {"nice_guideline", "cochrane_review", "international_guideline", "who_guideline"}
 
 
 def _apply_style_profile(
@@ -194,6 +201,8 @@ def run_pipeline(
         sources: list[SourceRecord] = []
         source_n = 1
         warnings: list[str] = []
+        orchestrator_cost = 0.0
+        post_manifest_artifacts: list[tuple[str, Path]] = []
 
         for lib in library_sources:
             source_id = make_source_id(source_n)
@@ -309,6 +318,21 @@ def run_pipeline(
                     terms_licence_note="Kun til demo/test. Ikke medicinsk rådgivning.",
                     extra={},
                 )
+            )
+
+        # Search international sources (NICE/Cochrane) before local guidelines.
+        if not settings.dummy_mode:
+            emitter.emit(EventType.PROGRESS, {"message": "Searching international guidelines", "stage": "international_search"})
+            query_text = " ".join([procedure, context or ""]).strip()
+            source_n = _append_international_sources(
+                query=query_text,
+                http=http,
+                run_dir=run_dir,
+                source_n=source_n,
+                sources=sources,
+                warnings=warnings,
+                evidence_hierarchy=evidence_hierarchy,
+                max_per_tier=5,
             )
 
         # Search Danish guideline library FIRST (priority 1000 - highest)
@@ -581,6 +605,21 @@ def run_pipeline(
         ]
         write_json(run_dir / "source_scores.json", scores_summary)
 
+        selection_report = _build_source_selection_report(
+            sources=sources,
+            settings=settings,
+            warnings=warnings,
+        )
+        selection_report_path = run_dir / "source_selection.json"
+        write_json(selection_report_path, selection_report)
+        post_manifest_artifacts.append(("source_selection_report", selection_report_path))
+
+        _enforce_source_requirements(
+            sources=sources,
+            settings=settings,
+            warnings=warnings,
+        )
+
         snippets = build_snippets(sources)
         query = " ".join([procedure, context or ""]).strip()
         retrieved = retrieve(
@@ -632,6 +671,8 @@ def run_pipeline(
                 context=context,
                 max_iterations=3,
                 quality_threshold=8,
+                outline=_author_guide_outline(author_guide) if isinstance(author_guide, dict) else None,
+                style_guide=_author_guide_style_text(author_guide) if isinstance(author_guide, dict) else None,
             )
 
             pipeline_result = orchestrator.run(
@@ -687,11 +728,155 @@ def run_pipeline(
         if orchestrator_quality_score is None:
             validate_citations(md, valid_source_ids={s.source_id for s in sources})
 
+        # Apply style profile if available (LLM-powered markdown polishing)
+        style_profile_data = get_default_style_profile(settings.db_path)
+        style_profile: StyleProfile | None = None
+        if style_profile_data:
+            style_profile = StyleProfile.from_db_dict(style_profile_data)
+
+        if style_profile and settings.use_llm and not settings.dummy_mode:
+            try:
+                style_llm = get_llm_client(
+                    provider=settings.llm_provider,
+                    openai_api_key=openai_api_key,
+                    anthropic_api_key=anthropic_api_key,
+                    ollama_base_url=ollama_base_url or settings.ollama_base_url,
+                )
+                polished_md = _apply_style_profile(
+                    raw_markdown=md,
+                    sources=sources,
+                    procedure_name=procedure,
+                    style_profile=style_profile,
+                    llm=style_llm,
+                    model=settings.llm_model,
+                )
+            except Exception as e:
+                logger.warning("Failed to apply style profile: %s", e)
+                polished_md = md
+        else:
+            polished_md = md
+
+        # Generalize hospital-specific content to universal Danish output
+        generalizer = ContentGeneralizer(use_lokal_markers=True)
+        final_md, gen_stats = generalizer.generalize(polished_md)
+        if gen_stats.total_replacements > 0:
+            logger.info(
+                "Generalized content: %d replacements (phones=%d, rooms=%d, locations=%d, hospitals=%d)",
+                gen_stats.total_replacements,
+                gen_stats.phone_numbers,
+                gen_stats.room_references,
+                gen_stats.location_references,
+                gen_stats.hospital_references,
+            )
+
+        # ---------------------------------------------------------------------
+        # AUTOMATED META-ANALYSIS (run before final evidence checks)
+        # ---------------------------------------------------------------------
+        meta_summary_lines: list[str] = []
+        if settings.use_llm and not settings.dummy_mode:
+            quantitative_candidates = []
+            for src in sources:
+                if src.kind != "pubmed":
+                    continue
+
+                level = str(src.extra.get("evidence_level", "")).lower()
+                is_quant = any(x in level for x in ["meta_analysis", "systematic_review", "rct", "randomized"])
+                pub_types = [str(t).lower() for t in src.extra.get("publication_types", [])]
+                is_quant_pub = any("randomized" in t or "meta-analysis" in t or "systematic review" in t for t in pub_types)
+
+                if is_quant or is_quant_pub:
+                    if src.normalized_path and Path(src.normalized_path).exists():
+                        text = Path(src.normalized_path).read_text(encoding="utf-8")
+                        quantitative_candidates.append({
+                            "study_id": src.source_id,
+                            "title": src.title,
+                            "abstract": text[:3000],
+                            "source": "pubmed",
+                        })
+
+            if len(quantitative_candidates) >= 2:
+                emitter.emit(EventType.PROGRESS, {
+                    "message": f"Running automated meta-analysis on {len(quantitative_candidates)} studies",
+                    "stage": "meta_analysis",
+                })
+
+                try:
+                    ma_pico = PICOQuery(
+                        population=context or "Patients",
+                        intervention=procedure,
+                        comparison="Standard Care",
+                        outcome="Primary Clinical Outcome",
+                    )
+
+                    ma_input = OrchestratorInput(
+                        query=ma_pico,
+                        study_sources=quantitative_candidates,
+                        outcome_of_interest="Primary Clinical Outcome",
+                        run_id=run_id,
+                    )
+
+                    ma_orchestrator = MetaAnalysisOrchestrator(
+                        llm=llm,
+                        emitter=emitter,
+                    )
+
+                    ma_result = ma_orchestrator.execute(ma_input)
+
+                    ma_report_path = run_dir / "synthesis_report.json"
+                    synthesis_dict = ma_result.output.model_dump() if hasattr(ma_result.output, "model_dump") else ma_result.output.dict()
+                    write_json(ma_report_path, synthesis_dict)
+
+                    ma_docx_path = run_dir / "Procedure_MetaAnalysis.docx"
+                    write_meta_analysis_docx(
+                        output=ma_result.output,
+                        output_path=ma_docx_path,
+                        run_id=run_id,
+                    )
+
+                    post_manifest_artifacts.append(("meta_analysis_docx", ma_docx_path))
+                    post_manifest_artifacts.append(("synthesis_report", ma_report_path))
+
+                    orchestrator_cost += ma_result.stats.cost_usd
+
+                    meta_summary_lines = _format_meta_analysis_summary(
+                        synthesis=ma_result.output.synthesis,
+                        included_ids=ma_result.output.included_study_ids,
+                        fallback_ids=[c["study_id"] for c in quantitative_candidates],
+                    )
+
+                except Exception as e:
+                    logger.error("Meta-analysis failed: %s", e)
+                    emitter.emit(EventType.ERROR, {"error": f"Meta-analysis failed: {str(e)}"})
+
+        if meta_summary_lines:
+            final_md = _replace_section(final_md, heading="Evidens og Meta-analyse", new_lines=meta_summary_lines)
+
+        required_headings = _author_guide_outline(author_guide) if isinstance(author_guide, dict) else []
+        if required_headings:
+            structure_result = validate_required_sections(
+                final_md,
+                required_headings=required_headings,
+            )
+            structure_report_path = run_dir / "structure_validation.json"
+            write_json(structure_report_path, structure_result.to_dict())
+            post_manifest_artifacts.append(("structure_validation", structure_report_path))
+            if not structure_result.is_valid:
+                raise StructureValidationError(
+                    "Structure validation failed: "
+                    f"missing={structure_result.missing_headings}, "
+                    f"out_of_order={structure_result.out_of_order_headings}, "
+                    f"wrong_level={structure_result.wrong_level_headings}. "
+                    "See structure_validation.json for details."
+                )
+
+        # Validate citations against final markdown
+        validate_citations(final_md, valid_source_ids={s.source_id for s in sources})
+
         procedure_md_path = run_dir / "procedure.md"
-        write_text(procedure_md_path, md)
+        write_text(procedure_md_path, final_md)
 
         evidence_report_path = run_dir / "evidence_report.json"
-        evidence = build_evidence_report(md, snippets=snippets)
+        evidence = build_evidence_report(final_md, snippets=snippets)
         write_json(evidence_report_path, evidence)
 
         evidence_policy = "warn"
@@ -723,7 +908,6 @@ def run_pipeline(
 
                 emitter.emit(EventType.PROGRESS, {"message": "Verifying evidence", "stage": "verification"})
 
-                # Build source content map
                 source_contents: dict[str, str] = {}
                 for src in sources:
                     if src.normalized_path:
@@ -733,11 +917,10 @@ def run_pipeline(
                                 encoding="utf-8", errors="replace"
                             )
 
-                # Run async verification
                 async def run_verification() -> tuple:
                     client = AsyncAnthropic(api_key=anthropic_api_key)
                     return await verify_all_citations(
-                        markdown_text=md,
+                        markdown_text=final_md,
                         sources=source_contents,
                         anthropic_client=client,
                         max_concurrent=5,
@@ -746,7 +929,6 @@ def run_pipeline(
 
                 verification_summary, verification_cost = asyncio.run(run_verification())
 
-                # Save verification results
                 verification_path = run_dir / "evidence_verification.json"
                 write_json(verification_path, summary_to_dict(verification_summary))
 
@@ -802,74 +984,30 @@ def run_pipeline(
             runtime=runtime,
         )
 
+        for artifact_key, artifact_path in post_manifest_artifacts:
+            update_manifest_artifact(
+                manifest_path=manifest_path,
+                artifact_key=artifact_key,
+                artifact_path=artifact_path,
+            )
+
         if not settings.dummy_mode:
             enforce_evidence_policy(evidence, policy=evidence_policy)
 
-        # Use orchestrator quality score if available, otherwise calculate from evidence
         if orchestrator_quality_score is not None:
             quality_score = orchestrator_quality_score
         else:
-            # Calculate quality score based on evidence coverage
             supported = int(evidence.get("supported_count") or 0)
             unsupported = int(evidence.get("unsupported_count") or 0)
             total_claims = supported + unsupported
             if total_claims > 0:
-                # Score 1-10 based on support ratio, with minimum of 5 for having any claims
                 quality_score = max(5, min(10, 5 + int((supported / total_claims) * 5)))
             else:
-                quality_score = 5  # Default score when no claims to validate
-
-        # Apply style profile if available (LLM-powered markdown polishing)
-        style_profile_data = get_default_style_profile(settings.db_path)
-        style_profile: StyleProfile | None = None
-        if style_profile_data:
-            style_profile = StyleProfile.from_db_dict(style_profile_data)
-
-        if style_profile and settings.use_llm and not settings.dummy_mode:
-            # Get LLM for style agent (reuse existing client if in scope, or create new)
-            try:
-                style_llm = get_llm_client(
-                    provider=settings.llm_provider,
-                    openai_api_key=openai_api_key,
-                    anthropic_api_key=anthropic_api_key,
-                    ollama_base_url=ollama_base_url or settings.ollama_base_url,
-                )
-                polished_md = _apply_style_profile(
-                    raw_markdown=md,
-                    sources=sources,
-                    procedure_name=procedure,
-                    style_profile=style_profile,
-                    llm=style_llm,
-                    model=settings.llm_model,
-                )
-            except Exception as e:
-                logger.warning("Failed to apply style profile: %s", e)
-                polished_md = md
-        else:
-            polished_md = md
-
-        # ---------------------------------------------------------------------
-        # CONTENT GENERALIZATION: Remove department-specific content
-        # ---------------------------------------------------------------------
-        # Generalize hospital-specific content (phone numbers, room refs, etc.)
-        # to make procedures universal for all Danish emergency medicine doctors
-        generalizer = ContentGeneralizer(use_lokal_markers=True)
-        polished_md, gen_stats = generalizer.generalize(polished_md)
-        if gen_stats.total_replacements > 0:
-            logger.info(
-                "Generalized content: %d replacements (phones=%d, rooms=%d, locations=%d, hospitals=%d)",
-                gen_stats.total_replacements,
-                gen_stats.phone_numbers,
-                gen_stats.room_references,
-                gen_stats.location_references,
-                gen_stats.hospital_references,
-            )
-            # Update the procedure.md file with generalized content
-            write_text(procedure_md_path, polished_md)
+                quality_score = 5
 
         docx_path = run_dir / "Procedure.docx"
         write_procedure_docx(
-            markdown_text=polished_md,
+            markdown_text=final_md,
             sources=sources,
             output_path=docx_path,
             run_id=run_id,
@@ -911,100 +1049,6 @@ def run_pipeline(
             artifact_path=evidence_review_path,
         )
 
-        # ---------------------------------------------------------------------
-        # AUTOMATED COCHRANE META-ANALYSIS
-        # ---------------------------------------------------------------------
-        if settings.use_llm and not settings.dummy_mode:
-            # 1. Filter for quantitative sources (PubMed + High Evidence)
-            quantitative_candidates = []
-            for src in sources:
-                if src.kind != "pubmed":
-                    continue
-                
-                # Check evidence level
-                level = src.extra.get("evidence_level", "").lower()
-                is_quant = any(x in level for x in ["meta_analysis", "systematic_review", "rct", "randomized"])
-                
-                # Also check publication types if available
-                pub_types = [t.lower() for t in src.extra.get("publication_types", [])]
-                is_quant_pub = any("randomized" in t or "meta-analysis" in t for t in pub_types)
-                
-                if is_quant or is_quant_pub:
-                    # Load text content
-                    if src.normalized_path and Path(src.normalized_path).exists():
-                        text = Path(src.normalized_path).read_text(encoding="utf-8")
-                        quantitative_candidates.append({
-                            "study_id": src.source_id,
-                            "title": src.title,
-                            "abstract": text[:3000], # Limit to abstract-ish length
-                            "source": "pubmed"
-                        })
-
-            # 2. Run Meta-Analysis if enough sources found
-            if len(quantitative_candidates) >= 2:
-                emitter.emit(EventType.PROGRESS, {
-                    "message": f"Running automated meta-analysis on {len(quantitative_candidates)} studies", 
-                    "stage": "meta_analysis"
-                })
-                
-                try:
-                    # Infer PICO from context
-                    ma_pico = PICOQuery(
-                        population=context or "Patients",
-                        intervention=procedure,
-                        comparison="Standard Care",
-                        outcome="Primary Clinical Outcome"
-                    )
-                    
-                    ma_input = OrchestratorInput(
-                        query=ma_pico,
-                        study_sources=quantitative_candidates,
-                        outcome_of_interest="Primary Clinical Outcome",
-                        run_id=run_id
-                    )
-                    
-                    # Instantiate orchestrator
-                    ma_orchestrator = MetaAnalysisOrchestrator(
-                        llm=llm, # Re-use the LLM client from above
-                        emitter=emitter
-                    )
-                    
-                    # Execute
-                    ma_result = ma_orchestrator.execute(ma_input)
-                    
-                    # Save JSON Report
-                    ma_report_path = run_dir / "synthesis_report.json"
-                    # synthesis output is a Pydantic model, need to serialize
-                    # Using model_dump (v2) or dict (v1) - assuming v2 based on imports
-                    synthesis_dict = ma_result.output.model_dump() if hasattr(ma_result.output, "model_dump") else ma_result.output.dict()
-                    write_json(ma_report_path, synthesis_dict)
-                    
-                    # Save Word Document
-                    ma_docx_path = run_dir / "Procedure_MetaAnalysis.docx"
-                    write_meta_analysis_docx(
-                        output=ma_result.output,
-                        output_path=ma_docx_path,
-                        run_id=run_id
-                    )
-
-                    # Add meta-analysis artifacts to manifest
-                    update_manifest_artifact(
-                        manifest_path=manifest_path,
-                        artifact_key="meta_analysis_docx",
-                        artifact_path=ma_docx_path,
-                    )
-                    update_manifest_artifact(
-                        manifest_path=manifest_path,
-                        artifact_key="synthesis_report",
-                        artifact_path=ma_report_path,
-                    )
-
-                    orchestrator_cost += ma_result.stats.cost_usd
-                    
-                except Exception as e:
-                    logger.error(f"Meta-analysis failed: {e}")
-                    emitter.emit(EventType.ERROR, {"error": f"Meta-analysis failed: {str(e)}"})
-
         write_json(
             run_dir / "run_summary.json",
             {
@@ -1042,6 +1086,100 @@ def run_pipeline(
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
+def _has_international_sources(sources: list[SourceRecord]) -> bool:
+    for src in sources:
+        if src.kind in _INTERNATIONAL_KINDS:
+            return True
+        if src.extra.get("international_source_type"):
+            return True
+    return False
+
+
+def _has_danish_guidelines(sources: list[SourceRecord]) -> bool:
+    return any(src.kind == "danish_guideline" for src in sources)
+
+
+def _build_source_selection_report(
+    *,
+    sources: list[SourceRecord],
+    settings: Settings,
+    warnings: list[str],
+) -> dict[str, Any]:
+    by_kind: dict[str, int] = {}
+    by_evidence_level: dict[str, int] = {}
+    for src in sources:
+        by_kind[src.kind] = by_kind.get(src.kind, 0) + 1
+        level = str(src.extra.get("evidence_level") or "unknown")
+        by_evidence_level[level] = by_evidence_level.get(level, 0) + 1
+
+    has_international = _has_international_sources(sources)
+    has_danish = _has_danish_guidelines(sources)
+    missing: list[str] = []
+    if settings.require_international_sources and not has_international:
+        missing.append("international (NICE/Cochrane)")
+    if settings.require_danish_guidelines and not has_danish:
+        missing.append("Danish guidelines")
+
+    return {
+        "version": 1,
+        "generated_at_utc": _utc_now_iso(),
+        "requirements": {
+            "require_international_sources": settings.require_international_sources,
+            "require_danish_guidelines": settings.require_danish_guidelines,
+            "has_international_sources": has_international,
+            "has_danish_guidelines": has_danish,
+            "missing": missing,
+        },
+        "counts": {
+            "total_sources": len(sources),
+            "by_kind": by_kind,
+            "by_evidence_level": by_evidence_level,
+        },
+        "sources": [
+            {
+                "source_id": src.source_id,
+                "kind": src.kind,
+                "title": src.title,
+                "year": src.year,
+                "url": src.url,
+                "evidence_level": src.extra.get("evidence_level"),
+                "evidence_priority": src.extra.get("evidence_priority"),
+            }
+            for src in sources
+        ],
+        "warnings": warnings[:50],
+    }
+
+
+def _enforce_source_requirements(
+    *,
+    sources: list[SourceRecord],
+    settings: Settings,
+    warnings: list[str],
+) -> None:
+    if settings.dummy_mode:
+        return
+
+    missing: list[str] = []
+    if settings.require_international_sources and not _has_international_sources(sources):
+        msg = "No international sources found (NICE/Cochrane)."
+        if msg not in warnings:
+            warnings.append(msg)
+        missing.append("international (NICE/Cochrane)")
+    if settings.require_danish_guidelines and not _has_danish_guidelines(sources):
+        msg = "No Danish guideline sources found in local library."
+        if msg not in warnings:
+            warnings.append(msg)
+        missing.append("Danish guidelines")
+
+    if missing:
+        missing_text = ", ".join(missing)
+        raise EvidencePolicyError(
+            "Evidence policy STRICT failed: required source tiers missing. "
+            f"Missing: {missing_text}. See source_selection.json for details."
+        )
 
 
 def _pubmed_evidence_score(publication_types: list[str]) -> int:
@@ -1178,6 +1316,191 @@ def _append_seed_url_sources(
     if len(urls) > max_per_run:
         warnings.append(f"seed_urls truncated: using first {max_per_run} of {len(urls)}")
     return source_n
+
+
+def _append_international_sources(
+    *,
+    query: str,
+    http: CachedHttpClient,
+    run_dir: Path,
+    source_n: int,
+    sources: list[SourceRecord],
+    warnings: list[str],
+    evidence_hierarchy: EvidenceHierarchy,
+    max_per_tier: int = 5,
+) -> int:
+    aggregator = InternationalSourceAggregator(http_client=http)
+    results = aggregator.search_all(query, max_per_tier=max_per_tier)
+    if not results:
+        warnings.append("No international sources found (NICE/Cochrane).")
+        return source_n
+
+    for result in results:
+        if not result.url:
+            continue
+        try:
+            resp = http.get(result.url)
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"International source fetch failed: {result.url} ({exc})")
+            continue
+
+        raw_bytes = resp.content
+        raw_suffix = ".html"
+        normalized_text = ""
+
+        if raw_bytes[:4] == b"%PDF" or result.url.lower().endswith(".pdf"):
+            raw_suffix = ".pdf"
+            pdf_path = run_dir / "raw" / f"tmp_{source_n}.pdf"
+            pdf_path.write_bytes(raw_bytes)
+            pages = extract_pdf_pages(pdf_path)
+            normalized_text = normalize_pdf_pages(pages)
+        else:
+            normalized_text = normalize_html(raw_bytes)
+
+        if not normalized_text:
+            if result.abstract:
+                normalized_text = f"{result.title}\n\n{result.abstract}"
+            else:
+                warnings.append(f"International source had no extractable text: {result.url}")
+                continue
+
+        source_id = make_source_id(source_n)
+        source_n += 1
+
+        written = write_source_files(
+            run_dir=run_dir,
+            source_id=source_id,
+            raw_bytes=raw_bytes,
+            raw_suffix=raw_suffix,
+            normalized_text=normalized_text,
+        )
+
+        evidence_level = evidence_hierarchy.classify_source(
+            url=result.url,
+            kind="international_guideline",
+            title=result.title,
+        )
+
+        sources.append(
+            SourceRecord(
+                source_id=source_id,
+                fetched_at_utc=_utc_now_iso(),
+                kind=result.source_type,
+                title=result.title,
+                year=result.publication_year,
+                url=result.url,
+                doi=None,
+                pmid=None,
+                raw_path=str(written.raw_path),
+                normalized_path=str(written.normalized_path),
+                raw_sha256=written.raw_sha256,
+                normalized_sha256=written.normalized_sha256,
+                extraction_notes=f"International source: {result.source_type}",
+                terms_licence_note="International guideline/review. Verify rights for full text use.",
+                extra={
+                    "international_source_type": result.source_type,
+                    "evidence_level": evidence_level.level_id,
+                    "evidence_badge": evidence_level.badge,
+                    "evidence_badge_color": evidence_level.badge_color,
+                    "evidence_priority": evidence_level.priority,
+                },
+            )
+        )
+
+    return source_n
+
+
+def _replace_section(markdown_text: str, *, heading: str, new_lines: list[str]) -> str:
+    """Replace a markdown section with new lines. Appends section if missing."""
+    lines = markdown_text.splitlines()
+    header = f"## {heading}".strip()
+    start_idx = None
+    end_idx = None
+    for i, line in enumerate(lines):
+        if line.strip() == header:
+            start_idx = i
+            continue
+        if start_idx is not None and line.startswith("## "):
+            end_idx = i
+            break
+    if start_idx is None:
+        # Append new section at end
+        out = lines + ["", header] + new_lines + [""]
+        return "\n".join(out).strip() + "\n"
+    if end_idx is None:
+        end_idx = len(lines)
+    out = lines[: start_idx + 1] + new_lines + lines[end_idx:]
+    return "\n".join(out).strip() + "\n"
+
+
+def _format_meta_analysis_summary(
+    *,
+    synthesis: Any | None,
+    included_ids: list[str],
+    fallback_ids: list[str],
+) -> list[str]:
+    """Build evidence summary lines with citations."""
+    cite_ids = included_ids or fallback_ids
+    cite = " ".join(f"[S:{sid}]" for sid in cite_ids[:6]) if cite_ids else ""
+    lines: list[str] = []
+    if synthesis is None:
+        lines.append(f"Meta-analyse kunne ikke genereres ud fra de indsamlede kilder. {cite}".strip())
+        return lines
+
+    try:
+        pooled = synthesis.pooled_estimate
+        hetero = synthesis.heterogeneity
+        lines.append(
+            "Meta-analyse inkluderer "
+            f"{synthesis.included_studies} studier (n={synthesis.total_sample_size}). "
+            f"Pooled effekt={pooled.pooled_effect:.3f} "
+            f"(95% CI {pooled.ci_lower:.3f}-{pooled.ci_upper:.3f}, p={pooled.p_value:.3f}). {cite}".strip()
+        )
+        lines.append(
+            "Heterogenitet: "
+            f"I2={hetero.i_squared:.1f}%, tau2={hetero.tau_squared:.3f}, "
+            f"Q={hetero.cochrans_q:.2f} (p={hetero.p_value:.3f}). {cite}".strip()
+        )
+        lines.append(
+            f"GRADE-sammenfatning: {synthesis.grade_summary} (sikkerhed: {synthesis.certainty_level}). {cite}".strip()
+        )
+    except Exception:
+        lines.append(f"Meta-analyse opsummering kunne ikke formateres. {cite}".strip())
+    return lines
+
+
+def _author_guide_outline(author_guide: dict[str, Any]) -> list[str]:
+    sections = (author_guide.get("structure") or {}).get("sections") if isinstance(author_guide, dict) else None
+    headings: list[str] = []
+    for item in sections or []:
+        if not isinstance(item, dict):
+            continue
+        heading = item.get("heading")
+        if isinstance(heading, str) and heading.strip():
+            headings.append(heading.strip())
+    return headings
+
+
+def _author_guide_style_text(author_guide: dict[str, Any]) -> str:
+    if not isinstance(author_guide, dict):
+        return ""
+    style = author_guide.get("style") or {}
+    constraints = style.get("constraints") if isinstance(style, dict) else None
+    lines: list[str] = []
+    if isinstance(style, dict):
+        lang = style.get("language")
+        tone = style.get("tone")
+        audience = style.get("audience")
+        if lang:
+            lines.append(f"Sprog: {lang}")
+        if tone:
+            lines.append(f"Tone: {tone}")
+        if audience:
+            lines.append(f"Målgruppe: {audience}")
+    if isinstance(constraints, list):
+        lines.append("Krav:")
+        lines.extend(f"- {c}" for c in constraints if isinstance(c, str) and c.strip())
+    return "\n".join(lines).strip()
 
 
 _DA_EN_PHRASES: dict[str, list[str]] = {

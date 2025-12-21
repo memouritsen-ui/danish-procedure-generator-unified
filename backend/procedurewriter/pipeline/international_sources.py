@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Protocol
 
+from bs4 import BeautifulSoup
+
 
 class SourceTier(IntEnum):
     """Evidence tier hierarchy for source prioritization.
@@ -66,12 +68,11 @@ class NICEClient:
             List of InternationalSource objects
         """
         if self._http_client is None:
-            # No HTTP client provided - return empty for unit tests
             return []
 
         url = self._build_search_url(query)
         response = self._http_client.get(url)
-        html_content = response.content.decode("utf-8")
+        html_content = response.content.decode("utf-8", errors="replace")
         results = self._parse_search_html(html_content)
         return results[:max_results]
 
@@ -90,9 +91,35 @@ class NICEClient:
             List of InternationalSource objects extracted from HTML
         """
         results: list[InternationalSource] = []
+        soup = BeautifulSoup(html, "html.parser")
 
-        # Simple regex-based parsing (avoids BeautifulSoup dependency)
-        # Pattern for article cards
+        # Try JSON-LD first (more stable)
+        for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+            try:
+                data = json.loads(script.string or "")
+            except json.JSONDecodeError:
+                continue
+            items = data.get("itemListElement") if isinstance(data, dict) else None
+            if isinstance(items, list):
+                for item in items:
+                    url = item.get("url") if isinstance(item, dict) else None
+                    name = item.get("name") if isinstance(item, dict) else None
+                    if url and name:
+                        results.append(
+                            InternationalSource(
+                                url=url,
+                                title=name,
+                                source_type="nice_guideline",
+                                evidence_tier=SourceTier.TIER_1_INTERNATIONAL,
+                                abstract=None,
+                                publication_year=None,
+                            )
+                        )
+
+        if results:
+            return results
+
+        # Fallback: regex-based parsing of cards
         article_pattern = re.compile(
             r'<article[^>]*class="card"[^>]*data-url="([^"]*)"[^>]*>.*?'
             r'<a[^>]*>([^<]+)</a>.*?'
@@ -107,15 +134,12 @@ class NICEClient:
             year_str = match.group(4)
             snippet = match.group(5).strip()
 
-            # Clean up whitespace in snippet
             snippet = " ".join(snippet.split())
-
             try:
                 year = int(year_str)
             except ValueError:
                 year = None
 
-            # Build full URL
             full_url = f"{self.BASE_URL}{url_path}" if url_path.startswith("/") else url_path
 
             results.append(
@@ -154,9 +178,63 @@ class CochraneClient:
         if self._http_client is None:
             return []
 
-        # Cochrane API search would go here
-        # For now, return empty list until we implement actual API call
-        return []
+        url = self._build_search_url(query)
+        response = self._http_client.get(url)
+        html_content = response.content.decode("utf-8", errors="replace")
+        results = self._parse_search_html(html_content)
+        return results[:max_results]
+
+    def _build_search_url(self, query: str) -> str:
+        encoded_query = query.replace(" ", "+")
+        return f"{self.BASE_URL}/search?text={encoded_query}"
+
+    def _parse_search_html(self, html: str) -> list[InternationalSource]:
+        results: list[InternationalSource] = []
+        soup = BeautifulSoup(html, "html.parser")
+
+        # JSON-LD parsing for item lists
+        for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+            try:
+                data = json.loads(script.string or "")
+            except json.JSONDecodeError:
+                continue
+            items = data.get("itemListElement") if isinstance(data, dict) else None
+            if isinstance(items, list):
+                for item in items:
+                    url = item.get("url") if isinstance(item, dict) else None
+                    name = item.get("name") if isinstance(item, dict) else None
+                    if url and name:
+                        results.append(
+                            InternationalSource(
+                                url=url,
+                                title=name,
+                                source_type="cochrane_review",
+                                evidence_tier=SourceTier.TIER_1_INTERNATIONAL,
+                                abstract=None,
+                                publication_year=None,
+                            )
+                        )
+
+        if results:
+            return results
+
+        # Fallback: parse search result links
+        for link in soup.find_all("a", href=True):
+            href = link.get("href") or ""
+            text = " ".join(link.get_text(strip=True).split())
+            if not text:
+                continue
+            if "/cdsr/" in href and "doi" in href:
+                url = href if href.startswith("http") else f"{self.BASE_URL}{href}"
+                results.append(
+                    InternationalSource(
+                        url=url,
+                        title=text,
+                        source_type="cochrane_review",
+                        evidence_tier=SourceTier.TIER_1_INTERNATIONAL,
+                    )
+                )
+        return results
 
     def _parse_search_response(self, json_str: str) -> list[InternationalSource]:
         """Parse Cochrane search JSON response.

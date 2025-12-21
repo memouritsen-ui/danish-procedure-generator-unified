@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -29,7 +28,7 @@ class PICOExtractionInput(BaseModel):
     methods: str | None = None
 
     @model_validator(mode="after")
-    def require_content(self) -> "PICOExtractionInput":
+    def require_content(self) -> PICOExtractionInput:
         """Require at least title or abstract."""
         if not self.title and not self.abstract:
             raise ValueError("At least one of 'title' or 'abstract' must be provided")

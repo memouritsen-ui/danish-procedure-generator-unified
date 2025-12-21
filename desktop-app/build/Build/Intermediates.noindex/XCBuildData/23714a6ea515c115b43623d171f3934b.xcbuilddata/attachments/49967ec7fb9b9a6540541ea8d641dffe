@@ -1,0 +1,36 @@
+{
+  "" : {
+    "const-values" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary.swiftconstvalues",
+    "dependencies" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary.d",
+    "diagnostics" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary.dia",
+    "emit-module-dependencies" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary-emit-module.dia",
+    "pch" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGenerator-primary.swiftdeps"
+  },
+  "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/DanishProcedureGenerator/ContentView.swift" : {
+    "index-unit-output-path" : "/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/ContentView.o"
+  },
+  "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/DanishProcedureGenerator/DanishProcedureGeneratorApp.swift" : {
+    "index-unit-output-path" : "/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGeneratorApp.o",
+    "llvm-bc" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGeneratorApp.bc",
+    "object" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/DanishProcedureGeneratorApp.o"
+  },
+  "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/DanishProcedureGenerator/ServerManager.swift" : {
+    "index-unit-output-path" : "/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/ServerManager.o",
+    "llvm-bc" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/ServerManager.bc",
+    "object" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/ServerManager.o"
+  },
+  "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/DanishProcedureGenerator/WebView.swift" : {
+    "index-unit-output-path" : "/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/WebView.o",
+    "llvm-bc" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/WebView.bc",
+    "object" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/WebView.o"
+  },
+  "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/madsbruusgaard-mouritsen/danish-procedure-generator-unified/desktop-app/build/Build/Intermediates.noindex/DanishProcedureGenerator.build/Release/DanishProcedureGenerator.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  }
+}

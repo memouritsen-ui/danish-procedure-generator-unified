@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 
 class RiskOfBias(str, Enum):

@@ -130,7 +130,7 @@ def get_t_critical_value(df: int, alpha: float = 0.05) -> float:
 
 def calculate_random_effects_pooled_hk(
     effects: list[float], variances: list[float]
-) -> "PooledEstimate":
+) -> PooledEstimate:
     """Calculate random-effects pooled estimate with Hartung-Knapp adjustment.
 
     Uses t-distribution instead of z=1.96 when k < 5 for wider, more

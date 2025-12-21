@@ -117,9 +117,11 @@ app.add_middleware(
 
 # Include routers
 from procedurewriter.api.meta_analysis import router as meta_analysis_router
+from procedurewriter.routers import config as config_router
 from procedurewriter.routers import keys as keys_router
 
 app.include_router(meta_analysis_router)
+app.include_router(config_router.router)
 app.include_router(keys_router.router)
 
 
@@ -906,40 +908,6 @@ async def api_ingest_url(req: IngestUrlRequest) -> IngestResponse:
     )
     return IngestResponse(source_id=source_id)
 
-
-@app.get("/api/config/author_guide", response_model=ConfigText)
-def api_get_author_guide() -> ConfigText:
-    return ConfigText(text=config_store.read_text(settings.author_guide_path))
-
-
-@app.put("/api/config/author_guide", response_model=ConfigText)
-def api_set_author_guide(cfg: ConfigText) -> ConfigText:
-    config_store.write_text_validated_yaml(settings.author_guide_path, cfg.text)
-    return cfg
-
-
-@app.get("/api/config/source_allowlist", response_model=ConfigText)
-def api_get_allowlist() -> ConfigText:
-    return ConfigText(text=config_store.read_text(settings.allowlist_path))
-
-
-@app.put("/api/config/source_allowlist", response_model=ConfigText)
-def api_set_allowlist(cfg: ConfigText) -> ConfigText:
-    config_store.write_text_validated_yaml(settings.allowlist_path, cfg.text)
-    return cfg
-
-
-@app.get("/api/config/docx_template", response_model=ConfigText)
-def api_get_docx_template() -> ConfigText:
-    """Get the DOCX template configuration."""
-    return ConfigText(text=config_store.read_text(settings.docx_template_path))
-
-
-@app.put("/api/config/docx_template", response_model=ConfigText)
-def api_set_docx_template(cfg: ConfigText) -> ConfigText:
-    """Update the DOCX template configuration."""
-    config_store.write_text_validated_yaml(settings.docx_template_path, cfg.text)
-    return cfg
 
 
 @app.get("/api/library/stats")

@@ -1,0 +1,401 @@
+{
+  "meta": {
+    "project": "Danish Procedure Generator",
+    "date": "2025-12-18",
+    "prepared_by": "Software Development Manager"
+  },
+  "product_overview": "Danish Procedure Generator is a unified system that generates Danish emergency medicine procedures with evidence-based citations, source audit trails, and DOCX export. The system leverages multi-agent workflows, real PubMed integration, and advanced quality control to ensure high-quality medical procedure outputs, accessible through a React frontend and FastAPI backend.",
+  "core_goals": [
+    "Enable generation of accurate and evidence-based Danish emergency medicine procedures.",
+    "Integrate real-time PubMed and document ingestion for comprehensive source material.",
+    "Implement a robust multi-agent workflow to enhance content quality and validation.",
+    "Provide transparent cost tracking and API key management for external service integrations.",
+    "Offer user-friendly configuration and ingestion capabilities via a web interface.",
+    "Ensure traceability and auditability of all procedure generation runs and their sources."
+  ],
+  "key_features": [
+    "Procedure generation pipeline producing DOCX outputs with detailed citations and evidence reports.",
+    "Multi-agent workflow including Researcher, Validator, Writer, Editor, and Quality agents for iterative content refinement.",
+    "Integration with NCBI PubMed API for retrieving ranked and prioritized medical sources.",
+    "Document ingestion supporting PDF, DOCX uploads and URL ingestion to expand source library.",
+    "LLM provider abstraction supporting OpenAI, Anthropic, Ollama, with API key CRUD management.",
+    "Quality control loop that auto-improves procedure drafts based on a minimum quality score threshold.",
+    "Cost tracking per operation and aggregated cost summaries accessible via API.",
+    "Configuration endpoints for author guidelines and source allowlists in YAML format.",
+    "Secure local storage and masked display of API keys with validation checks.",
+    "Comprehensive audit trail including SHA256 source hashing, run manifests, evidence reports, and downloadable bundles."
+  ],
+  "user_flow_summary": [
+    "User uploads API keys for OpenAI, Anthropic, and NCBI through the settings UI to enable respective services.",
+    "User uploads source documents (PDF, DOCX) or submits URLs via ingestion endpoints for library expansion.",
+    "User initiates a new procedure generation by submitting the procedure topic and optional context through the web UI.",
+    "The multi-agent system orchestrates research, validation, writing, editing, and quality scoring in iterative loops until meeting quality thresholds.",
+    "User monitors progress and views detailed run reports including evidence, citations, quality scores, and cost usage.",
+    "User downloads final DOCX procedure and associated artifacts like bundles and source manifests.",
+    "User accesses and modifies YAML configuration files for author guide and source allowlist to tailor generation behavior."
+  ],
+  "validation_criteria": [
+    "All API endpoints respond with valid schemas and correct HTTP status codes as documented.",
+    "Procedure generation completes within performance targets (e.g., under 5 minutes per run).",
+    "Quality score consistently meets or exceeds 8/10 threshold after at most 3 iteration loops.",
+    "Source ingestion correctly processes PDF, DOCX, and URL inputs and stores them in the audited source library.",
+    "API key operations securely store, mask, and validate keys without exposing sensitive details.",
+    "Cost tracking data accurately aggregates token usage and cost per run and provides accessible summaries.",
+    "User interface supports all documented features and is free from critical bugs or crashes.",
+    "Security measures like SQL injection prevention, path traversal validation, CORS limiting, and YAML safe loading are verified and effective.",
+    "End-to-end tests cover at least 25 scenarios including multi-agent workflows and document ingestion.",
+    "Generated procedures include evidence badges and priority sourced from configured Danish evidence hierarchy YAML."
+  ],
+  "code_summary": {
+    "tech_stack": [
+      "Python 3.11+",
+      "FastAPI",
+      "SQLite",
+      "React",
+      "Vite",
+      "TypeScript"
+    ],
+    "features": [
+      {
+        "name": "Status API",
+        "description": "Get application status and configuration",
+        "files": [
+          "backend/procedurewriter/main.py"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "paths": {
+            "/api/status": {
+              "get": {
+                "summary": "Get application status",
+                "responses": {
+                  "200": {
+                    "description": "Application status and configuration",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            },
+                            "dummy_mode": {
+                              "type": "boolean"
+                            },
+                            "use_llm": {
+                              "type": "boolean"
+                            },
+                            "llm_provider": {
+                              "type": "string"
+                            },
+                            "llm_model": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Runs API",
+        "description": "List and manage procedure generation runs",
+        "files": [
+          "backend/procedurewriter/main.py",
+          "backend/procedurewriter/db.py"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "paths": {
+            "/api/runs": {
+              "get": {
+                "summary": "List all runs",
+                "responses": {
+                  "200": {
+                    "description": "List of run summaries"
+                  }
+                }
+              }
+            },
+            "/api/runs/{run_id}": {
+              "get": {
+                "summary": "Get run details",
+                "parameters": [
+                  {
+                    "name": "run_id",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                ],
+                "responses": {
+                  "200": {
+                    "description": "Run details with quality score"
+                  },
+                  "404": {
+                    "description": "Run not found"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Write API",
+        "description": "Start new procedure generation",
+        "files": [
+          "backend/procedurewriter/main.py",
+          "backend/procedurewriter/pipeline/run.py"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "paths": {
+            "/api/write": {
+              "post": {
+                "summary": "Start procedure generation",
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "procedure": {
+                            "type": "string"
+                          },
+                          "context": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "procedure"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "200": {
+                    "description": "Run ID returned"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "API Keys Management",
+        "description": "CRUD operations for API keys (OpenAI, Anthropic, NCBI)",
+        "files": [
+          "backend/procedurewriter/main.py",
+          "backend/procedurewriter/db.py"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "paths": {
+            "/api/keys/openai": {
+              "get": {
+                "summary": "Get OpenAI key status"
+              },
+              "put": {
+                "summary": "Set OpenAI key"
+              },
+              "delete": {
+                "summary": "Delete OpenAI key"
+              }
+            },
+            "/api/keys/anthropic": {
+              "get": {
+                "summary": "Get Anthropic key status"
+              },
+              "put": {
+                "summary": "Set Anthropic key"
+              },
+              "delete": {
+                "summary": "Delete Anthropic key"
+              }
+            },
+            "/api/keys/ncbi": {
+              "get": {
+                "summary": "Get NCBI key status"
+              },
+              "put": {
+                "summary": "Set NCBI key"
+              },
+              "delete": {
+                "summary": "Delete NCBI key"
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Document Ingestion",
+        "description": "Upload PDF, DOCX, or URL to library",
+        "files": [
+          "backend/procedurewriter/main.py",
+          "backend/procedurewriter/pipeline/ingest.py"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "paths": {
+            "/api/ingest/pdf": {
+              "post": {
+                "summary": "Upload PDF to library",
+                "requestBody": {
+                  "content": {
+                    "multipart/form-data": {}
+                  }
+                }
+              }
+            },
+            "/api/ingest/docx": {
+              "post": {
+                "summary": "Upload DOCX to library",
+                "requestBody": {
+                  "content": {
+                    "multipart/form-data": {}
+                  }
+                }
+              }
+            },
+            "/api/ingest/url": {
+              "post": {
+                "summary": "Ingest URL to library",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Configuration",
+        "description": "Get/set author guide and source allowlist YAML configs",
+        "files": [
+          "backend/procedurewriter/main.py",
+          "backend/procedurewriter/config_store.py"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "paths": {
+            "/api/config/author_guide": {
+              "get": {
+                "summary": "Get author guide YAML"
+              },
+              "put": {
+                "summary": "Set author guide YAML"
+              }
+            },
+            "/api/config/source_allowlist": {
+              "get": {
+                "summary": "Get source allowlist YAML"
+              },
+              "put": {
+                "summary": "Set source allowlist YAML"
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Run Artifacts",
+        "description": "Get DOCX, manifest, evidence, bundle, sources for a run",
+        "files": [
+          "backend/procedurewriter/main.py"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "paths": {
+            "/api/runs/{run_id}/docx": {
+              "get": {
+                "summary": "Download procedure DOCX"
+              }
+            },
+            "/api/runs/{run_id}/manifest": {
+              "get": {
+                "summary": "Get run manifest"
+              }
+            },
+            "/api/runs/{run_id}/evidence": {
+              "get": {
+                "summary": "Get evidence report"
+              }
+            },
+            "/api/runs/{run_id}/bundle": {
+              "get": {
+                "summary": "Download ZIP bundle"
+              }
+            },
+            "/api/runs/{run_id}/sources": {
+              "get": {
+                "summary": "Get source list"
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Costs API",
+        "description": "Get aggregated cost summary",
+        "files": [
+          "backend/procedurewriter/main.py"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "paths": {
+            "/api/costs": {
+              "get": {
+                "summary": "Get cost summary",
+                "responses": {
+                  "200": {
+                    "description": "Aggregated costs",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "total_runs": {
+                              "type": "integer"
+                            },
+                            "total_cost_usd": {
+                              "type": "number"
+                            },
+                            "total_tokens": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}
