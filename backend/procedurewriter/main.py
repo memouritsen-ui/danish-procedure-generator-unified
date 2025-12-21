@@ -104,6 +104,11 @@ from procedurewriter.routers import keys as keys_router
 from procedurewriter.routers import runs as runs_router
 from procedurewriter.routers import styles as styles_router
 from procedurewriter.routers import templates as templates_router
+from procedurewriter.routers.keys import (
+    _effective_anthropic_api_key,
+    _effective_ncbi_api_key,
+    _effective_openai_api_key,
+)
 
 app.include_router(meta_analysis_router)
 app.include_router(config_router.router)

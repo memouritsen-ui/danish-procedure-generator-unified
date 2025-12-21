@@ -331,7 +331,7 @@ class TestRFC5987Encoding:
 
     def test_encode_filename_rfc5987_ascii(self) -> None:
         """ASCII filenames should be encoded correctly."""
-        from procedurewriter.main import _encode_filename_rfc5987
+        from procedurewriter.routers.runs import _encode_filename_rfc5987
 
         result = _encode_filename_rfc5987("test.docx")
 
@@ -339,7 +339,7 @@ class TestRFC5987Encoding:
 
     def test_encode_filename_rfc5987_danish_chars(self) -> None:
         """Danish characters should be percent-encoded."""
-        from procedurewriter.main import _encode_filename_rfc5987
+        from procedurewriter.routers.runs import _encode_filename_rfc5987
 
         result = _encode_filename_rfc5987("Blødning_æøå.docx")
 
@@ -351,7 +351,7 @@ class TestRFC5987Encoding:
 
     def test_make_content_disposition_dual_format(self) -> None:
         """Content-Disposition should have both ASCII and RFC 5987 formats."""
-        from procedurewriter.main import _make_content_disposition
+        from procedurewriter.routers.runs import _make_content_disposition
 
         result = _make_content_disposition("Blødning.docx")
 
@@ -364,7 +364,7 @@ class TestRFC5987Encoding:
 
     def test_make_content_disposition_preserves_extension(self) -> None:
         """File extension should be preserved."""
-        from procedurewriter.main import _make_content_disposition
+        from procedurewriter.routers.runs import _make_content_disposition
 
         result = _make_content_disposition("Procedure_æøå.docx")
 
@@ -421,7 +421,7 @@ class TestFalsePositivePrevention:
         """RFC 5987 encoded filenames should decode correctly."""
         from urllib.parse import unquote
 
-        from procedurewriter.main import _encode_filename_rfc5987
+        from procedurewriter.routers.runs import _encode_filename_rfc5987
 
         original = "Akut_blødning_procedure_æøå.docx"
         encoded = _encode_filename_rfc5987(original)

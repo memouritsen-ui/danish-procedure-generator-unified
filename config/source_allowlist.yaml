@@ -1,1 +1,3 @@
-updated: allowlist_content
+allowed_url_prefixes:
+  - https://new.example/
+seed_urls: []

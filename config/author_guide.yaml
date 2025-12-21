@@ -1,1 +1,5 @@
-updated: author_guide_content
+structure:
+  title_prefix: Updated
+  sections:
+    - heading: Test
+      format: bullets
