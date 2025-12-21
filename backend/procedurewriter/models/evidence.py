@@ -9,6 +9,7 @@ ClaimEvidenceLink: Links claims to evidence chunks with binding type and score.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Any
@@ -86,6 +87,26 @@ class EvidenceChunk(BaseModel):
         if self.start_char is not None and self.end_char is not None:
             return self.end_char - self.start_char
         return None
+
+    def to_db_row(self) -> tuple:
+        """Convert model to database row tuple.
+
+        Returns tuple matching evidence_chunks table column order:
+        (id, run_id, source_id, text, chunk_index, start_char, end_char,
+         embedding_vector_json, metadata_json, created_at_utc)
+        """
+        return (
+            str(self.id),
+            self.run_id,
+            self.source_id,
+            self.text,
+            self.chunk_index,
+            self.start_char,
+            self.end_char,
+            json.dumps(self.embedding_vector) if self.embedding_vector else None,
+            json.dumps(self.metadata),
+            self.created_at.isoformat(),
+        )
 
     model_config = {
         "json_schema_extra": {

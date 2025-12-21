@@ -202,6 +202,87 @@ class TestEvidenceChunk:
         assert chunk.embedding_vector == [0.5, 0.6]
 
 
+class TestEvidenceChunkDbConversion:
+    """Tests for database conversion methods on EvidenceChunk."""
+
+    def test_to_db_row_returns_correct_tuple(self):
+        """to_db_row() should return tuple matching DB column order."""
+        import json
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.evidence import EvidenceChunk
+
+        fixed_id = UUID("550e8400-e29b-41d4-a716-446655440000")
+        fixed_time = datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+
+        chunk = EvidenceChunk(
+            id=fixed_id,
+            run_id="test-run-123",
+            source_id="SRC0023",
+            text="Evidence text content here",
+            chunk_index=2,
+            start_char=100,
+            end_char=200,
+            embedding_vector=[0.1, 0.2, 0.3],
+            metadata={"section": "treatment", "page": 5},
+            created_at=fixed_time,
+        )
+
+        row = chunk.to_db_row()
+
+        # Verify tuple structure matches DB schema
+        assert isinstance(row, tuple)
+        assert len(row) == 10
+
+        # Verify each field
+        assert row[0] == "550e8400-e29b-41d4-a716-446655440000"  # id (str)
+        assert row[1] == "test-run-123"  # run_id
+        assert row[2] == "SRC0023"  # source_id
+        assert row[3] == "Evidence text content here"  # text
+        assert row[4] == 2  # chunk_index
+        assert row[5] == 100  # start_char
+        assert row[6] == 200  # end_char
+        assert row[7] == "[0.1, 0.2, 0.3]"  # embedding_vector_json
+        assert row[8] == '{"section": "treatment", "page": 5}'  # metadata_json
+        assert row[9] == "2024-12-21T12:00:00+00:00"  # created_at_utc
+
+    def test_to_db_row_with_null_optional_fields(self):
+        """to_db_row() should handle None values for optional fields."""
+        from procedurewriter.models.evidence import EvidenceChunk
+
+        chunk = EvidenceChunk(
+            run_id="test-run",
+            source_id="SRC0001",
+            text="Minimal chunk",
+            chunk_index=0,
+        )
+
+        row = chunk.to_db_row()
+
+        assert row[5] is None  # start_char
+        assert row[6] is None  # end_char
+        assert row[7] is None  # embedding_vector_json
+        assert row[8] == "{}"  # metadata_json (empty dict)
+
+    def test_to_db_row_id_is_string(self):
+        """to_db_row() should convert UUID id to string."""
+        from procedurewriter.models.evidence import EvidenceChunk
+
+        chunk = EvidenceChunk(
+            run_id="test-run",
+            source_id="SRC0001",
+            text="Test",
+            chunk_index=0,
+        )
+
+        row = chunk.to_db_row()
+
+        # First element should be string, not UUID
+        assert isinstance(row[0], str)
+        assert len(row[0]) == 36  # UUID string format
+
+
 class TestEvidenceChunkHelpers:
     """Tests for helper methods on EvidenceChunk."""
 
