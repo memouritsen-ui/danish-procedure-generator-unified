@@ -27,23 +27,25 @@ def test_pipeline_uses_style_agent_when_profile_exists() -> None:
 
     mock_llm = MagicMock()
     mock_llm.chat_completion.return_value = MagicMock(
-        content="Polished [SRC0001] text",
+        content="Polished [S:SRC0001] text",
         input_tokens=10,
         output_tokens=10,
         total_tokens=20,
     )
 
     result = _apply_style_profile(
-        raw_markdown="Original [SRC0001] text",
+        raw_markdown="Original [S:SRC0001] text",
         sources=[],
         procedure_name="Test",
         style_profile=make_test_profile(),
         llm=mock_llm,
         model="test",
+        outline=None,
+        strict_mode=False,
     )
 
     assert result is not None
-    assert "[SRC0001]" in result
+    assert "[S:SRC0001]" in result
 
 
 def test_pipeline_returns_original_when_no_profile() -> None:
@@ -57,6 +59,8 @@ def test_pipeline_returns_original_when_no_profile() -> None:
         style_profile=None,
         llm=None,
         model=None,
+        outline=None,
+        strict_mode=False,
     )
 
     assert result == "Original text"

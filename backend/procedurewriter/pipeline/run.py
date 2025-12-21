@@ -48,7 +48,7 @@ from procedurewriter.pipeline.writer import write_procedure_markdown
 from procedurewriter.settings import Settings
 
 # Style profile imports
-from procedurewriter.agents.style_agent import StyleAgent, StyleInput
+from procedurewriter.agents.style_agent import StyleAgent, StyleInput, StyleValidationError
 from procedurewriter.db import get_default_style_profile
 from procedurewriter.llm.providers import LLMProvider
 from procedurewriter.models.style_profile import StyleProfile
@@ -69,6 +69,8 @@ def _apply_style_profile(
     style_profile: StyleProfile | None,
     llm: LLMProvider | None,
     model: str | None,
+    outline: list[str] | None,
+    strict_mode: bool,
 ) -> str:
     """Apply style profile to markdown using StyleAgent.
 
@@ -86,19 +88,24 @@ def _apply_style_profile(
                 raw_markdown=raw_markdown,
                 sources=sources,
                 style_profile=style_profile,
+                outline=outline,
             ),
-            strict_mode=True,  # Enforce strict mode for canonical outline adherence
+            strict_mode=strict_mode,
         )
 
         if result.output.success:
             return result.output.polished_markdown
-        else:
-            # Log warning and return original
-            logger.warning("StyleAgent failed: %s", result.output.error)
-            return raw_markdown
+
+        # Non-strict mode: log and return original
+        logger.warning("StyleAgent failed: %s", result.output.error)
+        if strict_mode:
+            raise StyleValidationError(result.output.error or "StyleAgent failed in strict mode")
+        return raw_markdown
 
     except Exception as e:
         logger.warning("StyleAgent error: %s", e)
+        if strict_mode:
+            raise
         return raw_markdown
 
 
@@ -217,6 +224,22 @@ def run_pipeline(
         warnings: list[str] = []
         orchestrator_cost = 0.0
         post_manifest_artifacts: list[tuple[str, Path]] = []
+        availability_stats: dict[str, int] = {
+            "nice_candidates": 0,
+            "cochrane_candidates": 0,
+            "pubmed_candidates": 0,
+            "pubmed_review_candidates": 0,
+        }
+        seed_url_stats: dict[str, int] = {
+            "total_entries": 0,
+            "matched_entries": 0,
+            "filtered_out": 0,
+            "allowed_urls": 0,
+            "blocked_urls": 0,
+            "used_urls": 0,
+            "fetch_failed": 0,
+            "truncated": 0,
+        }
 
         for lib in library_sources:
             source_id = make_source_id(source_n)
@@ -301,6 +324,7 @@ def run_pipeline(
                 evidence_hierarchy=evidence_hierarchy,
                 procedure=procedure,
                 context=context,
+                stats=seed_url_stats,
             )
 
         if settings.dummy_mode:
@@ -349,6 +373,13 @@ def run_pipeline(
                 warnings=warnings,
                 evidence_hierarchy=evidence_hierarchy,
                 max_per_tier=5,
+                strict_mode=evidence_policy == "strict",
+                nice_api_key=settings.nice_api_key,
+                cochrane_api_key=settings.cochrane_api_key,
+                nice_api_base_url=settings.nice_api_base_url,
+                cochrane_api_base_url=settings.cochrane_api_base_url,
+                allow_html_fallback=settings.allow_html_fallback_international,
+                availability_stats=availability_stats,
             )
 
         # Search Danish guideline library FIRST (priority 1000 - highest)
@@ -504,6 +535,19 @@ def run_pipeline(
                 if len(candidates) >= 40:
                     break
 
+            def _is_pubmed_review(pub_types: list[str]) -> bool:
+                return any(
+                    str(pt).lower() in {"systematic review", "meta-analysis"}
+                    for pt in pub_types
+                    if pt
+                )
+
+            availability_stats["pubmed_candidates"] = len(candidates)
+            availability_stats["pubmed_review_candidates"] = sum(
+                1 for c in candidates
+                if _is_pubmed_review(c["fetched"].article.publication_types)
+            )
+
             candidates.sort(key=lambda c: (c["score"], c["relevance"], c["has_abstract"], c["year"]), reverse=True)
             selected = candidates[:12]
 
@@ -625,6 +669,8 @@ def run_pipeline(
             sources=sources,
             settings=settings,
             warnings=warnings,
+            availability=availability_stats,
+            seed_url_stats=seed_url_stats,
         )
         selection_report_path = run_dir / "source_selection.json"
         write_json(selection_report_path, selection_report)
@@ -635,6 +681,7 @@ def run_pipeline(
             settings=settings,
             warnings=warnings,
             evidence_policy=evidence_policy,
+            availability=availability_stats,
         )
 
         snippets = build_snippets(sources)
@@ -649,9 +696,94 @@ def run_pipeline(
             openai_api_key=openai_api_key,
         )
 
+        llm: LLMProvider | None = None
+        if settings.use_llm and not settings.dummy_mode:
+            llm = get_llm_client(
+                provider=settings.llm_provider,
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key,
+                ollama_base_url=ollama_base_url or settings.ollama_base_url,
+            )
+
         # Pre-compute quantitative evidence context BEFORE writing
         # This allows writers to incorporate meta-analysis findings into content generation
-        quantitative_evidence_context = _compute_quantitative_evidence_context(sources)
+        quantitative_candidates = _collect_quantitative_candidates(sources)
+        meta_summary_lines: list[str] = []
+        fallback_lines: list[str] = []
+
+        if llm and len(quantitative_candidates) >= 2:
+            emitter.emit(EventType.PROGRESS, {
+                "message": f"Running automated meta-analysis on {len(quantitative_candidates)} studies",
+                "stage": "meta_analysis",
+            })
+
+            try:
+                ma_pico = PICOQuery(
+                    population=context or "Patients",
+                    intervention=procedure,
+                    comparison="Standard Care",
+                    outcome="Primary Clinical Outcome",
+                )
+
+                ma_input = OrchestratorInput(
+                    query=ma_pico,
+                    study_sources=quantitative_candidates,
+                    outcome_of_interest="Primary Clinical Outcome",
+                    run_id=run_id,
+                )
+
+                ma_orchestrator = MetaAnalysisOrchestrator(
+                    llm=llm,
+                    emitter=emitter,
+                )
+
+                ma_result = ma_orchestrator.execute(ma_input)
+
+                ma_report_path = run_dir / "synthesis_report.json"
+                synthesis_dict = (
+                    ma_result.output.model_dump()
+                    if hasattr(ma_result.output, "model_dump")
+                    else ma_result.output.dict()
+                )
+                write_json(ma_report_path, synthesis_dict)
+
+                ma_docx_path = run_dir / "Procedure_MetaAnalysis.docx"
+                write_meta_analysis_docx(
+                    output=ma_result.output,
+                    output_path=ma_docx_path,
+                    run_id=run_id,
+                )
+
+                post_manifest_artifacts.append(("meta_analysis_docx", ma_docx_path))
+                post_manifest_artifacts.append(("synthesis_report", ma_report_path))
+
+                orchestrator_cost += ma_result.stats.cost_usd
+
+                meta_summary_lines = _format_meta_analysis_summary(
+                    synthesis=ma_result.output.synthesis,
+                    included_ids=ma_result.output.included_study_ids,
+                    fallback_ids=[c["study_id"] for c in quantitative_candidates],
+                )
+
+            except Exception as e:
+                logger.error("Meta-analysis failed: %s", e)
+                emitter.emit(EventType.ERROR, {"error": f"Meta-analysis failed: {str(e)}"})
+
+        if not meta_summary_lines and quantitative_candidates:
+            # Narrative fallback when meta-analysis fails or is skipped but we have quantitative sources
+            fallback_lines = _format_narrative_evidence_fallback(
+                candidates=quantitative_candidates,
+                sources=sources,
+            )
+
+        evidence_summary_lines = meta_summary_lines or fallback_lines
+        evidence_summary_text = "\n".join(evidence_summary_lines).strip() if evidence_summary_lines else None
+
+        quantitative_evidence_context = _compute_quantitative_evidence_context(
+            sources=sources,
+            candidates=quantitative_candidates,
+            summary_lines=evidence_summary_lines,
+        )
 
         # Use multi-agent orchestrator when LLM is enabled
         if settings.use_llm and not settings.dummy_mode:
@@ -667,13 +799,8 @@ def run_pipeline(
                 for s in sources
             ]
 
-            # Get LLM client
-            llm = get_llm_client(
-                provider=settings.llm_provider,
-                openai_api_key=openai_api_key,
-                anthropic_api_key=anthropic_api_key,
-                ollama_base_url=ollama_base_url or settings.ollama_base_url,
-            )
+            if llm is None:
+                raise RuntimeError("LLM client unavailable for orchestrator run.")
 
             # Create and run orchestrator with event emitter for SSE streaming
             # Lazy import to avoid circular dependency:
@@ -694,6 +821,7 @@ def run_pipeline(
                 quality_threshold=8,
                 outline=_author_guide_outline(author_guide) if isinstance(author_guide, dict) else None,
                 style_guide=_author_guide_style_text(author_guide) if isinstance(author_guide, dict) else None,
+                evidence_summary=evidence_summary_text,
             )
 
             pipeline_result = orchestrator.run(
@@ -751,122 +879,14 @@ def run_pipeline(
         if orchestrator_quality_score is None:
             validate_citations(md, valid_source_ids={s.source_id for s in sources})
 
-        # ---------------------------------------------------------------------
-        # AUTOMATED META-ANALYSIS (run BEFORE style polishing)
-        # This allows the meta-analysis content to be polished along with other text
-        # ---------------------------------------------------------------------
-        meta_summary_lines: list[str] = []
-        if settings.use_llm and not settings.dummy_mode:
-            # Collect quantitative studies from ALL source types
-            quantitative_candidates = []
-            for src in sources:
-                # Check if source has quantitative evidence indicators
-                level = str(src.extra.get("evidence_level", "")).lower()
-                is_quant_level = any(
-                    x in level
-                    for x in ["meta_analysis", "systematic_review", "rct", "randomized", "syst_review"]
-                )
-
-                pub_types = [str(t).lower() for t in src.extra.get("publication_types", [])]
-                is_quant_pub = any(
-                    kw in t
-                    for t in pub_types
-                    for kw in ["randomized", "meta-analysis", "systematic review", "clinical trial"]
-                )
-
-                # Also check kind for known high-evidence source types
-                # Note: Use "cochrane_review" to match the kind used in _enforce_source_requirements
-                is_high_evidence_kind = src.kind in {
-                    "pubmed", "cochrane_review", "nice_guideline", "systematic_review",
-                }
-
-                # Include if any quantitative indicator is positive
-                if is_quant_level or is_quant_pub or is_high_evidence_kind:
-                    if src.normalized_path and Path(src.normalized_path).exists():
-                        text = Path(src.normalized_path).read_text(encoding="utf-8")
-                        quantitative_candidates.append({
-                            "study_id": src.source_id,
-                            "title": src.title,
-                            "abstract": text[:3000],
-                            "source": src.kind,  # Use actual kind, not hardcoded "pubmed"
-                        })
-
-            if len(quantitative_candidates) >= 2:
-                emitter.emit(EventType.PROGRESS, {
-                    "message": f"Running automated meta-analysis on {len(quantitative_candidates)} studies",
-                    "stage": "meta_analysis",
-                })
-
-                try:
-                    ma_pico = PICOQuery(
-                        population=context or "Patients",
-                        intervention=procedure,
-                        comparison="Standard Care",
-                        outcome="Primary Clinical Outcome",
-                    )
-
-                    ma_input = OrchestratorInput(
-                        query=ma_pico,
-                        study_sources=quantitative_candidates,
-                        outcome_of_interest="Primary Clinical Outcome",
-                        run_id=run_id,
-                    )
-
-                    ma_orchestrator = MetaAnalysisOrchestrator(
-                        llm=llm,
-                        emitter=emitter,
-                    )
-
-                    ma_result = ma_orchestrator.execute(ma_input)
-
-                    ma_report_path = run_dir / "synthesis_report.json"
-                    synthesis_dict = ma_result.output.model_dump() if hasattr(ma_result.output, "model_dump") else ma_result.output.dict()
-                    write_json(ma_report_path, synthesis_dict)
-
-                    ma_docx_path = run_dir / "Procedure_MetaAnalysis.docx"
-                    write_meta_analysis_docx(
-                        output=ma_result.output,
-                        output_path=ma_docx_path,
-                        run_id=run_id,
-                    )
-
-                    post_manifest_artifacts.append(("meta_analysis_docx", ma_docx_path))
-                    post_manifest_artifacts.append(("synthesis_report", ma_report_path))
-
-                    orchestrator_cost += ma_result.stats.cost_usd
-
-                    meta_summary_lines = _format_meta_analysis_summary(
-                        synthesis=ma_result.output.synthesis,
-                        included_ids=ma_result.output.included_study_ids,
-                        fallback_ids=[c["study_id"] for c in quantitative_candidates],
-                    )
-
-                except Exception as e:
-                    logger.error("Meta-analysis failed: %s", e)
-                    emitter.emit(EventType.ERROR, {"error": f"Meta-analysis failed: {str(e)}"})
-
-        # Inject meta-analysis summary into markdown BEFORE style polishing
-        # Use strict_mode=True to ensure canonical outline is enforced
-        if meta_summary_lines:
+        # Inject evidence summary into markdown BEFORE style polishing
+        if evidence_summary_lines:
             md = _replace_section(
                 md,
                 heading="Evidens og Meta-analyse",
-                new_lines=meta_summary_lines,
-                strict_mode=True,  # Enforce canonical outline structure
+                new_lines=evidence_summary_lines,
+                strict_mode=True,
             )
-        elif quantitative_candidates:
-            # Narrative fallback when meta-analysis fails or is skipped but we have quantitative sources
-            fallback_lines = _format_narrative_evidence_fallback(
-                candidates=quantitative_candidates,
-                sources=sources,
-            )
-            if fallback_lines:
-                md = _replace_section(
-                    md,
-                    heading="Evidens og Meta-analyse",
-                    new_lines=fallback_lines,
-                    strict_mode=True,  # Enforce canonical outline structure
-                )
 
         # Apply style profile if available (LLM-powered markdown polishing)
         style_profile_data = get_default_style_profile(settings.db_path)
@@ -875,6 +895,8 @@ def run_pipeline(
             style_profile = StyleProfile.from_db_dict(style_profile_data)
 
         if style_profile and settings.use_llm and not settings.dummy_mode:
+            style_outline = _author_guide_outline(author_guide) if isinstance(author_guide, dict) else None
+            style_strict_mode = evidence_policy == "strict"
             try:
                 style_llm = get_llm_client(
                     provider=settings.llm_provider,
@@ -889,9 +911,13 @@ def run_pipeline(
                     style_profile=style_profile,
                     llm=style_llm,
                     model=settings.llm_model,
+                    outline=style_outline,
+                    strict_mode=style_strict_mode,
                 )
             except Exception as e:
                 logger.warning("Failed to apply style profile: %s", e)
+                if style_strict_mode:
+                    raise
                 polished_md = md
         else:
             polished_md = md
@@ -1194,7 +1220,11 @@ def _has_danish_guidelines(sources: list[SourceRecord]) -> bool:
     return any(src.kind == "danish_guideline" for src in sources)
 
 
-def _compute_tier_details(sources: list[SourceRecord], settings: Settings) -> dict[str, dict[str, Any]]:
+def _compute_tier_details(
+    sources: list[SourceRecord],
+    settings: Settings,
+    availability: dict[str, int] | None = None,
+) -> dict[str, dict[str, Any]]:
     """Compute tier details for source selection report.
 
     Returns a dict with tier names as keys, each containing:
@@ -1208,22 +1238,26 @@ def _compute_tier_details(sources: list[SourceRecord], settings: Settings) -> di
     # NICE sources
     nice_sources = [s for s in sources if s.kind == "nice_guideline"
                     or (s.extra.get("international_source_type") == "nice")]
+    nice_available = availability.get("nice_candidates") if availability else None
     tier_details["nice"] = {
         "count": len(nice_sources),
-        "required": True,
-        "when_available": False,
+        "required": (nice_available > 0) if isinstance(nice_available, int) else True,
+        "when_available": True,
         "sources": [s.source_id for s in nice_sources],
+        "available_candidates": nice_available,
     }
 
     # Cochrane sources
     cochrane_sources = [s for s in sources if s.kind == "cochrane_review"
                         or (s.extra.get("international_source_type") == "cochrane")
                         or "cochranelibrary.com" in (s.url or "")]
+    cochrane_available = availability.get("cochrane_candidates") if availability else None
     tier_details["cochrane"] = {
         "count": len(cochrane_sources),
-        "required": True,
-        "when_available": False,
+        "required": (cochrane_available > 0) if isinstance(cochrane_available, int) else True,
+        "when_available": True,
         "sources": [s.source_id for s in cochrane_sources],
+        "available_candidates": cochrane_available,
     }
 
     # PubMed meta-analyses/systematic reviews (required "when available")
@@ -1237,11 +1271,15 @@ def _compute_tier_details(sources: list[SourceRecord], settings: Settings) -> di
             if isinstance(pt, str)
         )
     ]
+    pubmed_review_available = availability.get("pubmed_review_candidates") if availability else None
+    pubmed_total_available = availability.get("pubmed_candidates") if availability else None
     tier_details["pubmed_reviews"] = {
         "count": len(pubmed_reviews),
-        "required": True,
+        "required": (pubmed_review_available > 0) if isinstance(pubmed_review_available, int) else True,
         "when_available": True,  # Soft requirement - only enforced when sources exist
         "sources": [s.source_id for s in pubmed_reviews],
+        "available_candidates": pubmed_review_available,
+        "total_pubmed_candidates": pubmed_total_available,
     }
 
     # Danish guidelines
@@ -1270,6 +1308,8 @@ def _build_source_selection_report(
     sources: list[SourceRecord],
     settings: Settings,
     warnings: list[str],
+    availability: dict[str, int] | None = None,
+    seed_url_stats: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     by_kind: dict[str, int] = {}
     by_evidence_level: dict[str, int] = {}
@@ -1287,7 +1327,7 @@ def _build_source_selection_report(
         missing.append("Danish guidelines")
 
     # Compute tier details
-    tier_details = _compute_tier_details(sources, settings)
+    tier_details = _compute_tier_details(sources, settings, availability)
 
     return {
         "version": 2,  # Bumped for tier_details addition
@@ -1300,6 +1340,8 @@ def _build_source_selection_report(
             "missing": missing,
         },
         "tier_details": tier_details,  # Per-tier breakdown with "when available" info
+        "availability": availability or {},
+        "seed_url_stats": seed_url_stats or {},
         "counts": {
             "total_sources": len(sources),
             "by_kind": by_kind,
@@ -1326,6 +1368,7 @@ def _enforce_source_requirements(
     sources: list[SourceRecord],
     settings: Settings,
     warnings: list[str],
+    availability: dict[str, int] | None = None,
     evidence_policy: str = "strict",
 ) -> None:
     """Enforce per-tier source requirements for gold-standard output.
@@ -1340,13 +1383,13 @@ def _enforce_source_requirements(
         return
 
     missing: list[str] = []
-    tier_details: dict[str, dict[str, Any]] = {}
 
     # Check NICE sources
     nice_sources = [s for s in sources if s.kind == "nice_guideline"
                     or (s.extra.get("international_source_type") == "nice")]
-    tier_details["nice"] = {"count": len(nice_sources), "required": True}
-    if not nice_sources:
+    nice_available = availability.get("nice_candidates") if availability else None
+    nice_required = (nice_available > 0) if isinstance(nice_available, int) else True
+    if nice_required and not nice_sources:
         msg = "No NICE guideline sources found."
         if msg not in warnings:
             warnings.append(msg)
@@ -1356,15 +1399,15 @@ def _enforce_source_requirements(
     cochrane_sources = [s for s in sources if s.kind == "cochrane_review"
                         or (s.extra.get("international_source_type") == "cochrane")
                         or "cochranelibrary.com" in (s.url or "")]
-    tier_details["cochrane"] = {"count": len(cochrane_sources), "required": True}
-    if not cochrane_sources:
+    cochrane_available = availability.get("cochrane_candidates") if availability else None
+    cochrane_required = (cochrane_available > 0) if isinstance(cochrane_available, int) else True
+    if cochrane_required and not cochrane_sources:
         msg = "No Cochrane systematic review sources found."
         if msg not in warnings:
             warnings.append(msg)
         missing.append("Cochrane reviews")
 
     # Check PubMed meta-analyses/systematic reviews ("when available" tier)
-    # Only require PubMed reviews if there are PubMed sources at all
     all_pubmed_sources = [s for s in sources if s.kind == "pubmed"]
     pubmed_reviews = [
         s for s in all_pubmed_sources
@@ -1375,16 +1418,11 @@ def _enforce_source_requirements(
             if isinstance(pt, str)
         )
     ]
-    # "when_available" means we only fail if there ARE PubMed sources but none are reviews
-    has_pubmed_sources = len(all_pubmed_sources) > 0
-    tier_details["pubmed_reviews"] = {
-        "count": len(pubmed_reviews),
-        "required": has_pubmed_sources,  # Only required when PubMed sources exist
-        "when_available": True,  # This tier is conditional
-        "total_pubmed": len(all_pubmed_sources),
-    }
-    if has_pubmed_sources and not pubmed_reviews:
-        # Only warn/fail if we have PubMed sources but none are meta-analyses
+    pubmed_review_available = availability.get("pubmed_review_candidates") if availability else None
+    pubmed_required = (
+        pubmed_review_available > 0 if isinstance(pubmed_review_available, int) else len(all_pubmed_sources) > 0
+    )
+    if pubmed_required and not pubmed_reviews:
         msg = "No PubMed systematic reviews or meta-analyses found among PubMed sources."
         if msg not in warnings:
             warnings.append(msg)
@@ -1392,11 +1430,17 @@ def _enforce_source_requirements(
 
     # Check for general international sources (legacy check)
     if settings.require_international_sources and not _has_international_sources(sources):
-        if "international (NICE/Cochrane)" not in missing:
-            msg = "No international sources found (NICE/Cochrane)."
-            if msg not in warnings:
-                warnings.append(msg)
-            missing.append("international (NICE/Cochrane)")
+        available_international = None
+        if availability:
+            available_international = (availability.get("nice_candidates", 0) > 0) or (
+                availability.get("cochrane_candidates", 0) > 0
+            )
+        if available_international is None or available_international:
+            if "international (NICE/Cochrane)" not in missing:
+                msg = "No international sources found (NICE/Cochrane)."
+                if msg not in warnings:
+                    warnings.append(msg)
+                missing.append("international (NICE/Cochrane)")
 
     # Check Danish guidelines
     if settings.require_danish_guidelines and not _has_danish_guidelines(sources):
@@ -1404,10 +1448,6 @@ def _enforce_source_requirements(
         if msg not in warnings:
             warnings.append(msg)
         missing.append("Danish guidelines")
-    tier_details["danish"] = {
-        "count": len([s for s in sources if s.kind == "danish_guideline"]),
-        "required": settings.require_danish_guidelines,
-    }
 
     # Only fail in strict mode
     if missing and evidence_policy == "strict":
@@ -1530,11 +1570,15 @@ def _append_seed_url_sources(
     evidence_hierarchy: EvidenceHierarchy,
     procedure: str,
     context: str | None,
+    stats: dict[str, int] | None = None,
 ) -> int:
     prefixes = _allowlist_prefixes(allowlist)
     all_entries = _seed_urls(allowlist)
     if not all_entries:
         return source_n
+
+    if stats is not None:
+        stats["total_entries"] += len(all_entries)
 
     # Filter entries by procedure_keywords matching
     matching_entries = [
@@ -1547,6 +1591,9 @@ def _append_seed_url_sources(
         warnings.append(
             f"seed_urls: {filtered_count} URL(s) filtered out (keywords not matching procedure)"
         )
+    if stats is not None:
+        stats["matched_entries"] += len(matching_entries)
+        stats["filtered_out"] += filtered_count
 
     if not matching_entries:
         return source_n
@@ -1557,11 +1604,17 @@ def _append_seed_url_sources(
     for url in urls[:max_per_run]:
         if not _is_allowed_url(url, prefixes=prefixes):
             warnings.append(f"Seed URL not allowed by allowlist: {url}")
+            if stats is not None:
+                stats["blocked_urls"] += 1
             continue
+        if stats is not None:
+            stats["allowed_urls"] += 1
         try:
             resp = http.get(url)
         except Exception as e:  # noqa: BLE001
             warnings.append(f"Seed URL fetch failed for {url}: {e}")
+            if stats is not None:
+                stats["fetch_failed"] += 1
             continue
 
         source_id = make_source_id(source_n)
@@ -1608,9 +1661,13 @@ def _append_seed_url_sources(
                 },
             )
         )
+        if stats is not None:
+            stats["used_urls"] += 1
 
     if len(urls) > max_per_run:
         warnings.append(f"seed_urls truncated: using first {max_per_run} of {len(urls)}")
+        if stats is not None:
+            stats["truncated"] += len(urls) - max_per_run
     return source_n
 
 
@@ -1624,9 +1681,27 @@ def _append_international_sources(
     warnings: list[str],
     evidence_hierarchy: EvidenceHierarchy,
     max_per_tier: int = 5,
+    strict_mode: bool = False,
+    nice_api_key: str | None = None,
+    cochrane_api_key: str | None = None,
+    nice_api_base_url: str | None = None,
+    cochrane_api_base_url: str | None = None,
+    allow_html_fallback: bool = False,
+    availability_stats: dict[str, int] | None = None,
 ) -> int:
-    aggregator = InternationalSourceAggregator(http_client=http)
-    results = aggregator.search_all(query, max_per_tier=max_per_tier)
+    aggregator = InternationalSourceAggregator(
+        http_client=http,
+        strict_mode=strict_mode,
+        nice_api_key=nice_api_key,
+        cochrane_api_key=cochrane_api_key,
+        nice_api_base_url=nice_api_base_url,
+        cochrane_api_base_url=cochrane_api_base_url,
+        allow_html_fallback=allow_html_fallback,
+    )
+    results, stats = aggregator.search_all_with_stats(query, max_per_tier=max_per_tier)
+    if availability_stats is not None:
+        availability_stats["nice_candidates"] += stats.get("nice_candidates", 0)
+        availability_stats["cochrane_candidates"] += stats.get("cochrane_candidates", 0)
     if not results:
         warnings.append("No international sources found (NICE/Cochrane).")
         return source_n
@@ -1814,8 +1889,11 @@ def _format_narrative_evidence_fallback(
     cite = " ".join(f"[S:{sid}]" for sid in cite_ids) if cite_ids else ""
 
     # Count study types
-    sr_count = sum(1 for c in candidates if "systematic" in c.get("text", "").lower())
-    rct_count = sum(1 for c in candidates if "randomized" in c.get("text", "").lower() or "rct" in c.get("text", "").lower())
+    sr_count = sum(1 for c in candidates if "systematic" in c.get("abstract", "").lower())
+    rct_count = sum(
+        1 for c in candidates
+        if "randomized" in c.get("abstract", "").lower() or "rct" in c.get("abstract", "").lower()
+    )
     other_count = len(candidates) - sr_count - rct_count
 
     if len(candidates) == 1:
@@ -2048,22 +2126,9 @@ def _build_pubmed_queries(*, expanded_terms: list[str]) -> list[str]:
     return out
 
 
-def _compute_quantitative_evidence_context(sources: list[SourceRecord]) -> str | None:
-    """Pre-compute quantitative evidence context BEFORE writing.
-
-    This provides key findings from systematic reviews, meta-analyses, and RCTs
-    to the writer so it can incorporate evidence-based recommendations into
-    the procedure content generation (not just inject after).
-
-    Args:
-        sources: All source records
-
-    Returns:
-        A brief evidence summary string for use in writer prompts, or None if
-        no quantitative sources are available.
-    """
-    quantitative_sources: list[str] = []
-
+def _collect_quantitative_candidates(sources: list[SourceRecord]) -> list[dict[str, Any]]:
+    """Collect quantitative candidates for meta-analysis and evidence context."""
+    candidates: list[dict[str, Any]] = []
     for src in sources:
         # Check if source has quantitative evidence indicators
         level = str(src.extra.get("evidence_level", "")).lower()
@@ -2081,30 +2146,61 @@ def _compute_quantitative_evidence_context(sources: list[SourceRecord]) -> str |
 
         # Also check kind for known high-evidence source types
         is_high_evidence_kind = src.kind in {
-            "cochrane_review", "nice_guideline", "systematic_review",
+            "pubmed", "cochrane_review", "nice_guideline", "systematic_review",
         }
 
-        # Collect quantitative evidence descriptions
+        # Include if any quantitative indicator is positive
         if is_quant_level or is_quant_pub or is_high_evidence_kind:
-            source_desc = f"- [{src.source_id}] {src.title}"
-            if src.kind in {"cochrane_review", "systematic_review"}:
-                source_desc += " (Systematic Review/Meta-analysis)"
-            elif "meta-analysis" in " ".join(pub_types):
-                source_desc += " (Meta-analysis)"
-            elif is_high_evidence_kind:
-                source_desc += f" ({src.kind})"
-            quantitative_sources.append(source_desc)
+            if src.normalized_path and Path(src.normalized_path).exists():
+                text = Path(src.normalized_path).read_text(encoding="utf-8")
+                candidates.append({
+                    "study_id": src.source_id,
+                    "title": src.title,
+                    "abstract": text[:3000],
+                    "source": src.kind,
+                })
 
-    if not quantitative_sources:
+    return candidates
+
+
+def _compute_quantitative_evidence_context(
+    *,
+    sources: list[SourceRecord],
+    candidates: list[dict[str, Any]] | None = None,
+    summary_lines: list[str] | None = None,
+) -> str | None:
+    """Pre-compute quantitative evidence context BEFORE writing.
+
+    This provides key findings from systematic reviews, meta-analyses, and RCTs
+    to the writer so it can incorporate evidence-based recommendations into
+    the procedure content generation (not just inject after).
+    """
+    quantitative_sources: list[str] = []
+    candidates = candidates or _collect_quantitative_candidates(sources)
+
+    for c in candidates:
+        title = c.get("title") or "Ukendt titel"
+        source_id = c.get("study_id")
+        source_desc = f"- [{source_id}] {title}" if source_id else f"- {title}"
+        quantitative_sources.append(source_desc)
+
+    if not quantitative_sources and not summary_lines:
         return None
 
-    context = (
-        "KVANTITATIV EVIDENS TILGÆNGELIG:\n"
-        "Følgende kilder indeholder systematiske reviews, meta-analyser eller RCT'er. "
-        "Inkludér deres konklusioner i relevante sektioner, særligt 'Evidens og Meta-analyse':\n"
-        + "\n".join(quantitative_sources[:10])  # Limit to top 10
-    )
-    return context
+    summary_text = ""
+    if summary_lines:
+        summary_text = "EVIDENS-SAMMENFATNING:\n" + "\n".join(summary_lines)
+
+    sources_text = ""
+    if quantitative_sources:
+        sources_text = (
+            "KVANTITATIV EVIDENS TILGÆNGELIG:\n"
+            "Følgende kilder indeholder systematiske reviews, meta-analyser eller RCT'er. "
+            "Inkludér deres konklusioner i relevante sektioner, særligt 'Evidens og Meta-analyse':\n"
+            + "\n".join(quantitative_sources[:10])
+        )
+
+    return "\n\n".join([s for s in [summary_text, sources_text] if s])
 
 
 _relevance_token_re = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+", re.UNICODE)

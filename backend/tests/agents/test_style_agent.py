@@ -121,3 +121,27 @@ def test_style_agent_applies_tone() -> None:
     messages = call_args.kwargs.get("messages", call_args.args[0] if call_args.args else [])
     prompt_content = str(messages)
     assert "VERY_SPECIFIC_TONE" in prompt_content
+
+
+def test_style_agent_strict_rejects_outline_order_change() -> None:
+    """Strict mode should fail if heading order deviates from outline."""
+    mock_llm = MagicMock()
+    mock_llm.chat_completion.return_value = LLMResponse(
+        content="## B\nTekst [S:SRC0001]\n## A\nTekst [S:SRC0001]\n",
+        input_tokens=100,
+        output_tokens=50,
+        total_tokens=150,
+        model="test",
+    )
+
+    agent = StyleAgent(llm=mock_llm, model="test")
+    input_data = StyleInput(
+        procedure_title="Test",
+        raw_markdown="## A\nTekst [S:SRC0001]\n## B\nTekst [S:SRC0001]\n",
+        sources=[],
+        style_profile=make_test_profile(),
+        outline=["A", "B"],
+    )
+
+    with pytest.raises(StyleValidationError):
+        agent.execute(input_data, strict_mode=True)

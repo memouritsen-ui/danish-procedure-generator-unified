@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 from dataclasses import dataclass
+from typing import Any
 
 
 # Test 1: InternationalSource dataclass exists and has required fields
@@ -296,6 +297,37 @@ class TestNICEClientHTTPIntegration:
         assert all(r.url is not None for r in results)
         assert all(r.title is not None for r in results)
 
+    def test_nice_client_api_uses_key_and_parses_json(self):
+        """NICE API client should send subscription key and parse JSON."""
+        from procedurewriter.pipeline.international_sources import NICEClient
+
+        payload = b'{"documents": [{"title": "NICE API Result", "url": "https://www.nice.org.uk/guidance/ng1"}]}'
+        http = DummyHttpClient(DummyResponse(status_code=200, content=payload))
+        client = NICEClient(
+            http_client=http,
+            api_key="test-key",
+            api_base_url="https://api.nice.org.uk",
+            strict_mode=True,
+            allow_html_fallback=False,
+        )
+
+        results = client.search("anaphylaxis", max_results=1)
+
+        assert http.last_headers is not None
+        assert http.last_headers.get("Ocp-Apim-Subscription-Key") == "test-key"
+        assert len(results) == 1
+        assert results[0].title == "NICE API Result"
+
+    def test_nice_client_strict_requires_api_key(self):
+        """Strict mode should require NICE API key."""
+        from procedurewriter.pipeline.international_sources import InternationalSourceError, NICEClient
+
+        http = DummyHttpClient(DummyResponse(status_code=200, content=b"{}"))
+        client = NICEClient(http_client=http, api_key=None, strict_mode=True)
+
+        with pytest.raises(InternationalSourceError):
+            client.search("anaphylaxis", max_results=1)
+
 
 # Test 7: Cochrane HTTP Integration
 class TestCochraneClientHTTPIntegration:
@@ -360,3 +392,59 @@ class TestCochraneClientHTTPIntegration:
         results = client._parse_search_response(self.SAMPLE_COCHRANE_SEARCH_JSON)
 
         assert "serious allergic reaction" in results[0].abstract
+
+    def test_cochrane_client_api_uses_key_and_parses_json(self):
+        """Cochrane API client should send API key and parse JSON."""
+        from procedurewriter.pipeline.international_sources import CochraneClient
+
+        payload = b'{"items": [{"title": "Cochrane API Result", "doi": "10.1002/14651858.CD000000", "publicationYear": 2021}]}'
+        http = DummyHttpClient(DummyResponse(status_code=200, content=payload))
+        client = CochraneClient(
+            http_client=http,
+            api_key="test-key",
+            api_base_url="https://api.onlinelibrary.wiley.com",
+            strict_mode=True,
+            allow_html_fallback=False,
+        )
+
+        results = client.search("anaphylaxis", max_results=1)
+
+        assert http.last_headers is not None
+        assert http.last_headers.get("X-API-KEY") == "test-key"
+        assert len(results) == 1
+        assert results[0].title == "Cochrane API Result"
+
+    def test_cochrane_client_strict_requires_api_key(self):
+        """Strict mode should require Cochrane API key."""
+        from procedurewriter.pipeline.international_sources import InternationalSourceError, CochraneClient
+
+        http = DummyHttpClient(DummyResponse(status_code=200, content=b"{}"))
+        client = CochraneClient(http_client=http, api_key=None, strict_mode=True)
+
+        with pytest.raises(InternationalSourceError):
+            client.search("anaphylaxis", max_results=1)
+# Test helpers for API clients
+@dataclass
+class DummyResponse:
+    status_code: int
+    content: bytes
+
+
+class DummyHttpClient:
+    def __init__(self, response: DummyResponse):
+        self.response = response
+        self.last_url: str | None = None
+        self.last_params: dict[str, Any] | None = None
+        self.last_headers: dict[str, str] | None = None
+
+    def get(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> DummyResponse:
+        self.last_url = url
+        self.last_params = params
+        self.last_headers = headers
+        return self.response

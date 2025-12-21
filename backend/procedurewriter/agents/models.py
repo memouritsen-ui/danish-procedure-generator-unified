@@ -149,6 +149,7 @@ class PipelineInput(BaseModel):
     quality_threshold: int = Field(default=8, ge=1, le=10)
     outline: list[str] | None = Field(default=None, description="Section outline to enforce")
     style_guide: str | None = Field(default=None, description="Style guide text for writers/editors")
+    evidence_summary: str | None = Field(default=None, description="Evidence synthesis to include in prompts")
 
 
 class PipelineOutput(BaseModel):

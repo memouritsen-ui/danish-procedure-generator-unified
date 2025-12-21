@@ -45,13 +45,35 @@ def _make_source(
 def test_build_source_selection_report_counts_and_requirements() -> None:
     settings = Settings(require_international_sources=True, require_danish_guidelines=True, dummy_mode=False)
     warnings = ["seed warning"]
+    availability = {
+        "nice_candidates": 1,
+        "cochrane_candidates": 0,
+        "pubmed_candidates": 1,
+        "pubmed_review_candidates": 1,
+    }
+    seed_url_stats = {
+        "total_entries": 2,
+        "matched_entries": 1,
+        "filtered_out": 1,
+        "allowed_urls": 1,
+        "blocked_urls": 0,
+        "used_urls": 1,
+        "fetch_failed": 0,
+        "truncated": 0,
+    }
     sources = [
         _make_source("SRC0001", "danish_guideline", evidence_level="guideline", evidence_priority=1000),
         _make_source("SRC0002", "nice_guideline", evidence_level="guideline", evidence_priority=900),
         _make_source("SRC0003", "pubmed", evidence_level="meta_analysis", evidence_priority=800),
     ]
 
-    report = _build_source_selection_report(sources=sources, settings=settings, warnings=warnings)
+    report = _build_source_selection_report(
+        sources=sources,
+        settings=settings,
+        warnings=warnings,
+        availability=availability,
+        seed_url_stats=seed_url_stats,
+    )
 
     assert report["counts"]["total_sources"] == 3
     assert report["counts"]["by_kind"]["danish_guideline"] == 1
@@ -61,15 +83,28 @@ def test_build_source_selection_report_counts_and_requirements() -> None:
     assert report["requirements"]["has_danish_guidelines"] is True
     assert report["requirements"]["missing"] == []
     assert report["warnings"] == warnings
+    assert report["availability"] == availability
+    assert report["seed_url_stats"] == seed_url_stats
 
 
 def test_enforce_source_requirements_missing_international_raises() -> None:
     settings = Settings(require_international_sources=True, require_danish_guidelines=False, dummy_mode=False)
     warnings: list[str] = []
     sources = [_make_source("SRC0001", "danish_guideline")]
+    availability = {
+        "nice_candidates": 1,
+        "cochrane_candidates": 1,
+        "pubmed_candidates": 0,
+        "pubmed_review_candidates": 0,
+    }
 
     with pytest.raises(EvidencePolicyError):
-        _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings)
+        _enforce_source_requirements(
+            sources=sources,
+            settings=settings,
+            warnings=warnings,
+            availability=availability,
+        )
 
     assert "No international sources found (NICE/Cochrane)." in warnings
 
@@ -78,9 +113,20 @@ def test_enforce_source_requirements_missing_danish_raises() -> None:
     settings = Settings(require_international_sources=False, require_danish_guidelines=True, dummy_mode=False)
     warnings: list[str] = []
     sources = [_make_source("SRC0001", "nice_guideline")]
+    availability = {
+        "nice_candidates": 1,
+        "cochrane_candidates": 0,
+        "pubmed_candidates": 0,
+        "pubmed_review_candidates": 0,
+    }
 
     with pytest.raises(EvidencePolicyError):
-        _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings)
+        _enforce_source_requirements(
+            sources=sources,
+            settings=settings,
+            warnings=warnings,
+            availability=availability,
+        )
 
     assert "No Danish guideline sources found in local library." in warnings
 
@@ -89,6 +135,12 @@ def test_enforce_source_requirements_allows_when_present() -> None:
     """Test that no error is raised when all required source tiers are present."""
     settings = Settings(require_international_sources=True, require_danish_guidelines=True, dummy_mode=False)
     warnings: list[str] = []
+    availability = {
+        "nice_candidates": 1,
+        "cochrane_candidates": 1,
+        "pubmed_candidates": 1,
+        "pubmed_review_candidates": 1,
+    }
     # Include all required source types: Danish, NICE, Cochrane, PubMed meta-analysis
     sources = [
         _make_source("SRC0001", "danish_guideline"),
@@ -104,20 +156,37 @@ def test_enforce_source_requirements_allows_when_present() -> None:
     # Add publication_types to PubMed source for meta-analysis detection
     sources[3].extra["publication_types"] = ["Systematic Review"]
 
-    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings)
+    _enforce_source_requirements(
+        sources=sources,
+        settings=settings,
+        warnings=warnings,
+        availability=availability,
+    )
 
 
 def test_enforce_source_requirements_warns_missing_tier_in_warn_mode() -> None:
     """Test that warn mode adds warnings but doesn't raise errors."""
     settings = Settings(require_international_sources=True, require_danish_guidelines=True, dummy_mode=False)
     warnings: list[str] = []
+    availability = {
+        "nice_candidates": 1,
+        "cochrane_candidates": 1,
+        "pubmed_candidates": 0,
+        "pubmed_review_candidates": 0,
+    }
     sources = [
         _make_source("SRC0001", "danish_guideline"),
         _make_source("SRC0002", "cochrane_review"),
     ]
 
     # Should not raise in warn mode, just add warnings
-    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="warn")
+    _enforce_source_requirements(
+        sources=sources,
+        settings=settings,
+        warnings=warnings,
+        availability=availability,
+        evidence_policy="warn",
+    )
 
 
 def test_enforce_source_requirements_skips_in_dummy_mode() -> None:
@@ -142,11 +211,35 @@ def test_evidence_policy_is_defined_early_regression() -> None:
         _make_source("SRC0002", "nice_guideline"),
         _make_source("SRC0003", "cochrane_review"),
     ]
+    availability = {
+        "nice_candidates": 1,
+        "cochrane_candidates": 1,
+        "pubmed_candidates": 0,
+        "pubmed_review_candidates": 0,
+    }
 
     # Should not crash with any of these evidence_policy values
-    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="strict")
-    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="warn")
-    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="off")
+    _enforce_source_requirements(
+        sources=sources,
+        settings=settings,
+        warnings=warnings,
+        availability=availability,
+        evidence_policy="strict",
+    )
+    _enforce_source_requirements(
+        sources=sources,
+        settings=settings,
+        warnings=warnings,
+        availability=availability,
+        evidence_policy="warn",
+    )
+    _enforce_source_requirements(
+        sources=sources,
+        settings=settings,
+        warnings=warnings,
+        availability=availability,
+        evidence_policy="off",
+    )
 
 
 def test_pubmed_meta_analysis_when_available_no_pubmed_sources() -> None:
@@ -157,6 +250,12 @@ def test_pubmed_meta_analysis_when_available_no_pubmed_sources() -> None:
     """
     settings = Settings(require_international_sources=True, require_danish_guidelines=True, dummy_mode=False)
     warnings: list[str] = []
+    availability = {
+        "nice_candidates": 1,
+        "cochrane_candidates": 1,
+        "pubmed_candidates": 0,
+        "pubmed_review_candidates": 0,
+    }
     # Sources with NICE, Cochrane, and Danish - but NO PubMed sources at all
     sources = [
         _make_source("SRC0001", "danish_guideline"),
@@ -166,7 +265,13 @@ def test_pubmed_meta_analysis_when_available_no_pubmed_sources() -> None:
 
     # Should NOT raise even though there are no PubMed meta-analyses,
     # because there are no PubMed sources at all ("when available" logic)
-    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="strict")
+    _enforce_source_requirements(
+        sources=sources,
+        settings=settings,
+        warnings=warnings,
+        availability=availability,
+        evidence_policy="strict",
+    )
 
     # Verify no PubMed-related warning was added
     assert not any("PubMed" in w for w in warnings)
@@ -176,6 +281,12 @@ def test_pubmed_meta_analysis_when_available_with_pubmed_but_no_reviews() -> Non
     """Test that PubMed meta-analysis tier fails when there ARE PubMed sources but none are reviews."""
     settings = Settings(require_international_sources=True, require_danish_guidelines=True, dummy_mode=False)
     warnings: list[str] = []
+    availability = {
+        "nice_candidates": 1,
+        "cochrane_candidates": 1,
+        "pubmed_candidates": 2,
+        "pubmed_review_candidates": 1,
+    }
     # Sources with PubMed but no meta-analyses/systematic reviews
     sources = [
         _make_source("SRC0001", "danish_guideline"),
@@ -186,7 +297,13 @@ def test_pubmed_meta_analysis_when_available_with_pubmed_but_no_reviews() -> Non
 
     # Should raise because there ARE PubMed sources but none are meta-analyses
     with pytest.raises(EvidencePolicyError):
-        _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="strict")
+        _enforce_source_requirements(
+            sources=sources,
+            settings=settings,
+            warnings=warnings,
+            availability=availability,
+            evidence_policy="strict",
+        )
 
     # Verify PubMed-related warning was added
     assert any("PubMed" in w for w in warnings)

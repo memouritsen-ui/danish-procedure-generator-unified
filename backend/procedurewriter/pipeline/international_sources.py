@@ -61,7 +61,13 @@ class InternationalSource:
 class HttpClientProtocol(Protocol):
     """Protocol for HTTP clients (allows dependency injection for testing)."""
 
-    def get(self, url: str, *, params: dict[str, Any] | None = None) -> Any:
+    def get(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
         """Perform HTTP GET request."""
         ...
 
@@ -75,16 +81,22 @@ class NICEClient:
     """
 
     BASE_URL = "https://www.nice.org.uk"
+    API_BASE_URL = "https://api.nice.org.uk"
+    API_KEY_HEADER = "Ocp-Apim-Subscription-Key"
 
     def __init__(
         self,
         http_client: HttpClientProtocol | None = None,
         api_key: str | None = None,
+        api_base_url: str | None = None,
         strict_mode: bool = False,
+        allow_html_fallback: bool = False,
     ) -> None:
         self._http_client = http_client
         self._api_key = api_key or os.environ.get("NICE_API_KEY")
+        self._api_base_url = api_base_url or self.API_BASE_URL
         self._strict_mode = strict_mode
+        self._allow_html_fallback = allow_html_fallback
 
     def search(self, query: str, max_results: int = 10) -> list[InternationalSource]:
         """Search NICE guidelines for a query.
@@ -111,16 +123,26 @@ class NICEClient:
                 )
             return []
 
+        if self._strict_mode and not self._api_key:
+            raise InternationalSourceError(
+                "NICE API key required in strict mode. "
+                "Set NICE_API_KEY or configure PROCEDUREWRITER_NICE_API_KEY."
+            )
+
         # Try API first if key is available
         if self._api_key:
-            try:
-                results = self._search_via_api(query, max_results)
-                if results:
-                    return results
-            except Exception:
-                pass  # Fall back to HTML scraping
+            results = self._search_via_api(query, max_results)
+            if results:
+                return results
+            if self._strict_mode:
+                raise InternationalSourceError(
+                    f"NICE API search returned no results for query '{query}' in strict mode."
+                )
 
-        # Fall back to HTML scraping
+        # Fall back to HTML scraping only if explicitly allowed and not strict
+        if not self._allow_html_fallback or self._strict_mode:
+            return []
+
         url = self._build_search_url(query)
         try:
             response = self._http_client.get(url)
@@ -146,20 +168,27 @@ class NICEClient:
         if not self._http_client or not self._api_key:
             return []
 
-        api_url = f"{self.BASE_URL}/api/search"
+        api_url = f"{self._api_base_url}/search"
         try:
             # NICE Content-API requires subscription key header
             response = self._http_client.get(
                 api_url,
                 params={"q": query, "ps": str(max_results)},
+                headers={self.API_KEY_HEADER: self._api_key},
             )
             # Check if response has headers method for API key auth
             if hasattr(response, "status_code") and response.status_code != 200:
+                if self._strict_mode:
+                    raise InternationalSourceError(
+                        f"NICE API returned {response.status_code} for query '{query}'."
+                    )
                 return []
 
             try:
                 data = json.loads(response.content.decode("utf-8", errors="replace"))
             except json.JSONDecodeError:
+                if self._strict_mode:
+                    raise InternationalSourceError("NICE API returned invalid JSON.")
                 return []
 
             results: list[InternationalSource] = []
@@ -182,7 +211,11 @@ class NICEClient:
                             )
                         )
             return results[:max_results]
-        except Exception:
+        except InternationalSourceError:
+            raise
+        except Exception as e:
+            if self._strict_mode:
+                raise InternationalSourceError(f"NICE API search failed: {e}") from e
             return []
 
     def _build_search_url(self, query: str) -> str:
@@ -284,16 +317,22 @@ class CochraneClient:
 
     BASE_URL = "https://www.cochranelibrary.com"
     DOI_BASE = "https://doi.org/"
+    API_BASE_URL = "https://api.onlinelibrary.wiley.com"
+    API_KEY_HEADER = "X-API-KEY"
 
     def __init__(
         self,
         http_client: HttpClientProtocol | None = None,
         api_key: str | None = None,
+        api_base_url: str | None = None,
         strict_mode: bool = False,
+        allow_html_fallback: bool = False,
     ) -> None:
         self._http_client = http_client
         self._api_key = api_key or os.environ.get("COCHRANE_API_KEY")
+        self._api_base_url = api_base_url or self.API_BASE_URL
         self._strict_mode = strict_mode
+        self._allow_html_fallback = allow_html_fallback
 
     def search(self, query: str, max_results: int = 10) -> list[InternationalSource]:
         """Search Cochrane Library for a query.
@@ -320,16 +359,26 @@ class CochraneClient:
                 )
             return []
 
+        if self._strict_mode and not self._api_key:
+            raise InternationalSourceError(
+                "Cochrane API key required in strict mode. "
+                "Set COCHRANE_API_KEY or configure PROCEDUREWRITER_COCHRANE_API_KEY."
+            )
+
         # Try API first if key is available
         if self._api_key:
-            try:
-                results = self._search_via_api(query, max_results)
-                if results:
-                    return results
-            except Exception:
-                pass  # Fall back to HTML scraping
+            results = self._search_via_api(query, max_results)
+            if results:
+                return results
+            if self._strict_mode:
+                raise InternationalSourceError(
+                    f"Cochrane API search returned no results for query '{query}' in strict mode."
+                )
 
-        # Fall back to HTML scraping
+        # Fall back to HTML scraping only if explicitly allowed and not strict
+        if not self._allow_html_fallback or self._strict_mode:
+            return []
+
         url = self._build_search_url(query)
         try:
             response = self._http_client.get(url)
@@ -356,23 +405,30 @@ class CochraneClient:
             return []
 
         # Wiley Content-API endpoint for Cochrane
-        api_url = "https://onlinelibrary.wiley.com/action/doSearch"
+        api_url = f"{self._api_base_url}/public/metadata/v1/metadata"
         try:
             response = self._http_client.get(
                 api_url,
                 params={
-                    "AllField": query,
-                    "SeriesKey": "14651858",  # Cochrane Database of Systematic Reviews
-                    "sortBy": "relevancy",
+                    "query": query,
                     "pageSize": str(max_results),
+                    "contentType": "reference",
+                    "product": "CDSR",
                 },
+                headers={self.API_KEY_HEADER: self._api_key},
             )
             if hasattr(response, "status_code") and response.status_code != 200:
+                if self._strict_mode:
+                    raise InternationalSourceError(
+                        f"Cochrane API returned {response.status_code} for query '{query}'."
+                    )
                 return []
 
             try:
                 data = json.loads(response.content.decode("utf-8", errors="replace"))
             except json.JSONDecodeError:
+                if self._strict_mode:
+                    raise InternationalSourceError("Cochrane API returned invalid JSON.")
                 return []
 
             results: list[InternationalSource] = []
@@ -397,7 +453,11 @@ class CochraneClient:
                             )
                         )
             return results[:max_results]
-        except Exception:
+        except InternationalSourceError:
+            raise
+        except Exception as e:
+            if self._strict_mode:
+                raise InternationalSourceError(f"Cochrane API search failed: {e}") from e
             return []
 
     def _build_search_url(self, query: str) -> str:
@@ -518,16 +578,23 @@ class InternationalSourceAggregator:
         strict_mode: bool = False,
         nice_api_key: str | None = None,
         cochrane_api_key: str | None = None,
+        nice_api_base_url: str | None = None,
+        cochrane_api_base_url: str | None = None,
+        allow_html_fallback: bool = False,
     ) -> None:
         self._nice_client = NICEClient(
             http_client=http_client,
             api_key=nice_api_key,
+            api_base_url=nice_api_base_url,
             strict_mode=strict_mode,
+            allow_html_fallback=allow_html_fallback,
         )
         self._cochrane_client = CochraneClient(
             http_client=http_client,
             api_key=cochrane_api_key,
+            api_base_url=cochrane_api_base_url,
             strict_mode=strict_mode,
+            allow_html_fallback=allow_html_fallback,
         )
         self._strict_mode = strict_mode
 
@@ -543,16 +610,32 @@ class InternationalSourceAggregator:
         Returns:
             List of InternationalSource sorted by evidence_tier (1 first)
         """
+        results, _ = self.search_all_with_stats(query, max_per_tier=max_per_tier)
+        return results
+
+    def search_all_with_stats(
+        self, query: str, max_per_tier: int = 5
+    ) -> tuple[list[InternationalSource], dict[str, int]]:
+        """Search all international sources and return results with stats.
+
+        Returns:
+            (sources, stats) where stats include per-tier candidate counts.
+        """
         all_sources: list[InternationalSource] = []
 
         # Tier 1: International guidelines
         nice_results = self._nice_client.search(query, max_results=max_per_tier)
-        all_sources.extend(nice_results[:max_per_tier])
-
         cochrane_results = self._cochrane_client.search(query, max_results=max_per_tier)
+
+        all_sources.extend(nice_results[:max_per_tier])
         all_sources.extend(cochrane_results[:max_per_tier])
 
         # Sort by evidence tier
         all_sources.sort(key=lambda s: s.evidence_tier)
 
-        return all_sources
+        stats = {
+            "nice_candidates": len(nice_results),
+            "cochrane_candidates": len(cochrane_results),
+        }
+
+        return all_sources, stats

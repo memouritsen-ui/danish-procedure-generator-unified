@@ -3,19 +3,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from procedurewriter.pipeline.text_units import CitationValidationError
 from procedurewriter.pipeline.types import Snippet, SourceRecord
 
 _citation_id_re = re.compile(r"\[S:([^\]]+)\]")
 _citation_tag_re = re.compile(r"\[S:[^\]]+\]")
-
-
-class CitationValidationError(ValueError):
-    """Raised when a line lacks citations in strict mode."""
-
-    def __init__(self, message: str, line_number: int | None = None, line_text: str | None = None):
-        super().__init__(message)
-        self.line_number = line_number
-        self.line_text = line_text
 
 
 def _parse_sections(author_guide: dict[str, Any]) -> list[dict[str, str]]:
@@ -113,6 +105,17 @@ def write_procedure_markdown(
                 citation_strict_mode = True
     citation_strict_mode = citation_strict_mode or False
 
+    # Allow fallback citations only when explicitly configured AND not in strict mode
+    allow_fallback_citations = False
+    if isinstance(author_guide, dict):
+        validation = author_guide.get("validation")
+        if isinstance(validation, dict):
+            allow_setting = validation.get("allow_fallback_citations")
+            if isinstance(allow_setting, bool):
+                allow_fallback_citations = allow_setting
+    if citation_strict_mode:
+        allow_fallback_citations = False
+
     # Check if we should skip LLM
     provider = llm_provider or "openai"
     has_api_key = bool(openai_api_key or anthropic_api_key or provider == "ollama")
@@ -134,6 +137,7 @@ def write_procedure_markdown(
             anthropic_api_key=anthropic_api_key,
             ollama_base_url=ollama_base_url,
             citation_strict_mode=citation_strict_mode,
+            allow_fallback_citations=allow_fallback_citations,
             quantitative_evidence_context=quantitative_evidence_context,
         )
     except Exception:
@@ -230,6 +234,7 @@ def _write_llm_sectioned(
     anthropic_api_key: str | None = None,
     ollama_base_url: str | None = None,
     citation_strict_mode: bool = False,
+    allow_fallback_citations: bool = False,
     quantitative_evidence_context: str | None = None,
 ) -> str:
     from procedurewriter.llm import get_llm_client
@@ -289,6 +294,7 @@ def _write_llm_sectioned(
             allowed_source_ids=allowed_ids,
             source_by_id=source_by_id,
             citation_strict_mode=citation_strict_mode,
+            allow_fallback_citations=allow_fallback_citations,
             quantitative_evidence_context=quantitative_evidence_context,
         )
 
@@ -315,6 +321,7 @@ def _write_llm_section_body(
     allowed_source_ids: list[str],
     source_by_id: dict[str, SourceRecord],
     citation_strict_mode: bool = False,
+    allow_fallback_citations: bool = False,
     quantitative_evidence_context: str | None = None,
 ) -> list[str]:
     """Generate content for a single section using the LLM provider."""
@@ -412,7 +419,7 @@ def _write_llm_section_body(
         fmt=fmt,
         fallback_citation=allowed_source_ids[0],
         strict_mode=citation_strict_mode,
-        allow_fallback_citations=not citation_strict_mode,
+        allow_fallback_citations=allow_fallback_citations,
     )
 
 
@@ -465,13 +472,15 @@ def _normalize_section_lines(
         if not citation_ids:
             # Strict mode: refuse to inject fallback citations
             if strict_mode and not allow_fallback_citations:
-                raise CitationValidationError(
-                    f"Line lacks citations in strict mode: {s[:100]}...",
-                    line_number=line_idx + 1,
-                    line_text=s,
+                err = CitationValidationError(
+                    f"Line lacks citations in strict mode: {s[:100]}..."
                 )
-            # Fallback injection allowed (default behavior)
-            citation_ids = [fallback_citation]
+                setattr(err, "line_number", line_idx + 1)
+                setattr(err, "line_text", s)
+                raise err
+            # Fallback injection only when explicitly allowed
+            if allow_fallback_citations:
+                citation_ids = [fallback_citation]
 
         citation_ids = _dedupe_preserve(citation_ids)
 
@@ -482,16 +491,21 @@ def _normalize_section_lines(
         # Keep each LLM line as one unit - don't split into individual sentences.
         # This preserves the natural flow the LLM intended.
         tags = " ".join(f"[S:{cid}]" for cid in citation_ids)
-        atomic.append(f"{content} {tags}".strip())
+        if tags:
+            atomic.append(f"{content} {tags}".strip())
+        else:
+            atomic.append(content)
 
     if not atomic:
-        if strict_mode and not allow_fallback_citations:
-            raise CitationValidationError(
-                "No content with citations found in strict mode",
-                line_number=None,
-                line_text=None,
-            )
-        atomic = [f"Ikke dækket i de indsamlede kilder; følg lokal retningslinje. [S:{fallback_citation}]"]
+        if strict_mode:
+            err = CitationValidationError("No content with citations found in strict mode")
+            setattr(err, "line_number", None)
+            setattr(err, "line_text", None)
+            raise err
+        if allow_fallback_citations:
+            atomic = [f"Ikke dækket i de indsamlede kilder; følg lokal retningslinje. [S:{fallback_citation}]"]
+        else:
+            atomic = ["Ikke dækket i de indsamlede kilder; følg lokal retningslinje."]
 
     if fmt == "bullets":
         return [f"- {s}".strip() for s in atomic]

@@ -67,9 +67,11 @@ class CachedHttpClient:
             # NICE - polite crawling (1 req/sec)
             "www.nice.org.uk": 1.0,
             "nice.org.uk": 1.0,
+            "api.nice.org.uk": 1.0,
             # Cochrane Library - polite crawling (1 req/sec)
             "www.cochranelibrary.com": 1.0,
             "cochranelibrary.com": 1.0,
+            "api.onlinelibrary.wiley.com": 1.0,
         }
         self._sleep_fn = sleep_fn
         self._last_request_at_by_host: dict[str, float] = {}

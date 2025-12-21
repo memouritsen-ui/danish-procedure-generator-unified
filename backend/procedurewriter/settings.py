@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     ncbi_tool: str = "danish-procedure-generator"
     ncbi_api_key: str | None = None
 
+    # NICE/Cochrane API settings (institutional access)
+    nice_api_key: str | None = None
+    cochrane_api_key: str | None = None
+    nice_api_base_url: str = "https://api.nice.org.uk"
+    cochrane_api_base_url: str = "https://api.onlinelibrary.wiley.com"
+    allow_html_fallback_international: bool = False
+
     def get_default_model_for_provider(self) -> str:
         """Get the default model name for the configured provider."""
         defaults = {

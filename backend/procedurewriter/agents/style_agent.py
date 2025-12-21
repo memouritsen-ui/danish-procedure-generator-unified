@@ -32,6 +32,7 @@ class StyleInput(AgentInput):
     raw_markdown: str
     sources: list[Any] = []  # SourceRecord, but using Any for flexibility
     style_profile: StyleProfile
+    outline: list[str] | None = None
 
 
 class StyleOutput(AgentOutput):
@@ -131,6 +132,7 @@ class StyleAgent(BaseAgent[StyleInput, StyleOutput]):
         original_citations = self._extract_citations(input_data.raw_markdown)
         original_headings = self._extract_headings(input_data.raw_markdown)
         original_headings_ordered = self._extract_headings_ordered(input_data.raw_markdown)
+        expected_outline = input_data.outline or original_headings_ordered
 
         system_prompt = STYLE_SYSTEM_PROMPT.format(
             tone_description=profile.tone_description,
@@ -188,8 +190,23 @@ OUTPUT KRAV:
                         f"Missing headings: {missing_headings}, Added headings: {added_headings}",
                         missing_citations=missing_citations,
                     )
-                # Enforce heading ORDER matches original (canonical outline)
-                if polished_headings_ordered != original_headings_ordered:
+                # Enforce heading ORDER matches canonical outline (if provided)
+                if input_data.outline:
+                    missing_outline = [h for h in input_data.outline if h not in polished_headings]
+                    if missing_outline:
+                        raise StyleValidationError(
+                            f"StyleAgent missing required headings in strict mode: {missing_outline}",
+                            missing_citations=missing_citations,
+                        )
+                    if not _is_subsequence(input_data.outline, polished_headings_ordered):
+                        raise StyleValidationError(
+                            "StyleAgent changed canonical heading order in strict mode. "
+                            f"Expected outline order: {input_data.outline}, "
+                            f"Got: {polished_headings_ordered}.",
+                            missing_citations=missing_citations,
+                        )
+                # Fall back to original order enforcement if no outline supplied
+                elif polished_headings_ordered != original_headings_ordered:
                     raise StyleValidationError(
                         f"StyleAgent changed heading order in strict mode. "
                         f"Expected order: {original_headings_ordered}, "
@@ -277,3 +294,16 @@ FORSØG IGEN og inkluder ALLE citations denne gang."""
         The pipeline uses [S:<source_id>] format, e.g., [S:SRC0001].
         """
         return set(re.findall(r'\[S:[^\]]+\]', text))
+
+
+def _is_subsequence(expected: list[str], actual: list[str]) -> bool:
+    """Return True if expected list appears in order within actual list."""
+    if not expected:
+        return True
+    idx = 0
+    for item in actual:
+        if item == expected[idx]:
+            idx += 1
+            if idx == len(expected):
+                return True
+    return False

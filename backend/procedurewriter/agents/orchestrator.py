@@ -183,7 +183,15 @@ class AgentOrchestrator:
                 # Step 2: Write procedure
                 self._emit(EventType.AGENT_START, {"agent": "Writer"})
                 logger.info("Running Writer agent...")
-                style_guide = input_data.style_guide or ""
+                base_style_guide = input_data.style_guide or ""
+                if input_data.evidence_summary:
+                    base_style_guide = (
+                        base_style_guide
+                        + "\n\nEVIDENS-SYNTES:\n"
+                        + input_data.evidence_summary
+                    ).strip()
+
+                style_guide = base_style_guide
                 if revision_suggestions:
                     style_guide = (
                         style_guide
@@ -259,7 +267,7 @@ class AgentOrchestrator:
                         procedure_title=input_data.procedure_title,
                         content_markdown=current_content,
                         sources=current_sources,
-                        style_guide=input_data.style_guide,
+                        style_guide=base_style_guide or None,
                     )
                 )
                 self._stats.add_agent_stats(f"Editor_iter{iteration}", editor_result.stats)

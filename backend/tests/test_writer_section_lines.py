@@ -1,6 +1,9 @@
 """Tests for _normalize_section_lines function in writer module."""
 from __future__ import annotations
 
+import pytest
+
+from procedurewriter.pipeline.text_units import CitationValidationError
 from procedurewriter.pipeline.writer import _normalize_section_lines
 
 
@@ -66,3 +69,27 @@ def test_normalize_section_lines_preserves_abbreviations() -> None:
     assert len(lines) == 1
     assert "f.eks. prednisolon" in lines[0]
     assert "[S:SRC0001]" in lines[0]
+
+
+def test_normalize_section_lines_strict_disallows_missing_citations() -> None:
+    """Strict mode should raise when citations are missing and fallback is disabled."""
+    with pytest.raises(CitationValidationError):
+        _normalize_section_lines(
+            "Mangler citation.\n",
+            fmt="bullets",
+            fallback_citation="SRC0001",
+            strict_mode=True,
+            allow_fallback_citations=False,
+        )
+
+
+def test_normalize_section_lines_no_fallback_when_disabled_non_strict() -> None:
+    """Non-strict mode should not inject fallback citations when disabled."""
+    lines = _normalize_section_lines(
+        "Mangler citation.\n",
+        fmt="bullets",
+        fallback_citation="SRC0001",
+        strict_mode=False,
+        allow_fallback_citations=False,
+    )
+    assert "[S:" not in lines[0]

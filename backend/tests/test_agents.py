@@ -60,6 +60,43 @@ class MockLLMProvider(LLMProvider):
         return LLMProviderType.OPENAI
 
 
+class RecordingLLMProvider(LLMProvider):
+    """LLM provider that records prompts for inspection."""
+
+    def __init__(self, responses: list[str] | None = None):
+        self._responses = responses or []
+        self._call_count = 0
+        self.calls: list[list[dict[str, str]]] = []
+
+    def chat_completion(
+        self,
+        messages: list[dict[str, str]],
+        model: str,
+        temperature: float = 0.2,
+        max_tokens: int | None = None,
+        timeout: float = 60.0,
+    ) -> LLMResponse:
+        self.calls.append(messages)
+        response_text = "Mock response"
+        if self._call_count < len(self._responses):
+            response_text = self._responses[self._call_count]
+        self._call_count += 1
+
+        return LLMResponse(
+            content=response_text,
+            model=model,
+            input_tokens=100,
+            output_tokens=50,
+            total_tokens=150,
+        )
+
+    def is_available(self) -> bool:
+        return True
+
+    @property
+    def provider_type(self) -> LLMProviderType:
+        return LLMProviderType.OPENAI
+
 class TestResearcherAgent:
     """Tests for ResearcherAgent."""
 
@@ -393,6 +430,35 @@ class TestAgentOrchestrator:
         assert result.iterations_used == 2
         # Cost should reflect 8 LLM calls (4 per iteration × 2 iterations)
         assert result.total_cost_usd > 0
+
+    def test_pipeline_includes_evidence_summary_in_prompt(self):
+        """Evidence summary should be included in writer prompt via style_guide."""
+        responses = [
+            "# Procedure Draft [S:SRC0001]",  # Writer
+            '```json\n[]\n```',  # Validator
+            "# Edited Draft [S:SRC0001]",  # Editor
+            '```json\n{"criteria": [], "overall_score": 9, "passes_threshold": true, "ready_for_publication": true, "revision_suggestions": []}\n```',  # Quality
+        ]
+        mock_llm = RecordingLLMProvider(responses=responses)
+        orchestrator = AgentOrchestrator(mock_llm)
+
+        evidence_summary = "Dette er en evidens-syntese med nøglepunkter."
+        result = orchestrator.run(
+            PipelineInput(
+                procedure_title="Test Procedure",
+                max_iterations=1,
+                evidence_summary=evidence_summary,
+            ),
+            sources=[
+                SourceReference(source_id="SRC0001", title="Test", relevance_score=0.9)
+            ],
+        )
+
+        assert result.success
+        flat_prompt = "\n".join(
+            msg["content"] for call in mock_llm.calls for msg in call if "content" in msg
+        )
+        assert evidence_summary in flat_prompt
 
 
 class TestAgentStats:

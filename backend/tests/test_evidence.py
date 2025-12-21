@@ -15,3 +15,22 @@ def test_evidence_report_marks_supported_and_unsupported():
     s1 = report["sentences"][1]
     assert s0["supported"] is True
     assert s1["supported"] is False
+
+
+def test_evidence_report_uses_verification_results():
+    md = "## A\nKlinisk påstand. [S:SRC0001]\n"
+    snippets = [
+        Snippet(source_id="SRC0001", text="Klinisk påstand.", location={"chunk": 0}),
+    ]
+    verification_results = {
+        "sentences": [
+            {"line_no": 2, "status": "contradicted"},
+        ]
+    }
+    report = build_evidence_report(
+        md,
+        snippets=snippets,
+        verification_results=verification_results,
+    )
+    assert report["sentences"][0]["contradicted"] is True
+    assert report["sentences"][0]["supported"] is False

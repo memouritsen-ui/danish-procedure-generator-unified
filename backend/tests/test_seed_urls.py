@@ -17,6 +17,16 @@ def test_seed_urls_are_fetched_and_written(tmp_path):
         run_dir = tmp_path / "run"
         sources = []
         warnings = []
+        stats = {
+            "total_entries": 0,
+            "matched_entries": 0,
+            "filtered_out": 0,
+            "allowed_urls": 0,
+            "blocked_urls": 0,
+            "used_urls": 0,
+            "fetch_failed": 0,
+            "truncated": 0,
+        }
         next_n = _append_seed_url_sources(
             allowlist={"allowed_url_prefixes": ["https://www.nice.org.uk/"], "seed_urls": [url]},
             http=http,
@@ -27,6 +37,7 @@ def test_seed_urls_are_fetched_and_written(tmp_path):
             evidence_hierarchy=hierarchy,
             procedure="Test Procedure",
             context=None,
+            stats=stats,
         )
         assert next_n == 2
         assert len(sources) == 1
@@ -36,6 +47,10 @@ def test_seed_urls_are_fetched_and_written(tmp_path):
         assert sources[0].extra.get("evidence_level") is not None
         assert sources[0].extra.get("evidence_badge") is not None
         assert not warnings
+        assert stats["total_entries"] == 1
+        assert stats["matched_entries"] == 1
+        assert stats["allowed_urls"] == 1
+        assert stats["used_urls"] == 1
     finally:
         http.close()
 
@@ -47,6 +62,16 @@ def test_seed_urls_respect_allowlist(tmp_path):
         run_dir = tmp_path / "run"
         sources = []
         warnings = []
+        stats = {
+            "total_entries": 0,
+            "matched_entries": 0,
+            "filtered_out": 0,
+            "allowed_urls": 0,
+            "blocked_urls": 0,
+            "used_urls": 0,
+            "fetch_failed": 0,
+            "truncated": 0,
+        }
         next_n = _append_seed_url_sources(
             allowlist={"allowed_url_prefixes": ["https://www.nice.org.uk/"], "seed_urls": ["https://evil.example/x"]},
             http=http,
@@ -57,10 +82,13 @@ def test_seed_urls_respect_allowlist(tmp_path):
             evidence_hierarchy=hierarchy,
             procedure="Test Procedure",
             context=None,
+            stats=stats,
         )
         assert next_n == 1
         assert sources == []
         assert warnings and "not allowed" in warnings[0].lower()
+        assert stats["total_entries"] == 1
+        assert stats["blocked_urls"] == 1
     finally:
         http.close()
 
@@ -73,6 +101,16 @@ def test_seed_urls_filter_by_procedure_keywords(tmp_path):
         run_dir = tmp_path / "run"
         sources = []
         warnings = []
+        stats = {
+            "total_entries": 0,
+            "matched_entries": 0,
+            "filtered_out": 0,
+            "allowed_urls": 0,
+            "blocked_urls": 0,
+            "used_urls": 0,
+            "fetch_failed": 0,
+            "truncated": 0,
+        }
         # Seed URL with keywords that don't match the procedure
         allowlist = {
             "allowed_url_prefixes": ["https://www.nice.org.uk/"],
@@ -90,12 +128,14 @@ def test_seed_urls_filter_by_procedure_keywords(tmp_path):
             evidence_hierarchy=hierarchy,
             procedure="Lumbar Puncture",  # Does not match "heart" or "cardiac"
             context=None,
+            stats=stats,
         )
         # URL should be filtered out - no sources added
         assert next_n == 1
         assert sources == []
         # Should have a warning about filtered URLs
         assert any("filtered out" in w.lower() for w in warnings)
+        assert stats["total_entries"] == 1
+        assert stats["filtered_out"] == 1
     finally:
         http.close()
-
