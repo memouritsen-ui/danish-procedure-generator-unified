@@ -225,5 +225,34 @@ When starting a new session:
 
 ---
 
-**State Version**: 1.5
+## SESSION TRACKER
+
+**PURPOSE**: Prevent context exhaustion by enforcing session breaks.
+
+| Session | Started At | Ended At | Tasks Completed | Context % |
+|---------|------------|----------|-----------------|-----------|
+| (current) | - | - | 0 | ~28% |
+
+**RULES** (from CLAUDE.md):
+- Max 4 tasks per session
+- End session if context > 60%
+- Update this tracker when ending session
+
+**BEFORE ENDING THIS SESSION**:
+```bash
+# 1. Commit and push
+git add . && git commit -m "..." && git push
+
+# 2. Update this section:
+#    - Move (current) to completed row
+#    - Add tasks completed count
+#    - Note context % at end
+
+# 3. Verify clean
+git status
+```
+
+---
+
+**State Version**: 1.6
 **Next Update Required After**: Completing P2-001 or Phase 2 milestone

@@ -13,6 +13,26 @@
 
 ---
 
+## ⏱️ SESSION BREAK RULE (CRITICAL)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CONTEXT EXHAUSTION PREVENTION                              │
+├─────────────────────────────────────────────────────────────┤
+│  Max tasks per session: 4                                   │
+│  Max context usage: 60%                                     │
+│  If context > 50%: Finish task, then END SESSION            │
+├─────────────────────────────────────────────────────────────┤
+│  After 4 tasks OR 60% context → END SESSION                 │
+│  Update SESSION TRACKER in STATE.md before ending           │
+│  New session reads STATE.md and continues from next task    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**WHY**: Long sessions cause context compaction, which loses critical information about completed work. Sessions are disposable; STATE.md is persistent.
+
+---
+
 ## MANDATORY TASK COMPLETION SEQUENCE
 
 After completing ANY task, you MUST follow this exact sequence:

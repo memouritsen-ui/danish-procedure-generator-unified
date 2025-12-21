@@ -64,7 +64,7 @@ class TestClaimWorkflow:
             confidence=0.95,
         )
 
-        # Store in database
+        # Store in database using to_db_row() for consistent conversion
         with _connect(test_db) as conn:
             conn.execute(
                 """
@@ -73,24 +73,13 @@ class TestClaimWorkflow:
                     source_refs_json, line_number, confidence, created_at_utc
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    str(claim.id),
-                    str(claim.run_id),
-                    claim.claim_type.value,
-                    claim.text,
-                    claim.normalized_value,
-                    claim.unit,
-                    json.dumps(claim.source_refs),
-                    claim.line_number,
-                    claim.confidence,
-                    claim.created_at.isoformat(),
-                ),
+                claim.to_db_row(),
             )
 
         # Retrieve and verify
         with _connect(test_db) as conn:
             row = conn.execute(
-                "SELECT * FROM claims WHERE id = ?", (str(claim.id),)
+                "SELECT * FROM claims WHERE id = ?", (claim.to_db_row()[0],)
             ).fetchone()
 
             assert row is not None
@@ -125,26 +114,17 @@ class TestClaimWorkflow:
             ),
         ]
 
-        # Store all claims
+        # Store all claims using to_db_row() for consistent conversion
         with _connect(test_db) as conn:
             for claim in claims:
                 conn.execute(
                     """
                     INSERT INTO claims (
-                        id, run_id, claim_type, text, source_refs_json,
-                        line_number, confidence, created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        id, run_id, claim_type, text, normalized_value, unit,
+                        source_refs_json, line_number, confidence, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        str(claim.id),
-                        str(claim.run_id),
-                        claim.claim_type.value,
-                        claim.text,
-                        json.dumps(claim.source_refs),
-                        claim.line_number,
-                        claim.confidence,
-                        claim.created_at.isoformat(),
-                    ),
+                    claim.to_db_row(),
                 )
 
         # Query all claims for run
@@ -175,7 +155,7 @@ class TestEvidenceChunkWorkflow:
             metadata={"section": "treatment", "language": "en"},
         )
 
-        # Store in database
+        # Store in database using to_db_row() for consistent conversion
         with _connect(test_db) as conn:
             conn.execute(
                 """
@@ -185,24 +165,13 @@ class TestEvidenceChunkWorkflow:
                     metadata_json, created_at_utc
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    str(chunk.id),
-                    str(chunk.run_id),
-                    chunk.source_id,
-                    chunk.text,
-                    chunk.chunk_index,
-                    chunk.start_char,
-                    chunk.end_char,
-                    json.dumps(chunk.embedding_vector) if chunk.embedding_vector else None,
-                    json.dumps(chunk.metadata),
-                    chunk.created_at.isoformat(),
-                ),
+                chunk.to_db_row(),
             )
 
         # Retrieve and verify
         with _connect(test_db) as conn:
             row = conn.execute(
-                "SELECT * FROM evidence_chunks WHERE id = ?", (str(chunk.id),)
+                "SELECT * FROM evidence_chunks WHERE id = ?", (chunk.to_db_row()[0],)
             ).fetchone()
 
             assert row is not None
@@ -240,26 +209,17 @@ class TestClaimEvidenceLinkWorkflow:
             binding_score=0.92,
         )
 
-        # Store all in database
+        # Store all in database using to_db_row() for consistent conversion
         with _connect(test_db) as conn:
             # Store claim
             conn.execute(
                 """
                 INSERT INTO claims (
-                    id, run_id, claim_type, text, source_refs_json,
-                    line_number, confidence, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    id, run_id, claim_type, text, normalized_value, unit,
+                    source_refs_json, line_number, confidence, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    str(claim.id),
-                    str(claim.run_id),
-                    claim.claim_type.value,
-                    claim.text,
-                    json.dumps(claim.source_refs),
-                    claim.line_number,
-                    claim.confidence,
-                    claim.created_at.isoformat(),
-                ),
+                claim.to_db_row(),
             )
 
             # Store chunk
@@ -267,18 +227,11 @@ class TestClaimEvidenceLinkWorkflow:
                 """
                 INSERT INTO evidence_chunks (
                     id, run_id, source_id, text, chunk_index,
+                    start_char, end_char, embedding_vector_json,
                     metadata_json, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    str(chunk.id),
-                    str(chunk.run_id),
-                    chunk.source_id,
-                    chunk.text,
-                    chunk.chunk_index,
-                    json.dumps(chunk.metadata),
-                    chunk.created_at.isoformat(),
-                ),
+                chunk.to_db_row(),
             )
 
             # Store link
@@ -289,14 +242,7 @@ class TestClaimEvidenceLinkWorkflow:
                     binding_score, created_at_utc
                 ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    str(link.id),
-                    str(link.claim_id),
-                    str(link.evidence_chunk_id),
-                    link.binding_type.value,
-                    link.binding_score,
-                    link.created_at.isoformat(),
-                ),
+                link.to_db_row(),
             )
 
         # Query link with join
@@ -309,7 +255,7 @@ class TestClaimEvidenceLinkWorkflow:
                 JOIN evidence_chunks e ON l.evidence_chunk_id = e.id
                 WHERE l.id = ?
                 """,
-                (str(link.id),),
+                (link.to_db_row()[0],),
             ).fetchone()
 
             assert row is not None
@@ -335,26 +281,17 @@ class TestIssueWorkflow:
         assert issue.severity == IssueSeverity.S0
         assert issue.is_safety_critical
 
-        # Store in database
+        # Store in database using to_db_row() for consistent conversion
         with _connect(test_db) as conn:
             conn.execute(
                 """
                 INSERT INTO issues (
-                    id, run_id, code, severity, message,
-                    line_number, auto_detected, resolved, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, run_id, code, severity, message, line_number,
+                    claim_id, source_id, auto_detected, resolved,
+                    resolution_note, resolved_at_utc, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    str(issue.id),
-                    str(issue.run_id),
-                    issue.code.value,
-                    issue.severity.value,
-                    issue.message,
-                    issue.line_number,
-                    1 if issue.auto_detected else 0,
-                    0 if not issue.resolved else 1,
-                    issue.created_at.isoformat(),
-                ),
+                issue.to_db_row(),
             )
 
         # Mark as resolved
@@ -366,13 +303,13 @@ class TestIssueWorkflow:
                 SET resolved = 1, resolution_note = ?, resolved_at_utc = ?
                 WHERE id = ?
                 """,
-                (resolution_note, "2024-12-22T12:00:00Z", str(issue.id)),
+                (resolution_note, "2024-12-22T12:00:00Z", issue.to_db_row()[0]),
             )
 
         # Verify resolution
         with _connect(test_db) as conn:
             row = conn.execute(
-                "SELECT * FROM issues WHERE id = ?", (str(issue.id),)
+                "SELECT * FROM issues WHERE id = ?", (issue.to_db_row()[0],)
             ).fetchone()
 
             assert row["resolved"] == 1
@@ -401,26 +338,18 @@ class TestIssueWorkflow:
             ),
         ]
 
-        # Store all
+        # Store all using to_db_row() for consistent conversion
         with _connect(test_db) as conn:
             for issue in issues:
                 conn.execute(
                     """
                     INSERT INTO issues (
-                        id, run_id, code, severity, message,
-                        auto_detected, resolved, created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        id, run_id, code, severity, message, line_number,
+                        claim_id, source_id, auto_detected, resolved,
+                        resolution_note, resolved_at_utc, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        str(issue.id),
-                        str(issue.run_id),
-                        issue.code.value,
-                        issue.severity.value,
-                        issue.message,
-                        1,
-                        0,
-                        issue.created_at.isoformat(),
-                    ),
+                    issue.to_db_row(),
                 )
 
         # Query S0 unresolved
@@ -447,24 +376,16 @@ class TestGateWorkflow:
             status=GateStatus.PENDING,
         )
 
-        # Store pending gate
+        # Store pending gate using to_db_row() for consistent conversion
         with _connect(test_db) as conn:
             conn.execute(
                 """
                 INSERT INTO gates (
                     id, run_id, gate_type, status, issues_checked,
-                    issues_failed, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    issues_failed, message, created_at_utc, evaluated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    str(gate.id),
-                    str(gate.run_id),
-                    gate.gate_type.value,
-                    gate.status.value,
-                    gate.issues_checked,
-                    gate.issues_failed,
-                    gate.created_at.isoformat(),
-                ),
+                gate.to_db_row(),
             )
 
         # Evaluate gate (simulate checking 10 issues, 0 failed)
@@ -477,13 +398,13 @@ class TestGateWorkflow:
                     evaluated_at_utc = ?
                 WHERE id = ?
                 """,
-                ("2024-12-22T12:00:00Z", str(gate.id)),
+                ("2024-12-22T12:00:00Z", gate.to_db_row()[0]),
             )
 
         # Verify
         with _connect(test_db) as conn:
             row = conn.execute(
-                "SELECT * FROM gates WHERE id = ?", (str(gate.id),)
+                "SELECT * FROM gates WHERE id = ?", (gate.to_db_row()[0],)
             ).fetchone()
 
             assert row["status"] == "pass"
@@ -504,32 +425,23 @@ class TestGateWorkflow:
         assert not gate.is_passed
         assert gate.is_safety_gate
 
-        # Store
+        # Store using to_db_row() for consistent conversion
         with _connect(test_db) as conn:
             conn.execute(
                 """
                 INSERT INTO gates (
                     id, run_id, gate_type, status, issues_checked,
-                    issues_failed, message, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    issues_failed, message, created_at_utc, evaluated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    str(gate.id),
-                    str(gate.run_id),
-                    gate.gate_type.value,
-                    gate.status.value,
-                    gate.issues_checked,
-                    gate.issues_failed,
-                    gate.message,
-                    gate.created_at.isoformat(),
-                ),
+                gate.to_db_row(),
             )
 
         # Query failed gates
         with _connect(test_db) as conn:
             rows = conn.execute(
                 "SELECT * FROM gates WHERE run_id = ? AND status = 'fail'",
-                (str(run_id),),
+                (run_id,),
             ).fetchall()
 
             assert len(rows) == 1
@@ -602,45 +514,29 @@ class TestFullClaimSystemWorkflow:
             message="All claims bound to evidence",
         )
 
-        # Store everything
+        # Store everything using to_db_row() for consistent conversion
         with _connect(test_db) as conn:
             for chunk in chunks:
                 conn.execute(
                     """
                     INSERT INTO evidence_chunks (
                         id, run_id, source_id, text, chunk_index,
+                        start_char, end_char, embedding_vector_json,
                         metadata_json, created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        str(chunk.id),
-                        str(chunk.run_id),
-                        chunk.source_id,
-                        chunk.text,
-                        chunk.chunk_index,
-                        json.dumps(chunk.metadata),
-                        chunk.created_at.isoformat(),
-                    ),
+                    chunk.to_db_row(),
                 )
 
             for claim in claims:
                 conn.execute(
                     """
                     INSERT INTO claims (
-                        id, run_id, claim_type, text, source_refs_json,
-                        line_number, confidence, created_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        id, run_id, claim_type, text, normalized_value, unit,
+                        source_refs_json, line_number, confidence, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        str(claim.id),
-                        str(claim.run_id),
-                        claim.claim_type.value,
-                        claim.text,
-                        json.dumps(claim.source_refs),
-                        claim.line_number,
-                        claim.confidence,
-                        claim.created_at.isoformat(),
-                    ),
+                    claim.to_db_row(),
                 )
 
             for link in links:
@@ -651,33 +547,17 @@ class TestFullClaimSystemWorkflow:
                         binding_score, created_at_utc
                     ) VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        str(link.id),
-                        str(link.claim_id),
-                        str(link.evidence_chunk_id),
-                        link.binding_type.value,
-                        link.binding_score,
-                        link.created_at.isoformat(),
-                    ),
+                    link.to_db_row(),
                 )
 
             conn.execute(
                 """
                 INSERT INTO gates (
                     id, run_id, gate_type, status, issues_checked,
-                    issues_failed, message, created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    issues_failed, message, created_at_utc, evaluated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    str(gate.id),
-                    str(gate.run_id),
-                    gate.gate_type.value,
-                    gate.status.value,
-                    gate.issues_checked,
-                    gate.issues_failed,
-                    gate.message,
-                    gate.created_at.isoformat(),
-                ),
+                gate.to_db_row(),
             )
 
         # Verify complete workflow

@@ -98,6 +98,44 @@ After completing EVERY task, you MUST execute this 6-step sequence:
 
 ---
 
+## ⏱️ SESSION BREAK PROTOCOL (Prevents Context Exhaustion)
+
+**WHY THIS EXISTS**: Long sessions accumulate context. By task 8-10, context reaches 70%+ and auto-compaction kicks in, causing loss of critical information. Sessions should be SHORT. STATE.md is the brain, sessions are disposable hands.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         HARD LIMITS (NON-NEGOTIABLE)                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Condition                          │ Action                                │
+│─────────────────────────────────────┼───────────────────────────────────────│
+│  Completed 4 tasks this session     │ END SESSION NOW                       │
+│  Context usage exceeds 60%          │ END SESSION NOW                       │
+│  Context usage exceeds 50%          │ Finish current task, then END         │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**BEFORE ENDING SESSION:**
+1. Commit and push all changes
+2. Update STATE.md: `Session ended at task P#-###, tasks completed: N`
+3. Verify `git status` is clean
+
+**STARTING NEW SESSION:**
+1. Read STATE.md → find where last session stopped
+2. Continue from next unchecked task in TASKS.md
+3. Reset mental "tasks this session" counter to 0
+
+**TRACKING**: STATE.md contains a `SESSION TRACKER` section. Update it:
+```markdown
+## SESSION TRACKER
+Last session ended: P1-HF3 (3 tasks completed)
+Context at end: ~55%
+```
+
+**WHY NOT HOOKS?**
+Hooks can run shell commands but CANNOT inject context back into session or force session end. The solution is documentation discipline, not automation.
+
+---
+
 ## 🔄 ACTIVE REFACTORING: Auditable Medical Build System
 
 **Current Phase**: Phase 1 HOTFIX - Architectural Debt (BLOCKING)
