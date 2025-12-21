@@ -71,7 +71,7 @@ class StudyScreenerAgent(BaseAgent[ScreeningInput, ScreeningDecision]):
         self,
         llm: LLMProvider,
         model: str | None = None,
-        confidence_threshold: float = 0.90,
+        confidence_threshold: float = 0.60,  # Lowered from 0.90 - be more inclusive
     ) -> None:
         """Initialize screener agent.
 
@@ -79,6 +79,7 @@ class StudyScreenerAgent(BaseAgent[ScreeningInput, ScreeningDecision]):
             llm: LLM provider for screening decisions.
             model: Model name override.
             confidence_threshold: Minimum confidence for automatic decisions (0-1).
+                                 Lowered to 0.60 to include more potentially relevant studies.
         """
         super().__init__(llm, model)
         self._confidence_threshold = confidence_threshold
@@ -135,28 +136,39 @@ class StudyScreenerAgent(BaseAgent[ScreeningInput, ScreeningDecision]):
 
     def _get_system_prompt(self) -> str:
         """System prompt for study screening."""
-        return """You are an expert systematic review methodologist.
+        return """You are an expert systematic review methodologist with an INCLUSIVE approach.
 
-Your task is to screen a study for inclusion in a systematic review based on PICO criteria.
+Your task is to screen a study for RELEVANCE to a medical procedure review.
 
-Compare the study's extracted PICO elements against the review's target PICO query.
-Make an Include/Exclude decision based on how well the study matches.
+IMPORTANT: Err on the side of INCLUSION. Include any study that might provide useful evidence.
 
 DECISION CRITERIA:
-- Include: Study population, intervention, and outcome substantially match the query
-- Exclude: Clear mismatch in population, intervention, or outcome
+- Include: Study addresses the procedure or related aspects (population, intervention, OR outcomes)
+- Include: Study provides relevant background, techniques, or evidence
+- Include: Partial matches where at least 2 of 4 PICO elements match
+- Exclude ONLY if clearly irrelevant (different body system, unrelated condition, wrong study type)
+
+WHEN IN DOUBT, INCLUDE. Missing a relevant study is worse than including a tangentially relevant one.
 
 When comparing:
-1. Population: Consider demographics, condition, setting
-2. Intervention: Consider type, dose, duration, delivery
-3. Comparison: Consider if comparator is appropriate (can be flexible)
-4. Outcome: Consider if outcome measures are relevant
+1. Population: Accept related populations (e.g., "adults with chest trauma" matches "pneumothorax patients")
+2. Intervention: Accept related techniques (e.g., "chest tube insertion" matches "thoracostomy")
+3. Comparison: Be flexible - any reasonable comparator is acceptable
+4. Outcome: Accept any clinically relevant outcome (success rates, complications, mortality, etc.)
+
+PARTIAL MATCH SCORING:
+- 4/4 PICO match: Include with high confidence (0.9+)
+- 3/4 PICO match: Include with good confidence (0.7-0.9)
+- 2/4 PICO match: Include with moderate confidence (0.5-0.7)
+- 1/4 PICO match: Include with low confidence if highly relevant (0.3-0.5)
+- 0/4 PICO match: Exclude
 
 OUTPUT FORMAT (JSON):
 {
     "decision": "Include" or "Exclude",
     "reason": "Clear explanation of decision",
-    "confidence": 0.0-1.0
+    "confidence": 0.0-1.0,
+    "pico_matches": 0-4
 }
 
 Respond ONLY with valid JSON. No explanatory text."""

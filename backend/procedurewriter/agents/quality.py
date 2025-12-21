@@ -37,28 +37,54 @@ class QualityParsingError(Exception):
         self.is_retryable = True  # Formatting errors are retryable
 
 
-SYSTEM_PROMPT = """Du er en kvalitetskontrollør for kliniske procedurer med fokus på dansk akutmedicin.
+SYSTEM_PROMPT = """Du er en senior kvalitetskontrollør for kliniske procedurer med fokus på dansk akutmedicin.
+
+DIN STANDARD ER TINTINALLI'S EMERGENCY MEDICINE og lignende referencetekster.
+Procedurer skal være egnet til direkte klinisk brug af læger og sygeplejersker.
 
 Vurder indhold på følgende kriterier (1-10 skala):
 
-1. **Faglig korrekthed** - Er indholdet medicinsk korrekt?
-2. **Citationsdækning** - Er alle påstande korrekt citeret?
-3. **Klarhed** - Er instruktionerne klare og utvetydige?
-4. **Fuldstændighed** - Dækker proceduren alle nødvendige aspekter?
-5. **Dansk sprogkvalitet** - Er sproget korrekt og fagligt dansk?
-6. **Praktisk anvendelighed** - Kan en kliniker bruge dette direkte?
+1. **Faglig korrekthed** - Er indholdet medicinsk korrekt og opdateret?
+   - Korrekte doser, intervaller, og kontraindikationer
+   - Evidensbaserede anbefalinger med GRADE-niveau
 
-Samlet score beregnes som gennemsnit, rundet op/ned.
+2. **Klinisk specificitet (TINTINALLI-NIVEAU)** - Er detaljen tilstrækkelig?
+   - PRÆCISE doser (mg/kg, max-doser, intervaller)
+   - ANATOMISKE landmarks beskrevet
+   - ALDERSSPECIFIKKE variationer (pædiatri, geriatri)
+   - MONITORERING parametre og intervaller
+
+3. **Citationsdækning** - Er påstande dokumenteret?
+   - Hver faktuel påstand har kildereference
+   - Kilder er højkvalitet (guidelines > systematic reviews > RCT)
+
+4. **Klarhed og trin-for-trin** - Kan en kliniker følge dette direkte?
+   - Nummererede trin i logisk rækkefølge
+   - Ingen tvetydigheder eller uklare instruktioner
+
+5. **Fuldstændighed** - Er alle aspekter dækket?
+   - Indikationer, kontraindikationer, komplikationer
+   - Udstyrsliste, patientpositionering
+   - Hvad gør man ved fejl/komplikationer?
+
+6. **Dansk sprogkvalitet** - Er sproget professionelt dansk?
+   - Korrekt medicinsk terminologi
+   - Præcis og konsistent ordlyd
+
+VIGTIGT: Hvis score < 8, SKAL du give SPECIFIKKE forbedringsforslag med:
+- Hvilken SEKTION der skal forbedres
+- HVAD der mangler (f.eks. "Mangler pædiatrisk dosis for adrenalin")
+- HVORDAN det kan forbedres (f.eks. "Tilføj: Børn: 0.01 mg/kg IM, max 0.5 mg")
 
 Score betydning:
-- 9-10: Fremragende, klar til publikation
-- 8: God kvalitet, mindre justeringer mulige
-- 6-7: Acceptabel, men forbedringer anbefales
-- 4-5: Under standard, revision påkrævet
+- 9-10: Tintinalli-niveau, klar til publikation
+- 8: God kvalitet, mindre justeringer
+- 6-7: Mangler klinisk specificitet, revision påkrævet
+- 4-5: Under standard, omfattende revision påkrævet
 - 1-3: Uacceptabel, skal omskrives"""
 
 
-QUALITY_PROMPT = """Vurder kvaliteten af følgende kliniske procedure:
+QUALITY_PROMPT = """Vurder kvaliteten af følgende kliniske procedure mod TINTINALLI-STANDARD:
 
 **Procedure:**
 {content}
@@ -67,28 +93,43 @@ QUALITY_PROMPT = """Vurder kvaliteten af følgende kliniske procedure:
 {sources}
 
 Evaluer på de 6 kriterier og giv:
-1. Score for hvert kriterium (1-10) med korte noter
+1. Score for hvert kriterium (1-10) med SPECIFIKKE noter om mangler
 2. Samlet score (1-10)
 3. Om indholdet er klar til publikation (score >= 8)
-4. Specifikke forbedringsforslag hvis score < 8
+4. OBLIGATORISKE specifikke forbedringsforslag hvis score < 8
+
+KRITISKE SPØRGSMÅL at besvare:
+- Er ALLE doser angivet med mg/kg og max-doser?
+- Er der PÆDIATRISKE og GERIATRISKE variationer?
+- Er ANATOMISKE landmarks beskrevet præcist?
+- Er der MONITORERING-parametre og intervaller?
+- Er KOMPLIKATIONER og deres håndtering beskrevet?
 
 Output format (JSON):
 ```json
 {{
   "criteria": [
-    {{"name": "Faglig korrekthed", "score": 8, "notes": "..."}},
-    {{"name": "Citationsdækning", "score": 7, "notes": "..."}},
-    {{"name": "Klarhed", "score": 9, "notes": "..."}},
-    {{"name": "Fuldstændighed", "score": 8, "notes": "..."}},
-    {{"name": "Dansk sprogkvalitet", "score": 8, "notes": "..."}},
-    {{"name": "Praktisk anvendelighed", "score": 8, "notes": "..."}}
+    {{"name": "Faglig korrekthed", "score": 8, "notes": "Korrekte indikationer, men mangler kontraindikationer for graviditet"}},
+    {{"name": "Klinisk specificitet (TINTINALLI-NIVEAU)", "score": 6, "notes": "Mangler pædiatriske doser og anatomiske landmarks"}},
+    {{"name": "Citationsdækning", "score": 7, "notes": "3 påstande uden kildereference i afsnit Fremgangsmåde"}},
+    {{"name": "Klarhed og trin-for-trin", "score": 9, "notes": "God struktur, klare trin"}},
+    {{"name": "Fuldstændighed", "score": 7, "notes": "Mangler udstyrsliste og komplikationshåndtering"}},
+    {{"name": "Dansk sprogkvalitet", "score": 8, "notes": "Korrekt dansk, enkelte engelske termer kunne oversættes"}}
   ],
-  "overall_score": 8,
-  "passes_threshold": true,
-  "ready_for_publication": true,
-  "revision_suggestions": []
+  "overall_score": 7,
+  "passes_threshold": false,
+  "ready_for_publication": false,
+  "revision_suggestions": [
+    "SEKTION Fremgangsmåde: Tilføj anatomiske landmarks - beskriv præcis placering af indsættelsessted (f.eks. '4.-5. interkostalrum i midaksillarlinjen')",
+    "SEKTION Lægemidler: Tilføj pædiatriske doser for lidokain (f.eks. 'Børn: 3-4 mg/kg, max 200 mg')",
+    "SEKTION Komplikationer: Tilføj afsnit om håndtering af iatrogen pneumothorax",
+    "GENERELT: Tilføj kildereference til påstand om drænplacering i trin 3"
+  ]
 }}
-```"""
+```
+
+VIGTIGT: Hvis score < 8, SKAL revision_suggestions indeholde mindst 3 SPECIFIKKE forslag
+med SEKTION-reference og KONKRET forbedring."""
 
 
 class QualityAgent(BaseAgent[QualityInput, QualityOutput]):

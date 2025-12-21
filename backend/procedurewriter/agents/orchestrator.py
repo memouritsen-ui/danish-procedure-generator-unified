@@ -336,10 +336,15 @@ class AgentOrchestrator:
                     logger.info("Quality loop stopped: cost cap reached")
                     break
 
-                # Prepare for next iteration
+                # Prepare for next iteration with specific suggestions
                 revision_suggestions = quality_result.output.revision_suggestions
+
+                # Generate specific fallback suggestions based on low-scoring criteria
                 if not revision_suggestions:
-                    revision_suggestions = ["Forbedre overordnet kvalitet"]
+                    revision_suggestions = self._generate_fallback_suggestions(
+                        quality_result.output.criteria,
+                        quality_result.output.overall_score
+                    )
 
                 logger.info(f"Quality below threshold, revising with {len(revision_suggestions)} suggestions")
 
@@ -424,6 +429,87 @@ class AgentOrchestrator:
             len(all_claims), len(chunks), max_claims_per_chunk
         )
         return chunks
+
+    def _generate_fallback_suggestions(
+        self,
+        criteria: list,
+        overall_score: int
+    ) -> list[str]:
+        """Generate specific revision suggestions based on low-scoring criteria.
+
+        Args:
+            criteria: List of QualityCriterion from quality assessment
+            overall_score: Overall quality score (1-10)
+
+        Returns:
+            List of specific revision suggestions
+        """
+        suggestions = []
+
+        # Map criteria names to specific improvement suggestions
+        CRITERIA_SUGGESTIONS = {
+            "Faglig korrekthed": [
+                "Verificer alle medicinske påstande mod primære kilder",
+                "Tjek doser og intervaller mod gældende retningslinjer",
+            ],
+            "Klinisk specificitet (TINTINALLI-NIVEAU)": [
+                "Tilføj PRÆCISE doser med mg/kg og max-doser",
+                "Beskriv ANATOMISKE landmarks detaljeret",
+                "Tilføj PÆDIATRISKE og GERIATRISKE variationer",
+                "Angiv MONITORERING-parametre og intervaller",
+            ],
+            "Citationsdækning": [
+                "Tilføj kildehenvisning til alle faktuelle påstande",
+                "Prioriter højkvalitets kilder (guidelines, systematic reviews)",
+            ],
+            "Klarhed og trin-for-trin": [
+                "Omstrukturer til nummererede trin i logisk rækkefølge",
+                "Fjern tvetydigheder og uklare formuleringer",
+            ],
+            "Fuldstændighed": [
+                "Tilføj afsnit om komplikationer og deres håndtering",
+                "Inkluder komplet udstyrsliste",
+                "Beskriv patientpositionering",
+            ],
+            "Dansk sprogkvalitet": [
+                "Gennemgå for konsistent dansk terminologi",
+                "Erstat engelske termer med danske ækvivalenter",
+            ],
+        }
+
+        # Find low-scoring criteria (score < 7)
+        for criterion in criteria:
+            if hasattr(criterion, 'score') and criterion.score < 7:
+                criterion_name = criterion.name if hasattr(criterion, 'name') else str(criterion)
+
+                # Find matching suggestions
+                for key, suggestion_list in CRITERIA_SUGGESTIONS.items():
+                    if key.lower() in criterion_name.lower():
+                        suggestions.extend(suggestion_list[:2])  # Take first 2 suggestions
+                        break
+
+        # Add notes from low-scoring criteria as suggestions
+        for criterion in criteria:
+            if hasattr(criterion, 'score') and criterion.score < 7:
+                if hasattr(criterion, 'notes') and criterion.notes:
+                    suggestions.append(f"Kvalitetsnote: {criterion.notes}")
+
+        # Fallback if still no suggestions
+        if not suggestions:
+            if overall_score < 5:
+                suggestions = [
+                    "Omfattende revision påkrævet - gennemgå alle sektioner",
+                    "Tilføj præcise doser og anatomiske detaljer",
+                    "Sikr at alle påstande har kildehenvisning",
+                ]
+            else:
+                suggestions = [
+                    "Forbedre klinisk specificitet med præcise doser",
+                    "Tilføj pædiatriske/geriatriske variationer",
+                    "Udvid komplikationsafsnit",
+                ]
+
+        return suggestions[:5]  # Limit to 5 suggestions
 
     def _error_output(self, error: str) -> PipelineOutput:
         """Create error output."""

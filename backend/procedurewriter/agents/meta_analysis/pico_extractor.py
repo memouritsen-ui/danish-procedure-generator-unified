@@ -51,8 +51,9 @@ class PICOExtractor(BaseAgent[PICOExtractionInput, PICOData]):
         self,
         llm: LLMProvider,
         model: str | None = None,
-        confidence_threshold: float = 0.85,
-        enable_self_correction: bool = False,
+        confidence_threshold: float = 0.50,  # Lowered from 0.85 - be more inclusive
+        enable_self_correction: bool = True,  # Enable by default to improve extraction
+        raise_on_low_confidence: bool = False,  # Don't throw exceptions by default
     ) -> None:
         """Initialize PICO extractor.
 
@@ -60,12 +61,17 @@ class PICOExtractor(BaseAgent[PICOExtractionInput, PICOData]):
             llm: LLM provider for extraction.
             model: Model name override.
             confidence_threshold: Minimum confidence for automatic acceptance (0-1).
+                                 Lowered to 0.50 to be more inclusive of partial matches.
             enable_self_correction: Enable second-pass self-correction for
-                                   low-confidence extractions.
+                                   low-confidence extractions. Default True.
+            raise_on_low_confidence: If True, raise ManualReviewRequired exception
+                                    for low confidence. If False (default), return
+                                    the low-confidence data for downstream handling.
         """
         super().__init__(llm, model)
         self._confidence_threshold = confidence_threshold
         self._enable_self_correction = enable_self_correction
+        self._raise_on_low_confidence = raise_on_low_confidence
 
     @property
     def name(self) -> str:
@@ -97,13 +103,20 @@ class PICOExtractor(BaseAgent[PICOExtractionInput, PICOData]):
             )
             pico_data = self._self_correct(input_data, pico_data)
 
-        # Final confidence check
+        # Final confidence check - only raise if explicitly configured
         if pico_data.confidence < self._confidence_threshold:
-            raise ManualReviewRequired(
-                confidence=pico_data.confidence,
-                reason=f"PICO extraction confidence {pico_data.confidence:.2f} below threshold {self._confidence_threshold}",
-                study_id=input_data.study_id,
-            )
+            if self._raise_on_low_confidence:
+                raise ManualReviewRequired(
+                    confidence=pico_data.confidence,
+                    reason=f"PICO extraction confidence {pico_data.confidence:.2f} below threshold {self._confidence_threshold}",
+                    study_id=input_data.study_id,
+                )
+            else:
+                # Log warning but return data for downstream handling
+                logger.warning(
+                    f"Low PICO confidence ({pico_data.confidence:.2f}) for {input_data.study_id}, "
+                    "returning data for downstream filtering"
+                )
 
         return AgentResult(
             output=pico_data,

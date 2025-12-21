@@ -24,12 +24,16 @@ class SourceReference(BaseModel):
     """A source found by the researcher."""
     source_id: str
     title: str
-    year: int | None = None
+    year: int | str | None = None  # Allow str for "2024" from APIs
     pmid: str | None = None
     doi: str | None = None
     url: str | None = None
-    relevance_score: float = Field(ge=0.0, le=1.0)
+    relevance_score: float = Field(default=0.5, ge=0.0, le=1.0)
     abstract_excerpt: str | None = None
+    abstract: str | None = None  # Full abstract
+    authors: list[str] = Field(default_factory=list)
+    source_type: str | None = None  # Evidence type: danish_guideline, systematic_review, rct, etc.
+    evidence_tier: str | None = None  # Evidence hierarchy tier
 
 
 class ResearcherOutput(AgentOutput):

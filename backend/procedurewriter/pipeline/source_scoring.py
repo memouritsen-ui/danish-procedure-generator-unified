@@ -427,3 +427,159 @@ def source_to_dict(source: Any) -> dict[str, Any]:
         }
 
     return {}
+
+
+# =============================================================================
+# Source Quality Gates
+# =============================================================================
+
+# High-tier evidence levels that indicate authoritative sources
+HIGH_TIER_LEVELS = {
+    "danish_guideline",
+    "nordic_guideline",
+    "european_guideline",
+    "international_guideline",
+    "systematic_review",
+    "meta_analysis",
+    "practice_guideline",
+}
+
+
+@dataclass
+class QualityGateResult:
+    """Result of source quality gate check."""
+
+    passes: bool
+    high_tier_count: int
+    total_count: int
+    average_score: float
+    warnings: list[str]
+    high_tier_sources: list[str]  # Source IDs of high-tier sources
+
+
+def check_source_quality_gate(
+    scored_sources: list[SourceScore],
+    *,
+    min_sources: int = 3,
+    min_average_score: float = 35.0,
+    require_high_tier: bool = True,
+    min_high_tier: int = 1,
+) -> QualityGateResult:
+    """
+    Check if sources meet minimum quality standards for procedure generation.
+
+    This gate ensures that:
+    1. We have enough sources to generate a reliable procedure
+    2. At least some sources are from high-tier evidence levels
+    3. The average source quality is acceptable
+
+    Args:
+        scored_sources: List of scored sources from rank_sources()
+        min_sources: Minimum number of sources required (default: 3)
+        min_average_score: Minimum average composite score (default: 35.0)
+        require_high_tier: Whether to require at least one high-tier source (default: True)
+        min_high_tier: Minimum number of high-tier sources if required (default: 1)
+
+    Returns:
+        QualityGateResult with pass/fail status and diagnostic information
+    """
+    warnings: list[str] = []
+    high_tier_sources: list[str] = []
+
+    # Count sources by tier
+    for ss in scored_sources:
+        if ss.evidence_level in HIGH_TIER_LEVELS:
+            high_tier_sources.append(ss.source_id)
+
+    high_tier_count = len(high_tier_sources)
+    total_count = len(scored_sources)
+
+    # Calculate average score
+    if total_count > 0:
+        average_score = sum(ss.composite_score for ss in scored_sources) / total_count
+    else:
+        average_score = 0.0
+
+    # Check gate conditions
+    passes = True
+
+    # Check minimum source count
+    if total_count < min_sources:
+        passes = False
+        warnings.append(
+            f"CRITICAL: Only {total_count} sources found (minimum: {min_sources}). "
+            "Insufficient evidence base for reliable procedure generation."
+        )
+
+    # Check high-tier requirement
+    if require_high_tier and high_tier_count < min_high_tier:
+        passes = False
+        warnings.append(
+            f"CRITICAL: No high-tier sources (guidelines, systematic reviews) found. "
+            f"Required: {min_high_tier}, Found: {high_tier_count}. "
+            "Consider searching for authoritative clinical guidelines."
+        )
+
+    # Check average quality
+    if average_score < min_average_score:
+        passes = False
+        warnings.append(
+            f"WARNING: Average source quality ({average_score:.1f}) below threshold ({min_average_score}). "
+            "Sources may not be sufficiently authoritative for clinical procedure."
+        )
+
+    # Additional quality warnings (don't fail but alert)
+    if high_tier_count == 0 and total_count > 0:
+        warnings.append(
+            "NOTE: All sources are lower-tier evidence. Output should be reviewed by clinical expert."
+        )
+
+    low_quality_count = sum(1 for ss in scored_sources if ss.composite_score < 30)
+    if low_quality_count > total_count / 2:
+        warnings.append(
+            f"NOTE: {low_quality_count}/{total_count} sources have low quality scores (<30). "
+            "Consider additional research for higher-quality sources."
+        )
+
+    # Check for very old sources
+    old_count = sum(
+        1 for ss in scored_sources
+        if ss.recency_year and ss.recency_year < (datetime.now().year - 10)
+    )
+    if old_count > total_count / 3:
+        warnings.append(
+            f"NOTE: {old_count}/{total_count} sources are older than 10 years. "
+            "Medical guidelines may have changed; verify current recommendations."
+        )
+
+    return QualityGateResult(
+        passes=passes,
+        high_tier_count=high_tier_count,
+        total_count=total_count,
+        average_score=round(average_score, 1),
+        warnings=warnings,
+        high_tier_sources=high_tier_sources,
+    )
+
+
+def format_quality_gate_message(result: QualityGateResult) -> str:
+    """Format quality gate result as human-readable message."""
+    lines = []
+
+    if result.passes:
+        lines.append("✅ Source quality gate PASSED")
+    else:
+        lines.append("⚠️ Source quality gate FAILED")
+
+    lines.append(
+        f"   Sources: {result.total_count} total, {result.high_tier_count} high-tier"
+    )
+    lines.append(f"   Average quality score: {result.average_score}/100")
+
+    if result.high_tier_sources:
+        lines.append(f"   High-tier sources: {', '.join(result.high_tier_sources[:5])}")
+
+    for warning in result.warnings:
+        lines.append(f"   • {warning}")
+
+    return "\n".join(lines)
