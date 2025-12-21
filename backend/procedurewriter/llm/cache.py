@@ -34,7 +34,7 @@ def compute_cache_key(
 
     Args:
         messages: List of message dicts with 'role' and 'content'
-        model: Model identifier (e.g., "gpt-4", "claude-3-opus")
+        model: Model identifier (e.g., "gpt-5.2", "claude-opus-4-5")
         temperature: Sampling temperature
 
     Returns:

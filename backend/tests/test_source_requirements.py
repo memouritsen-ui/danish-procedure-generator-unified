@@ -125,3 +125,68 @@ def test_enforce_source_requirements_skips_in_dummy_mode() -> None:
     warnings: list[str] = []
 
     _enforce_source_requirements(sources=[], settings=settings, warnings=warnings)
+
+
+def test_evidence_policy_is_defined_early_regression() -> None:
+    """Regression test: evidence_policy must be defined before _enforce_source_requirements.
+
+    This test verifies that the function accepts the evidence_policy parameter
+    and doesn't crash when called (fixing the bug where evidence_policy was
+    used before being assigned in run_pipeline).
+    """
+    settings = Settings(require_international_sources=False, require_danish_guidelines=False, dummy_mode=False)
+    warnings: list[str] = []
+    # Provide all required sources for strict mode to pass
+    sources = [
+        _make_source("SRC0001", "danish_guideline"),
+        _make_source("SRC0002", "nice_guideline"),
+        _make_source("SRC0003", "cochrane_review"),
+    ]
+
+    # Should not crash with any of these evidence_policy values
+    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="strict")
+    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="warn")
+    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="off")
+
+
+def test_pubmed_meta_analysis_when_available_no_pubmed_sources() -> None:
+    """Test that PubMed meta-analysis tier is skipped when there are no PubMed sources at all.
+
+    This implements the 'when available' logic - we don't fail on missing PubMed
+    meta-analyses if there are zero PubMed sources in the first place.
+    """
+    settings = Settings(require_international_sources=True, require_danish_guidelines=True, dummy_mode=False)
+    warnings: list[str] = []
+    # Sources with NICE, Cochrane, and Danish - but NO PubMed sources at all
+    sources = [
+        _make_source("SRC0001", "danish_guideline"),
+        _make_source("SRC0002", "nice_guideline"),
+        _make_source("SRC0003", "cochrane_review"),
+    ]
+
+    # Should NOT raise even though there are no PubMed meta-analyses,
+    # because there are no PubMed sources at all ("when available" logic)
+    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="strict")
+
+    # Verify no PubMed-related warning was added
+    assert not any("PubMed" in w for w in warnings)
+
+
+def test_pubmed_meta_analysis_when_available_with_pubmed_but_no_reviews() -> None:
+    """Test that PubMed meta-analysis tier fails when there ARE PubMed sources but none are reviews."""
+    settings = Settings(require_international_sources=True, require_danish_guidelines=True, dummy_mode=False)
+    warnings: list[str] = []
+    # Sources with PubMed but no meta-analyses/systematic reviews
+    sources = [
+        _make_source("SRC0001", "danish_guideline"),
+        _make_source("SRC0002", "nice_guideline"),
+        _make_source("SRC0003", "cochrane_review"),
+        _make_source("SRC0004", "pubmed"),  # PubMed but no publication_types for meta-analysis
+    ]
+
+    # Should raise because there ARE PubMed sources but none are meta-analyses
+    with pytest.raises(EvidencePolicyError):
+        _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="strict")
+
+    # Verify PubMed-related warning was added
+    assert any("PubMed" in w for w in warnings)

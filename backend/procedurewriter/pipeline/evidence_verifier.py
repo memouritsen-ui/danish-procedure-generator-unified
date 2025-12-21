@@ -557,11 +557,20 @@ def verification_to_dict(v: EvidenceVerification) -> dict[str, Any]:
         "explanation": v.explanation,
         "source_excerpt": v.source_excerpt,
         "line_number": v.line_number,
+        # Also include line_no for compatibility with evidence.py
+        "line_no": v.line_number,
+        # Map support_level to status for evidence.py compatibility
+        "status": v.support_level,
     }
 
 
 def summary_to_dict(s: VerificationSummary) -> dict[str, Any]:
-    """Convert VerificationSummary to dict for JSON serialization."""
+    """Convert VerificationSummary to dict for JSON serialization.
+
+    Returns both "verifications" (native format) and "sentences" (evidence.py format)
+    for compatibility with build_evidence_report().
+    """
+    verification_dicts = [verification_to_dict(v) for v in s.verifications]
     return {
         "total_citations": s.total_citations,
         "fully_supported": s.fully_supported,
@@ -570,5 +579,8 @@ def summary_to_dict(s: VerificationSummary) -> dict[str, Any]:
         "contradicted": s.contradicted,
         "unverified": s.unverified,
         "overall_score": s.overall_score,
-        "verifications": [verification_to_dict(v) for v in s.verifications],
+        # Native format
+        "verifications": verification_dicts,
+        # Compatible format for evidence.py build_evidence_report()
+        "sentences": verification_dicts,
     }

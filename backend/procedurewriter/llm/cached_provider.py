@@ -31,10 +31,10 @@ class CachedLLMProvider(LLMProvider):
         cached = CachedLLMProvider(provider, cache_dir=Path("./cache"))
 
         # First call hits API
-        response1 = cached.chat_completion(messages, model="gpt-4", temperature=0.2)
+        response1 = cached.chat_completion(messages, model="gpt-5.2", temperature=0.2)
 
         # Second identical call returns cached response
-        response2 = cached.chat_completion(messages, model="gpt-4", temperature=0.2)
+        response2 = cached.chat_completion(messages, model="gpt-5.2", temperature=0.2)
     """
 
     def __init__(

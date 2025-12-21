@@ -78,14 +78,16 @@ def _apply_style_profile(
         return raw_markdown
 
     try:
-        agent = StyleAgent(llm=llm, model=model or "gpt-4")
+        # Use GPT-5.2 as default for gold-standard output (not gpt-4)
+        agent = StyleAgent(llm=llm, model=model or "gpt-5.2")
         result = agent.execute(
             StyleInput(
                 procedure_title=procedure_name,
                 raw_markdown=raw_markdown,
                 sources=sources,
                 style_profile=style_profile,
-            )
+            ),
+            strict_mode=True,  # Enforce strict mode for canonical outline adherence
         )
 
         if result.output.success:
@@ -196,6 +198,17 @@ def run_pipeline(
     author_guide = load_yaml(settings.author_guide_path)
     allowlist = load_yaml(settings.allowlist_path)
     evidence_hierarchy = EvidenceHierarchy.from_config(settings.evidence_hierarchy_path)
+
+    # Compute evidence_policy EARLY - before _enforce_source_requirements is called
+    # Default to STRICT evidence policy for gold-standard output
+    # Only override if explicitly configured in author guide
+    evidence_policy = "strict"
+    if isinstance(author_guide, dict):
+        validation = author_guide.get("validation")
+        if isinstance(validation, dict):
+            p = validation.get("evidence_policy")
+            if isinstance(p, str) and p.strip():
+                evidence_policy = p.strip().lower()
 
     http = CachedHttpClient(cache_dir=settings.cache_dir)
     try:
@@ -636,6 +649,10 @@ def run_pipeline(
             openai_api_key=openai_api_key,
         )
 
+        # Pre-compute quantitative evidence context BEFORE writing
+        # This allows writers to incorporate meta-analysis findings into content generation
+        quantitative_evidence_context = _compute_quantitative_evidence_context(sources)
+
         # Use multi-agent orchestrator when LLM is enabled
         if settings.use_llm and not settings.dummy_mode:
             # Emit scored sources info (scoring already done above)
@@ -704,6 +721,7 @@ def run_pipeline(
                     openai_api_key=openai_api_key,
                     anthropic_api_key=anthropic_api_key,
                     ollama_base_url=ollama_base_url or settings.ollama_base_url,
+                    quantitative_evidence_context=quantitative_evidence_context,
                 )
                 orchestrator_quality_score = None
                 orchestrator_iterations = 1
@@ -723,6 +741,7 @@ def run_pipeline(
                 openai_api_key=openai_api_key,
                 anthropic_api_key=anthropic_api_key,
                 ollama_base_url=ollama_base_url or settings.ollama_base_url,
+                quantitative_evidence_context=quantitative_evidence_context,
             )
             orchestrator_quality_score = None
             orchestrator_iterations = 1
@@ -756,8 +775,9 @@ def run_pipeline(
                 )
 
                 # Also check kind for known high-evidence source types
+                # Note: Use "cochrane_review" to match the kind used in _enforce_source_requirements
                 is_high_evidence_kind = src.kind in {
-                    "pubmed", "cochrane", "nice_guideline", "systematic_review",
+                    "pubmed", "cochrane_review", "nice_guideline", "systematic_review",
                 }
 
                 # Include if any quantitative indicator is positive
@@ -826,8 +846,27 @@ def run_pipeline(
                     emitter.emit(EventType.ERROR, {"error": f"Meta-analysis failed: {str(e)}"})
 
         # Inject meta-analysis summary into markdown BEFORE style polishing
+        # Use strict_mode=True to ensure canonical outline is enforced
         if meta_summary_lines:
-            md = _replace_section(md, heading="Evidens og Meta-analyse", new_lines=meta_summary_lines)
+            md = _replace_section(
+                md,
+                heading="Evidens og Meta-analyse",
+                new_lines=meta_summary_lines,
+                strict_mode=True,  # Enforce canonical outline structure
+            )
+        elif quantitative_candidates:
+            # Narrative fallback when meta-analysis fails or is skipped but we have quantitative sources
+            fallback_lines = _format_narrative_evidence_fallback(
+                candidates=quantitative_candidates,
+                sources=sources,
+            )
+            if fallback_lines:
+                md = _replace_section(
+                    md,
+                    heading="Evidens og Meta-analyse",
+                    new_lines=fallback_lines,
+                    strict_mode=True,  # Enforce canonical outline structure
+                )
 
         # Apply style profile if available (LLM-powered markdown polishing)
         style_profile_data = get_default_style_profile(settings.db_path)
@@ -894,19 +933,7 @@ def run_pipeline(
         procedure_md_path = run_dir / "procedure.md"
         write_text(procedure_md_path, final_md)
 
-        evidence_report_path = run_dir / "evidence_report.json"
-        evidence = build_evidence_report(final_md, snippets=snippets)
-        write_json(evidence_report_path, evidence)
-
-        # Default to STRICT evidence policy for gold-standard output
-        # Only override if explicitly configured in author guide
-        evidence_policy = "strict"
-        if isinstance(author_guide, dict):
-            validation = author_guide.get("validation")
-            if isinstance(validation, dict):
-                p = validation.get("evidence_policy")
-                if isinstance(p, str) and p.strip():
-                    evidence_policy = p.strip().lower()
+        # evidence_policy is already computed at the top of run_pipeline()
 
         # Run evidence verification if enabled and Anthropic key is available
         verification_cost = 0.0
@@ -950,18 +977,12 @@ def run_pipeline(
 
                 verification_summary, verification_cost = asyncio.run(run_verification())
 
-                verification_path = run_dir / "evidence_verification.json"
-                write_json(verification_path, summary_to_dict(verification_summary))
+                # Use summary_to_dict which includes "sentences" for build_evidence_report compatibility
+                verification_result = summary_to_dict(verification_summary)
+                verification_result["verification_cost_usd"] = verification_cost
 
-                verification_result = {
-                    "total_citations": verification_summary.total_citations,
-                    "fully_supported": verification_summary.fully_supported,
-                    "partially_supported": verification_summary.partially_supported,
-                    "not_supported": verification_summary.not_supported,
-                    "contradicted": verification_summary.contradicted,
-                    "overall_score": verification_summary.overall_score,
-                    "verification_cost_usd": verification_cost,
-                }
+                verification_path = run_dir / "evidence_verification.json"
+                write_json(verification_path, verification_result)
 
                 emitter.emit(EventType.PROGRESS, {
                     "message": f"Evidence verified: {verification_summary.overall_score}% supported",
@@ -972,6 +993,16 @@ def run_pipeline(
             except Exception as e:
                 logger.warning("Evidence verification failed: %s", e)
                 verification_result = {"error": str(e)}
+
+        # Build evidence report AFTER verification so we can include verification results
+        # The verification_result includes "sentences" key for build_evidence_report compatibility
+        evidence_report_path = run_dir / "evidence_report.json"
+        evidence = build_evidence_report(
+            final_md,
+            snippets=snippets,
+            verification_results=verification_result,  # Pass verification results if available
+        )
+        write_json(evidence_report_path, evidence)
 
         # Strict mode enforcement for evidence verification
         # Read verification requirements from author guide
@@ -1163,6 +1194,77 @@ def _has_danish_guidelines(sources: list[SourceRecord]) -> bool:
     return any(src.kind == "danish_guideline" for src in sources)
 
 
+def _compute_tier_details(sources: list[SourceRecord], settings: Settings) -> dict[str, dict[str, Any]]:
+    """Compute tier details for source selection report.
+
+    Returns a dict with tier names as keys, each containing:
+    - count: number of sources in this tier
+    - required: whether this tier is required
+    - sources: list of source IDs in this tier
+    - when_available: True for tiers that are required "when available" (soft requirement)
+    """
+    tier_details: dict[str, dict[str, Any]] = {}
+
+    # NICE sources
+    nice_sources = [s for s in sources if s.kind == "nice_guideline"
+                    or (s.extra.get("international_source_type") == "nice")]
+    tier_details["nice"] = {
+        "count": len(nice_sources),
+        "required": True,
+        "when_available": False,
+        "sources": [s.source_id for s in nice_sources],
+    }
+
+    # Cochrane sources
+    cochrane_sources = [s for s in sources if s.kind == "cochrane_review"
+                        or (s.extra.get("international_source_type") == "cochrane")
+                        or "cochranelibrary.com" in (s.url or "")]
+    tier_details["cochrane"] = {
+        "count": len(cochrane_sources),
+        "required": True,
+        "when_available": False,
+        "sources": [s.source_id for s in cochrane_sources],
+    }
+
+    # PubMed meta-analyses/systematic reviews (required "when available")
+    pubmed_reviews = [
+        s for s in sources
+        if s.kind == "pubmed"
+        and isinstance(s.extra, dict)
+        and any(
+            pt.lower() in ("systematic review", "meta-analysis")
+            for pt in (s.extra.get("publication_types") or [])
+            if isinstance(pt, str)
+        )
+    ]
+    tier_details["pubmed_reviews"] = {
+        "count": len(pubmed_reviews),
+        "required": True,
+        "when_available": True,  # Soft requirement - only enforced when sources exist
+        "sources": [s.source_id for s in pubmed_reviews],
+    }
+
+    # Danish guidelines
+    danish_sources = [s for s in sources if s.kind == "danish_guideline"]
+    tier_details["danish"] = {
+        "count": len(danish_sources),
+        "required": settings.require_danish_guidelines,
+        "when_available": False,
+        "sources": [s.source_id for s in danish_sources],
+    }
+
+    # Seed URLs (from guideline_url kind)
+    seed_sources = [s for s in sources if s.kind == "guideline_url"]
+    tier_details["seed_urls"] = {
+        "count": len(seed_sources),
+        "required": False,
+        "when_available": False,
+        "sources": [s.source_id for s in seed_sources],
+    }
+
+    return tier_details
+
+
 def _build_source_selection_report(
     *,
     sources: list[SourceRecord],
@@ -1184,8 +1286,11 @@ def _build_source_selection_report(
     if settings.require_danish_guidelines and not has_danish:
         missing.append("Danish guidelines")
 
+    # Compute tier details
+    tier_details = _compute_tier_details(sources, settings)
+
     return {
-        "version": 1,
+        "version": 2,  # Bumped for tier_details addition
         "generated_at_utc": _utc_now_iso(),
         "requirements": {
             "require_international_sources": settings.require_international_sources,
@@ -1194,6 +1299,7 @@ def _build_source_selection_report(
             "has_danish_guidelines": has_danish,
             "missing": missing,
         },
+        "tier_details": tier_details,  # Per-tier breakdown with "when available" info
         "counts": {
             "total_sources": len(sources),
             "by_kind": by_kind,
@@ -1257,20 +1363,29 @@ def _enforce_source_requirements(
             warnings.append(msg)
         missing.append("Cochrane reviews")
 
-    # Check PubMed meta-analyses/systematic reviews
+    # Check PubMed meta-analyses/systematic reviews ("when available" tier)
+    # Only require PubMed reviews if there are PubMed sources at all
+    all_pubmed_sources = [s for s in sources if s.kind == "pubmed"]
     pubmed_reviews = [
-        s for s in sources
-        if s.kind == "pubmed"
-        and isinstance(s.extra, dict)
+        s for s in all_pubmed_sources
+        if isinstance(s.extra, dict)
         and any(
             pt.lower() in ("systematic review", "meta-analysis")
             for pt in (s.extra.get("publication_types") or [])
             if isinstance(pt, str)
         )
     ]
-    tier_details["pubmed_reviews"] = {"count": len(pubmed_reviews), "required": True}
-    if not pubmed_reviews:
-        msg = "No PubMed systematic reviews or meta-analyses found."
+    # "when_available" means we only fail if there ARE PubMed sources but none are reviews
+    has_pubmed_sources = len(all_pubmed_sources) > 0
+    tier_details["pubmed_reviews"] = {
+        "count": len(pubmed_reviews),
+        "required": has_pubmed_sources,  # Only required when PubMed sources exist
+        "when_available": True,  # This tier is conditional
+        "total_pubmed": len(all_pubmed_sources),
+    }
+    if has_pubmed_sources and not pubmed_reviews:
+        # Only warn/fail if we have PubMed sources but none are meta-analyses
+        msg = "No PubMed systematic reviews or meta-analyses found among PubMed sources."
         if msg not in warnings:
             warnings.append(msg)
         missing.append("PubMed meta-analyses")
@@ -1591,8 +1706,30 @@ def _append_international_sources(
     return source_n
 
 
-def _replace_section(markdown_text: str, *, heading: str, new_lines: list[str]) -> str:
-    """Replace a markdown section with new lines. Appends section if missing."""
+class SectionNotFoundError(ValueError):
+    """Raised when a required section heading is not found in strict mode."""
+    pass
+
+
+def _replace_section(
+    markdown_text: str,
+    *,
+    heading: str,
+    new_lines: list[str],
+    strict_mode: bool = False,
+) -> str:
+    """Replace a markdown section with new lines.
+
+    Args:
+        markdown_text: The markdown to modify
+        heading: The section heading (without ##)
+        new_lines: Lines to insert in the section
+        strict_mode: If True, raise SectionNotFoundError when heading is missing.
+                    If False (default), append section at end.
+
+    Raises:
+        SectionNotFoundError: When strict_mode=True and heading is not found
+    """
     lines = markdown_text.splitlines()
     header = f"## {heading}".strip()
     start_idx = None
@@ -1605,7 +1742,12 @@ def _replace_section(markdown_text: str, *, heading: str, new_lines: list[str]) 
             end_idx = i
             break
     if start_idx is None:
-        # Append new section at end
+        if strict_mode:
+            raise SectionNotFoundError(
+                f"Section '## {heading}' not found in document. "
+                "In strict mode, all sections must exist in the canonical outline."
+            )
+        # Append new section at end (non-strict mode)
         out = lines + ["", header] + new_lines + [""]
         return "\n".join(out).strip() + "\n"
     if end_idx is None:
@@ -1647,6 +1789,54 @@ def _format_meta_analysis_summary(
         )
     except Exception:
         lines.append(f"Meta-analyse opsummering kunne ikke formateres. {cite}".strip())
+    return lines
+
+
+def _format_narrative_evidence_fallback(
+    *,
+    candidates: list[dict[str, Any]],
+    sources: list[SourceRecord],
+) -> list[str]:
+    """Build narrative evidence summary when meta-analysis is not possible.
+
+    This provides a narrative fallback describing the available evidence
+    when formal meta-analysis cannot be performed (e.g., too few studies,
+    meta-analysis orchestrator unavailable, or analysis failed).
+    """
+    if not candidates:
+        return []
+
+    source_lookup = {s.source_id: s for s in sources}
+    lines: list[str] = []
+
+    # Build citation string
+    cite_ids = [c["study_id"] for c in candidates[:6]]
+    cite = " ".join(f"[S:{sid}]" for sid in cite_ids) if cite_ids else ""
+
+    # Count study types
+    sr_count = sum(1 for c in candidates if "systematic" in c.get("text", "").lower())
+    rct_count = sum(1 for c in candidates if "randomized" in c.get("text", "").lower() or "rct" in c.get("text", "").lower())
+    other_count = len(candidates) - sr_count - rct_count
+
+    if len(candidates) == 1:
+        lines.append(f"Evidensen baseres på ét studie. {cite}")
+    else:
+        parts = []
+        if sr_count:
+            parts.append(f"{sr_count} systematiske reviews")
+        if rct_count:
+            parts.append(f"{rct_count} randomiserede studier")
+        if other_count:
+            parts.append(f"{other_count} andre studier")
+
+        study_summary = ", ".join(parts) if parts else f"{len(candidates)} studier"
+        lines.append(f"Evidensen baseres på {study_summary}. {cite}")
+
+    lines.append(
+        "Formel meta-analyse kunne ikke gennemføres på grund af utilstrækkelige data "
+        "eller heterogenitet mellem studierne. Se de individuelle kilder for detaljer."
+    )
+
     return lines
 
 
@@ -1770,7 +1960,7 @@ def _expand_procedure_terms(
     procedure: str,
     context: str | None,
     llm: Any | None = None,
-    model: str = "gpt-4o-mini",
+    model: str = "gpt-5.2",  # Gold-standard model for accurate term expansion
 ) -> list[str]:
     """Expand Danish procedure terms to include English equivalents.
 
@@ -1856,6 +2046,65 @@ def _build_pubmed_queries(*, expanded_terms: list[str]) -> list[str]:
         q_seen.add(k)
         out.append(q)
     return out
+
+
+def _compute_quantitative_evidence_context(sources: list[SourceRecord]) -> str | None:
+    """Pre-compute quantitative evidence context BEFORE writing.
+
+    This provides key findings from systematic reviews, meta-analyses, and RCTs
+    to the writer so it can incorporate evidence-based recommendations into
+    the procedure content generation (not just inject after).
+
+    Args:
+        sources: All source records
+
+    Returns:
+        A brief evidence summary string for use in writer prompts, or None if
+        no quantitative sources are available.
+    """
+    quantitative_sources: list[str] = []
+
+    for src in sources:
+        # Check if source has quantitative evidence indicators
+        level = str(src.extra.get("evidence_level", "")).lower()
+        is_quant_level = any(
+            x in level
+            for x in ["meta_analysis", "systematic_review", "rct", "randomized", "syst_review"]
+        )
+
+        pub_types = [str(t).lower() for t in src.extra.get("publication_types", [])]
+        is_quant_pub = any(
+            kw in t
+            for t in pub_types
+            for kw in ["randomized", "meta-analysis", "systematic review", "clinical trial"]
+        )
+
+        # Also check kind for known high-evidence source types
+        is_high_evidence_kind = src.kind in {
+            "cochrane_review", "nice_guideline", "systematic_review",
+        }
+
+        # Collect quantitative evidence descriptions
+        if is_quant_level or is_quant_pub or is_high_evidence_kind:
+            source_desc = f"- [{src.source_id}] {src.title}"
+            if src.kind in {"cochrane_review", "systematic_review"}:
+                source_desc += " (Systematic Review/Meta-analysis)"
+            elif "meta-analysis" in " ".join(pub_types):
+                source_desc += " (Meta-analysis)"
+            elif is_high_evidence_kind:
+                source_desc += f" ({src.kind})"
+            quantitative_sources.append(source_desc)
+
+    if not quantitative_sources:
+        return None
+
+    context = (
+        "KVANTITATIV EVIDENS TILGÆNGELIG:\n"
+        "Følgende kilder indeholder systematiske reviews, meta-analyser eller RCT'er. "
+        "Inkludér deres konklusioner i relevante sektioner, særligt 'Evidens og Meta-analyse':\n"
+        + "\n".join(quantitative_sources[:10])  # Limit to top 10
+    )
+    return context
 
 
 _relevance_token_re = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+", re.UNICODE)

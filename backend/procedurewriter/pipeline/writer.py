@@ -74,6 +74,8 @@ def write_procedure_markdown(
     llm_provider: str | None = None,
     anthropic_api_key: str | None = None,
     ollama_base_url: str | None = None,
+    citation_strict_mode: bool | None = None,
+    quantitative_evidence_context: str | None = None,
 ) -> str:
     """
     Generate procedure markdown using LLM or template.
@@ -91,8 +93,25 @@ def write_procedure_markdown(
         llm_provider: Provider type (openai, anthropic, ollama)
         anthropic_api_key: Anthropic API key (for anthropic provider)
         ollama_base_url: Ollama server URL (for ollama provider)
+        citation_strict_mode: If True, raise CitationValidationError when lines lack citations.
+            If None, derive from author_guide validation config.
+        quantitative_evidence_context: Pre-computed context about available systematic reviews,
+            meta-analyses, and RCTs to inform content generation (not just post-hoc injection).
     """
     citation_pool = _citation_pool(snippets, sources)
+
+    # Derive citation_strict_mode from author_guide if not provided
+    if citation_strict_mode is None and isinstance(author_guide, dict):
+        validation = author_guide.get("validation")
+        if isinstance(validation, dict):
+            # Check for explicit strict_citations setting
+            strict_citations = validation.get("strict_citations")
+            if isinstance(strict_citations, bool):
+                citation_strict_mode = strict_citations
+            # Or derive from evidence_policy
+            elif validation.get("evidence_policy") == "strict":
+                citation_strict_mode = True
+    citation_strict_mode = citation_strict_mode or False
 
     # Check if we should skip LLM
     provider = llm_provider or "openai"
@@ -114,6 +133,8 @@ def write_procedure_markdown(
             openai_api_key=openai_api_key,
             anthropic_api_key=anthropic_api_key,
             ollama_base_url=ollama_base_url,
+            citation_strict_mode=citation_strict_mode,
+            quantitative_evidence_context=quantitative_evidence_context,
         )
     except Exception:
         try:
@@ -129,6 +150,7 @@ def write_procedure_markdown(
                 openai_api_key=openai_api_key,
                 anthropic_api_key=anthropic_api_key,
                 ollama_base_url=ollama_base_url,
+                quantitative_evidence_context=quantitative_evidence_context,
             )
         except Exception:
             return _write_template(procedure=procedure, context=context, author_guide=author_guide, citations=citation_pool, sources=sources)
@@ -207,6 +229,8 @@ def _write_llm_sectioned(
     openai_api_key: str | None = None,
     anthropic_api_key: str | None = None,
     ollama_base_url: str | None = None,
+    citation_strict_mode: bool = False,
+    quantitative_evidence_context: str | None = None,
 ) -> str:
     from procedurewriter.llm import get_llm_client
     from procedurewriter.pipeline.retrieve import retrieve
@@ -264,6 +288,8 @@ def _write_llm_sectioned(
             section_snippets=sec_snips[:8],
             allowed_source_ids=allowed_ids,
             source_by_id=source_by_id,
+            citation_strict_mode=citation_strict_mode,
+            quantitative_evidence_context=quantitative_evidence_context,
         )
 
         lines.append(f"## {heading}")
@@ -288,6 +314,8 @@ def _write_llm_section_body(
     section_snippets: list[Snippet],
     allowed_source_ids: list[str],
     source_by_id: dict[str, SourceRecord],
+    citation_strict_mode: bool = False,
+    quantitative_evidence_context: str | None = None,
 ) -> list[str]:
     """Generate content for a single section using the LLM provider."""
     snippet_lines: list[str] = []
@@ -331,6 +359,15 @@ def _write_llm_section_body(
         "safety": "Sikkerhedsboks: OBS/stop-kriterier/eskalation.",
     }.get(bundle, "")
 
+    # Build quantitative evidence hint for meta-analysis sections
+    quant_hint = ""
+    if quantitative_evidence_context and heading.lower() in ("evidens og meta-analyse", "evidens", "meta-analyse"):
+        quant_hint = (
+            "\n\nKVANTITATIV EVIDENS (brug disse tal i din tekst):\n"
+            f"{quantitative_evidence_context}\n"
+            "Inkorporér effektstørrelser, konfidensintervaller og heterogenitet i din tekst.\n"
+        )
+
     system = (
         "Du er en akutmedicinsk procedureforfatter (DK). Du skriver kun INDHOLD til én sektion ad gangen.\n\n"
         "KRAV (ikke til forhandling):\n"
@@ -346,6 +383,7 @@ def _write_llm_section_body(
         "indsamlede kilder; følg lokal retningslinje.') og stadig citere med et tilladt source_id.\n"
         "- Ingen overskrifter, ingen preface, ingen kilde-URLs i brødteksten.\n"
         "- Bevar medicinske forkortelser som n. (nervus), m. (musculus), v. (vena), a. (arteria) osv. intakte.\n"
+        f"{quant_hint}"
     )
     user = (
         f"PROCEDURE: {procedure}\n"
@@ -369,7 +407,13 @@ def _write_llm_section_body(
     tracker.track(resp, operation=f"write_section:{heading}")
 
     raw = resp.content.strip()
-    return _normalize_section_lines(raw, fmt=fmt, fallback_citation=allowed_source_ids[0])
+    return _normalize_section_lines(
+        raw,
+        fmt=fmt,
+        fallback_citation=allowed_source_ids[0],
+        strict_mode=citation_strict_mode,
+        allow_fallback_citations=not citation_strict_mode,
+    )
 
 
 def _normalize_section_lines(
@@ -526,6 +570,7 @@ def _write_llm(
     openai_api_key: str | None = None,
     anthropic_api_key: str | None = None,
     ollama_base_url: str | None = None,
+    quantitative_evidence_context: str | None = None,
 ) -> str:
     from procedurewriter.llm import get_llm_client, get_session_tracker
 
@@ -567,6 +612,15 @@ def _write_llm(
         source_lines.append(f"- [S:{src.source_id}] {meta}{pub_types_text}{evidence_text}".strip())
     sources_text = "\n".join(source_lines) if source_lines else "(ingen)"
 
+    # Build quantitative evidence hint if available
+    quant_hint = ""
+    if quantitative_evidence_context:
+        quant_hint = (
+            "\n\nKVANTITATIV EVIDENS (brug disse tal i relevante sektioner):\n"
+            f"{quantitative_evidence_context}\n"
+            "Inkorporér effektstørrelser, konfidensintervaller og heterogenitet i 'Evidens og Meta-analyse' sektionen.\n"
+        )
+
     system = (
         "Du er en akutmedicinsk procedureforfatter (DK). Du skal skrive en bedside-brugbar procedure i et fast, "
         "lagdelt format.\n\n"
@@ -581,6 +635,7 @@ def _write_llm(
         "linjer, 'paragraphs' -> korte afsnit.\n"
         "- Action-bundle: korte, imperative instruktioner. Forklaringslag: kort rationale. Sikkerhedsboks: altid "
         "med.\n"
+        f"{quant_hint}"
     )
     user = (
         f"PROCEDURE: {procedure}\n\n"

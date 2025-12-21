@@ -10,7 +10,7 @@ Usage:
     client = get_llm_client()
     response = client.chat_completion(
         messages=[{"role": "user", "content": "Hello"}],
-        model="gpt-4o-mini",
+        model="gpt-5.2",  # Gold-standard model for medical procedures
         temperature=0.2,
     )
     print(response.content)

@@ -130,6 +130,7 @@ class StyleAgent(BaseAgent[StyleInput, StyleOutput]):
         profile = input_data.style_profile
         original_citations = self._extract_citations(input_data.raw_markdown)
         original_headings = self._extract_headings(input_data.raw_markdown)
+        original_headings_ordered = self._extract_headings_ordered(input_data.raw_markdown)
 
         system_prompt = STYLE_SYSTEM_PROMPT.format(
             tone_description=profile.tone_description,
@@ -171,18 +172,31 @@ OUTPUT KRAV:
             polished = response.content
             polished_citations = self._extract_citations(polished)
             polished_headings = self._extract_headings(polished)
+            polished_headings_ordered = self._extract_headings_ordered(polished)
 
             missing_citations = original_citations - polished_citations
             missing_headings = original_headings - polished_headings
             added_headings = polished_headings - original_headings
 
-            # Check for structural violations in strict mode
-            if strict_mode and (missing_headings or added_headings):
-                raise StyleValidationError(
-                    f"StyleAgent modified document structure in strict mode. "
-                    f"Missing headings: {missing_headings}, Added headings: {added_headings}",
-                    missing_citations=missing_citations,
-                )
+            # Check for structural violations in strict mode:
+            # 1. Missing or added headings (set comparison)
+            # 2. Heading ORDER must match original (canonical outline enforcement)
+            if strict_mode:
+                if missing_headings or added_headings:
+                    raise StyleValidationError(
+                        f"StyleAgent modified document structure in strict mode. "
+                        f"Missing headings: {missing_headings}, Added headings: {added_headings}",
+                        missing_citations=missing_citations,
+                    )
+                # Enforce heading ORDER matches original (canonical outline)
+                if polished_headings_ordered != original_headings_ordered:
+                    raise StyleValidationError(
+                        f"StyleAgent changed heading order in strict mode. "
+                        f"Expected order: {original_headings_ordered}, "
+                        f"Got: {polished_headings_ordered}. "
+                        "Canonical outline order must be preserved.",
+                        missing_citations=missing_citations,
+                    )
 
             if not missing_citations:
                 warnings = []
@@ -245,12 +259,16 @@ FORSØG IGEN og inkluder ALLE citations denne gang."""
         )
 
     def _extract_headings(self, text: str) -> set[str]:
-        """Extract all ## Heading style headings from text."""
-        headings: set[str] = set()
+        """Extract all ## Heading style headings from text as a set."""
+        return set(self._extract_headings_ordered(text))
+
+    def _extract_headings_ordered(self, text: str) -> list[str]:
+        """Extract all ## Heading style headings from text in order."""
+        headings: list[str] = []
         for line in text.splitlines():
             line = line.strip()
             if line.startswith("## "):
-                headings.add(line[3:].strip())
+                headings.append(line[3:].strip())
         return headings
 
     def _extract_citations(self, text: str) -> set[str]:
