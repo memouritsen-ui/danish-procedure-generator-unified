@@ -1,0 +1,159 @@
+"""EvidenceChunk and ClaimEvidenceLink models for the auditable procedure system.
+
+These models represent evidence chunks extracted from sources and their
+links to claims in procedures.
+
+EvidenceChunk: A chunk of text from a source document that contains evidence.
+ClaimEvidenceLink: Links claims to evidence chunks with binding type and score.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Annotated, Any
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, Field, model_validator
+
+
+class BindingType(str, Enum):
+    """Type of binding between a claim and evidence chunk."""
+
+    KEYWORD = "keyword"  # Matched via keyword overlap
+    SEMANTIC = "semantic"  # Matched via embedding similarity
+    MANUAL = "manual"  # Manually linked by reviewer
+
+
+class EvidenceChunk(BaseModel):
+    """A chunk of evidence text from a source document.
+
+    Evidence chunks are segments of source documents (papers, guidelines, etc.)
+    that can be linked to claims in procedures. Each chunk has a source ID,
+    the text content, position info, and optional embedding for semantic search.
+
+    Attributes:
+        id: Unique identifier (auto-generated UUID).
+        run_id: The procedure run this chunk belongs to.
+        source_id: Reference to the source document (e.g., "SRC0023").
+        text: The actual chunk text content.
+        chunk_index: Index of this chunk within the source (0-based).
+        start_char: Starting character position in source (optional).
+        end_char: Ending character position in source (optional).
+        embedding_vector: Vector embedding for semantic search (optional).
+        metadata: Additional metadata (section, page, etc.).
+        created_at: Timestamp when chunk was created.
+    """
+
+    id: UUID = Field(default_factory=uuid4)
+    run_id: str = Field(..., description="The procedure run this chunk belongs to")
+    source_id: str = Field(..., description="Reference to source document")
+    text: Annotated[str, Field(min_length=1, description="Chunk text content")]
+    chunk_index: int = Field(..., ge=0, description="Index within source (0-based)")
+    start_char: int | None = Field(
+        default=None, ge=0, description="Start position in source"
+    )
+    end_char: int | None = Field(
+        default=None, ge=0, description="End position in source"
+    )
+    embedding_vector: list[float] | None = Field(
+        default=None, description="Vector embedding for semantic search"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata"
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp when chunk was created",
+    )
+
+    @model_validator(mode="after")
+    def validate_char_range(self) -> "EvidenceChunk":
+        """Validate that start_char < end_char when both are provided."""
+        if self.start_char is not None and self.end_char is not None:
+            if self.start_char >= self.end_char:
+                raise ValueError("start_char must be less than end_char")
+        return self
+
+    @property
+    def has_embedding(self) -> bool:
+        """Check if chunk has an embedding vector."""
+        return self.embedding_vector is not None and len(self.embedding_vector) > 0
+
+    @property
+    def char_length(self) -> int | None:
+        """Get the character length of the chunk if range is set."""
+        if self.start_char is not None and self.end_char is not None:
+            return self.end_char - self.start_char
+        return None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440000",
+                    "run_id": "5e5bbba1790a48d5ae1cf7cc270cfc6f",
+                    "source_id": "SRC0023",
+                    "text": "First-line treatment for community-acquired pneumonia...",
+                    "chunk_index": 0,
+                    "start_char": 1500,
+                    "end_char": 2000,
+                    "metadata": {"section": "treatment", "page": 5},
+                    "created_at": "2024-12-21T12:00:00Z",
+                }
+            ]
+        }
+    }
+
+
+class ClaimEvidenceLink(BaseModel):
+    """Links a claim to an evidence chunk with binding type and score.
+
+    ClaimEvidenceLinks represent the traceability from claims in procedures
+    to the evidence that supports them. Each link has a binding type
+    (keyword, semantic, manual) and a score indicating binding strength.
+
+    Attributes:
+        id: Unique identifier (auto-generated UUID).
+        claim_id: UUID of the linked claim.
+        evidence_chunk_id: UUID of the linked evidence chunk.
+        binding_type: How the binding was established.
+        binding_score: Strength of the binding (0.0-1.0).
+        created_at: Timestamp when link was created.
+    """
+
+    id: UUID = Field(default_factory=uuid4)
+    claim_id: UUID = Field(..., description="UUID of the linked claim")
+    evidence_chunk_id: UUID = Field(
+        ..., description="UUID of the linked evidence chunk"
+    )
+    binding_type: BindingType = Field(
+        ..., description="How the binding was established"
+    )
+    binding_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Binding strength (0-1)"
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp when link was created",
+    )
+
+    @property
+    def is_strong_binding(self) -> bool:
+        """Check if this is a strong binding (score >= 0.7)."""
+        return self.binding_score >= 0.7
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440010",
+                    "claim_id": "550e8400-e29b-41d4-a716-446655440001",
+                    "evidence_chunk_id": "550e8400-e29b-41d4-a716-446655440002",
+                    "binding_type": "semantic",
+                    "binding_score": 0.92,
+                    "created_at": "2024-12-21T12:00:00Z",
+                }
+            ]
+        }
+    }

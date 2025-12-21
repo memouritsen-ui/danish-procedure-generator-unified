@@ -1,6 +1,6 @@
 # TASKS.md - Master Task Checklist
 
-**LAST UPDATED**: 2024-12-21 22:30 UTC
+**LAST UPDATED**: 2024-12-22 01:15 UTC
 
 ---
 
@@ -44,24 +44,24 @@ python tests/phase0_validate_procedures.py
 
 ---
 
-## PHASE 1: DATA MODELS & MIGRATIONS 🔄 IN PROGRESS
+## PHASE 1: DATA MODELS & MIGRATIONS ✅ COMPLETE
 
 **Objective**: Create Pydantic models and SQLite migrations for claim system
 
 | ID | Task | Status | Test Command | Notes |
 |----|------|--------|--------------|-------|
-| P1-001 | Create Claim and ClaimType models | [ ] | `pytest tests/models/test_claims.py -v` | In `models/claims.py` |
-| P1-002 | Create EvidenceChunk model | [ ] | `pytest tests/models/test_evidence.py -v` | In `models/evidence.py` |
-| P1-003 | Create ClaimEvidenceLink model | [ ] | `pytest tests/models/test_evidence.py -v` | Links claims to evidence |
-| P1-004 | Create Issue and IssueSeverity models | [ ] | `pytest tests/models/test_issues.py -v` | S0/S1/S2 severity |
-| P1-005 | Create Gate and GateStatus models | [ ] | `pytest tests/models/test_gates.py -v` | Pass/fail gates |
-| P1-006 | Write SQLite migration for claims table | [ ] | `sqlite3 data/procedurewriter.db ".schema claims"` | Alembic or manual |
-| P1-007 | Write SQLite migration for evidence_chunks | [ ] | `sqlite3 data/procedurewriter.db ".schema evidence_chunks"` | |
-| P1-008 | Write SQLite migration for claim_evidence_links | [ ] | `sqlite3 data/procedurewriter.db ".schema claim_evidence_links"` | |
-| P1-009 | Write SQLite migration for issues table | [ ] | `sqlite3 data/procedurewriter.db ".schema issues"` | |
-| P1-010 | Write SQLite migration for gates table | [ ] | `sqlite3 data/procedurewriter.db ".schema gates"` | |
-| P1-011 | Write migration rollback scripts | [ ] | Test rollback works | Safety net |
-| P1-012 | Integration test: create/read all models | [ ] | `pytest tests/integration/test_models.py -v` | End-to-end test |
+| P1-001 | Create Claim and ClaimType models | [x] | `pytest tests/models/test_claims.py -v` | 17 tests pass |
+| P1-002 | Create EvidenceChunk model | [x] | `pytest tests/models/test_evidence.py -v` | 11 tests pass |
+| P1-003 | Create ClaimEvidenceLink model | [x] | `pytest tests/models/test_evidence.py -v` | 5 tests pass |
+| P1-004 | Create Issue and IssueSeverity models | [x] | `pytest tests/models/test_issues.py -v` | 19 tests pass |
+| P1-005 | Create Gate and GateStatus models | [x] | `pytest tests/models/test_gates.py -v` | 18 tests pass |
+| P1-006 | Write SQLite migration for claims table | [x] | `pytest tests/test_db_claims.py -v` | 5 tests pass |
+| P1-007 | Write SQLite migration for evidence_chunks | [x] | `pytest tests/test_db_claims.py -v` | 3 tests pass |
+| P1-008 | Write SQLite migration for claim_evidence_links | [x] | `pytest tests/test_db_claims.py -v` | 3 tests pass |
+| P1-009 | Write SQLite migration for issues table | [x] | `pytest tests/test_db_claims.py -v` | 5 tests pass |
+| P1-010 | Write SQLite migration for gates table | [x] | `pytest tests/test_db_claims.py -v` | 5 tests pass |
+| P1-011 | Write migration rollback scripts | [x] | `pytest tests/test_db_rollback.py -v` | 13 tests pass |
+| P1-012 | Integration test: create/read all models | [x] | `pytest tests/integration/test_models.py -v` | 9 tests pass |
 
 **Phase 1 Verification**:
 ```bash
@@ -205,13 +205,13 @@ unzip -l release.zip
 | Phase | Total | Complete | Remaining |
 |-------|-------|----------|-----------|
 | P0: Validation | 7 | 7 | 0 |
-| P1: Data Models | 12 | 0 | 12 |
+| P1: Data Models | 12 | 12 | 0 |
 | P2: Pipeline Stages | 12 | 0 | 12 |
 | P3: Claim System | 12 | 0 | 12 |
 | P4: Eval Suite | 12 | 0 | 12 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **7** | **60** |
+| **TOTAL** | **67** | **19** | **48** |
 
 ---
 
-**Next Task**: P1-001 - Create Claim and ClaimType models
+**Next Task**: P2-001 - Create Stage 00: Bootstrap

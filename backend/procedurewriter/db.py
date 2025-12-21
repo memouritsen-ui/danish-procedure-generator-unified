@@ -312,6 +312,121 @@ def init_db(db_path: Path) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_runs_status ON meta_analysis_runs(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_runs_created ON meta_analysis_runs(created_at_utc)")
 
+        # =================================================================
+        # CLAIM SYSTEM TABLES (Phase 1 - Auditable Medical Build System)
+        # =================================================================
+
+        # Claims table - stores extracted medical claims from procedures
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS claims (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                claim_type TEXT NOT NULL,
+                text TEXT NOT NULL,
+                normalized_value TEXT,
+                unit TEXT,
+                source_refs_json TEXT NOT NULL DEFAULT '[]',
+                line_number INTEGER NOT NULL,
+                confidence REAL NOT NULL,
+                created_at_utc TEXT NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id)
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_run ON claims(run_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_type ON claims(claim_type)")
+
+        # Evidence chunks table - stores chunks of evidence from sources
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS evidence_chunks (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                text TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                start_char INTEGER,
+                end_char INTEGER,
+                embedding_vector_json TEXT,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                created_at_utc TEXT NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id)
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_run ON evidence_chunks(run_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_source ON evidence_chunks(source_id)")
+
+        # Claim-evidence links table - links claims to supporting evidence
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS claim_evidence_links (
+                id TEXT PRIMARY KEY,
+                claim_id TEXT NOT NULL,
+                evidence_chunk_id TEXT NOT NULL,
+                binding_type TEXT NOT NULL,
+                binding_score REAL NOT NULL,
+                created_at_utc TEXT NOT NULL,
+                FOREIGN KEY (claim_id) REFERENCES claims(id),
+                FOREIGN KEY (evidence_chunk_id) REFERENCES evidence_chunks(id)
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_links_claim ON claim_evidence_links(claim_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_links_chunk ON claim_evidence_links(evidence_chunk_id)")
+
+        # Issues table - stores detected issues during evaluation
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS issues (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                code TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                message TEXT NOT NULL,
+                line_number INTEGER,
+                claim_id TEXT,
+                source_id TEXT,
+                auto_detected INTEGER NOT NULL DEFAULT 1,
+                resolved INTEGER NOT NULL DEFAULT 0,
+                resolution_note TEXT,
+                resolved_at_utc TEXT,
+                created_at_utc TEXT NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id),
+                FOREIGN KEY (claim_id) REFERENCES claims(id)
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_issues_run ON issues(run_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_issues_severity ON issues(severity)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_issues_resolved ON issues(resolved)")
+
+        # Gates table - stores pipeline gate evaluation results
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS gates (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                gate_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                issues_checked INTEGER NOT NULL DEFAULT 0,
+                issues_failed INTEGER NOT NULL DEFAULT 0,
+                message TEXT,
+                created_at_utc TEXT NOT NULL,
+                evaluated_at_utc TEXT,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id)
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_gates_run ON gates(run_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_gates_type ON gates(gate_type)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_gates_status ON gates(status)")
+
+        # =================================================================
+        # END CLAIM SYSTEM TABLES
+        # =================================================================
+
         # Style profiles table for LLM-powered document formatting
         conn.execute(
             """
@@ -1243,4 +1358,49 @@ def set_default_style_profile(db_path: Path, profile_id: str) -> None:
             "UPDATE style_profiles SET is_default = 1 WHERE id = ?",
             (profile_id,),
         )
+        conn.commit()
+
+
+# =============================================================================
+# Claim System Rollback Functions (Phase 1 - Migration Safety)
+# =============================================================================
+
+# Tables that belong to the claim system
+CLAIM_SYSTEM_TABLES = [
+    "claim_evidence_links",  # Must be dropped first (FK to claims and evidence_chunks)
+    "issues",  # FK to claims
+    "gates",
+    "claims",
+    "evidence_chunks",
+]
+
+
+def rollback_claim_system_table(db_path: Path, table_name: str) -> None:
+    """Drop a single claim system table if it exists.
+
+    Args:
+        db_path: Path to the SQLite database
+        table_name: Name of the table to drop
+    """
+    with _connect(db_path) as conn:
+        conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+        conn.commit()
+
+
+def rollback_claim_system(db_path: Path) -> None:
+    """Rollback all claim system tables.
+
+    Drops tables in correct order to respect foreign key constraints.
+    Safe to call multiple times (idempotent).
+
+    Tables dropped:
+    - claim_evidence_links
+    - issues
+    - gates
+    - claims
+    - evidence_chunks
+    """
+    with _connect(db_path) as conn:
+        for table_name in CLAIM_SYSTEM_TABLES:
+            conn.execute(f"DROP TABLE IF EXISTS {table_name}")
         conn.commit()
