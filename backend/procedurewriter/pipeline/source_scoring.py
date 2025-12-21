@@ -293,18 +293,31 @@ def score_source(
 
     # Get evidence classification if not provided
     if evidence_level is None:
-        # Get publication_types from extra if present
         extra = source.get("extra") or {}
-        publication_types = extra.get("publication_types") or source.get(
-            "publication_types", []
-        )
 
-        evidence_level = classify_source(
-            url=source.get("url"),
-            publication_types=publication_types,
-            title=source.get("title", ""),
-            kind=source.get("kind"),
-        )
+        # FIRST: Try to use cached evidence_level from fetch-time classification
+        # This preserves the correct classification that was done with proper config
+        cached_level_id = extra.get("evidence_level")
+        if cached_level_id:
+            # Reconstruct EvidenceLevel from cached data
+            evidence_level = EvidenceLevel(
+                level_id=cached_level_id,
+                priority=extra.get("evidence_priority", 100),
+                badge=extra.get("evidence_badge", "Kilde"),
+                badge_color=extra.get("evidence_badge_color", "#d1d5db"),
+                description=f"Cached: {cached_level_id}",
+            )
+        else:
+            # FALLBACK: Re-classify if no cached level (shouldn't happen normally)
+            publication_types = extra.get("publication_types") or source.get(
+                "publication_types", []
+            )
+            evidence_level = classify_source(
+                url=source.get("url"),
+                publication_types=publication_types,
+                title=source.get("title", ""),
+                kind=source.get("kind"),
+            )
 
     # Try to read source content for content analysis
     normalized_path = source.get("normalized_path")

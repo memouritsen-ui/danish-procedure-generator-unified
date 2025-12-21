@@ -45,6 +45,7 @@ from procedurewriter.pipeline.international_sources import InternationalSourceAg
 from procedurewriter.pipeline.pubmed import PubMedClient
 from procedurewriter.pipeline.retrieve import build_snippets, retrieve
 from procedurewriter.pipeline.source_scoring import SourceScore, rank_sources
+from procedurewriter.pipeline.scopus_search import ScopusClient, ScopusArticle
 from procedurewriter.pipeline.sources import make_source_id, to_jsonl_record, write_source_files
 from procedurewriter.pipeline.structure_validator import (
     StructureValidationError,
@@ -423,6 +424,25 @@ def run_pipeline(
                 ollama_base_url=ollama_base_url,
                 ncbi_api_key=ncbi_api_key,
                 availability_stats=availability_stats,
+            )
+
+        # Search Scopus/EMBASE (European literature, pharma, unique content)
+        if not settings.dummy_mode:
+            emitter.emit(EventType.PROGRESS, {"message": "Searching EMBASE/Scholar for evidence", "stage": "scopus_search"})
+            source_n = _append_scopus_search_results(
+                settings=settings,
+                procedure=procedure,
+                context=context,
+                run_dir=run_dir,
+                source_n=source_n,
+                sources=sources,
+                warnings=warnings,
+                evidence_hierarchy=evidence_hierarchy,
+                http=http,
+                availability_stats=availability_stats,
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key,
+                ollama_base_url=ollama_base_url,
             )
 
         if not sources:
@@ -2722,6 +2742,290 @@ def _append_pubmed_search_results(
             )
         )
     warnings.extend(pubmed_warnings)
+    return source_n
+
+
+def _is_danish_only(term: str) -> bool:
+    """Check if a term appears to be Danish-only (not English).
+
+    Uses common Danish characters and words to detect Danish text.
+    """
+    lowered = term.lower()
+
+    # Danish-specific characters
+    if any(c in lowered for c in "æøå"):
+        return True
+
+    # Common Danish medical words not used in English
+    danish_markers = [
+        "behandling", "akut", "børn", "voksne", "lægemiddel",
+        "medicinsk", "kirurgisk", "undersøgelse", "diagnostik",
+        "forebyggelse", "vejledning", "retningslinje", "klinisk",
+    ]
+    return any(marker in lowered for marker in danish_markers)
+
+
+def _append_scopus_search_results(
+    *,
+    settings: Settings,
+    procedure: str,
+    context: str | None,
+    run_dir: Path,
+    source_n: int,
+    sources: list[SourceRecord],
+    warnings: list[str],
+    evidence_hierarchy: EvidenceHierarchy,
+    http: CachedHttpClient,
+    availability_stats: dict[str, int] | None,
+    openai_api_key: str | None = None,
+    anthropic_api_key: str | None = None,
+    ollama_base_url: str | None = None,
+) -> int:
+    """Search for EMBASE-like content via SerpAPI Google Scholar.
+
+    Uses SerpAPI as workaround for direct Scopus/Elsevier API (which requires
+    institutional subscription). Targets EMBASE-style content:
+    - European medical literature
+    - Drug/pharmacology content
+    - Systematic reviews and meta-analyses
+    """
+    from procedurewriter.db import get_secret
+
+    logger.info("EMBASE/Scholar search starting for: %s", procedure)
+
+    # Get SerpAPI key from database
+    serpapi_key = get_secret(settings.db_path, name="serpapi_api_key")
+    if not serpapi_key:
+        serpapi_key = settings.serpapi_api_key
+
+    if not serpapi_key:
+        logger.info("EMBASE/Scholar search skipped: No SerpAPI key configured")
+        if availability_stats is not None:
+            availability_stats["embase_status"] = "no_api_key"
+        return source_n
+
+    embase_warnings: list[str] = []
+    seen_urls: set[str] = set()
+
+    # Expand Danish procedure terms to English for international search
+    term_expansion_llm = None
+    if settings.use_llm and (openai_api_key or anthropic_api_key):
+        try:
+            term_expansion_llm = get_llm_client(
+                provider=settings.llm_provider,
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key,
+                ollama_base_url=ollama_base_url or settings.ollama_base_url,
+            )
+        except Exception as e:
+            logger.warning("Could not create LLM for EMBASE term expansion: %s", e)
+
+    expanded_terms = _expand_procedure_terms(
+        procedure=procedure,
+        context=context,
+        llm=term_expansion_llm,
+        model=settings.llm_model,
+    )
+
+    # Use English terms for international search (skip Danish-only terms)
+    english_terms = [t for t in expanded_terms if not _is_danish_only(t)]
+    if not english_terms:
+        # Fallback: use all terms if no English detected
+        english_terms = expanded_terms[:2] if expanded_terms else [procedure]
+
+    logger.info("EMBASE search using terms: %s", english_terms)
+
+    # Build queries using English terms for better international coverage
+    queries: list[str] = []
+    for term in english_terms[:3]:  # Limit to top 3 terms
+        queries.extend([
+            f'"{term}" systematic review OR meta-analysis',
+            f'"{term}" clinical guidelines OR treatment protocol',
+            f'"{term}" randomized controlled trial',
+        ])
+    
+    results: list[dict[str, Any]] = []
+    
+    for query in queries:
+        try:
+            params = {
+                "engine": "google_scholar",
+                "q": query,
+                "api_key": serpapi_key,
+                "num": "10",
+            }
+
+            response = http.get("https://serpapi.com/search.json", params=params)
+            if hasattr(response, "status_code") and response.status_code != 200:
+                embase_warnings.append(f"SerpAPI returned {response.status_code} for EMBASE query")
+                continue
+            
+            import json
+            try:
+                data = json.loads(response.content.decode("utf-8", errors="replace"))
+            except json.JSONDecodeError:
+                continue
+
+            organic = data.get("organic_results", []) or []
+            for item in organic:
+                if not isinstance(item, dict):
+                    continue
+                
+                title = (item.get("title") or "").strip()
+                url = (item.get("link") or "").strip()
+                
+                if not title or not url:
+                    continue
+                
+                # Skip if already seen
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                
+                # Skip NICE/Cochrane (handled elsewhere)
+                url_lower = url.lower()
+                if "nice.org.uk" in url_lower or "cochranelibrary.com" in url_lower:
+                    continue
+                
+                # Extract publication info
+                pub_info = item.get("publication_info", {})
+                summary = pub_info.get("summary", "") if isinstance(pub_info, dict) else ""
+                snippet = item.get("snippet", "")
+                
+                # Try to extract year
+                year = None
+                import re
+                year_match = re.search(r"\b(19|20)\d{2}\b", summary or snippet or "")
+                if year_match:
+                    try:
+                        year = int(year_match.group(0))
+                    except ValueError:
+                        pass
+                
+                # Determine document type from title/snippet
+                title_lower = title.lower()
+                snippet_lower = snippet.lower() if snippet else ""
+                
+                doc_type = "article"
+                if "systematic review" in title_lower or "systematic review" in snippet_lower:
+                    doc_type = "systematic_review"
+                elif "meta-analysis" in title_lower or "meta-analysis" in snippet_lower:
+                    doc_type = "meta_analysis"
+                elif "randomized" in title_lower or "randomised" in title_lower or "rct" in title_lower:
+                    doc_type = "rct"
+                elif "guideline" in title_lower:
+                    doc_type = "guideline"
+                elif "review" in title_lower:
+                    doc_type = "review"
+                
+                results.append({
+                    "title": title,
+                    "url": url,
+                    "snippet": snippet,
+                    "year": year,
+                    "doc_type": doc_type,
+                    "summary": summary,
+                })
+                
+        except Exception as e:
+            embase_warnings.append(f"SerpAPI EMBASE search error: {e}")
+            logger.warning("SerpAPI EMBASE search failed: %s", e)
+    
+    if availability_stats is not None:
+        availability_stats["embase_candidates"] = len(results)
+        availability_stats["embase_reviews"] = sum(
+            1 for r in results if r["doc_type"] in ("systematic_review", "meta_analysis", "review")
+        )
+        availability_stats["embase_status"] = "success" if results else "no_results"
+    
+    # Score and sort results
+    def _score_result(r: dict[str, Any]) -> tuple[int, int]:
+        doc_scores = {
+            "systematic_review": 5,
+            "meta_analysis": 5,
+            "guideline": 4,
+            "rct": 3,
+            "review": 2,
+            "article": 1,
+        }
+        doc_score = doc_scores.get(r["doc_type"], 0)
+        year_score = r["year"] or 2000
+        return (doc_score, year_score)
+    
+    results.sort(key=_score_result, reverse=True)
+    selected = results[:8]  # Select top 8
+
+    for result in selected:
+        source_id = make_source_id(source_n)
+        source_n += 1
+        
+        normalized = f"""Title: {result['title']}
+
+URL: {result['url']}
+Year: {result['year'] or 'Unknown'}
+Document Type: {result['doc_type']}
+
+Summary:
+{result['snippet'] or 'No summary available'}
+
+Source: Google Scholar (EMBASE-style search via SerpAPI)
+"""
+        
+        # Map doc_type to publication_types for evidence classification
+        pub_type_map = {
+            "systematic_review": ["Systematic Review"],
+            "meta_analysis": ["Meta-Analysis"],
+            "rct": ["Randomized Controlled Trial"],
+            "guideline": ["Practice Guideline"],
+            "review": ["Review"],
+            "article": [],
+        }
+        publication_types = pub_type_map.get(result["doc_type"], [])
+        
+        evidence_level = evidence_hierarchy.classify_source(
+            publication_types=publication_types,
+            url=result["url"],
+        )
+        
+        written = write_source_files(
+            run_dir=run_dir,
+            source_id=source_id,
+            raw_bytes=normalized.encode("utf-8"),
+            raw_suffix=".txt",
+            normalized_text=normalized,
+        )
+        
+        sources.append(
+            SourceRecord(
+                source_id=source_id,
+                fetched_at_utc=_utc_now_iso(),
+                kind="embase_scholar",
+                title=result["title"],
+                year=result["year"],
+                url=result["url"],
+                doi=None,
+                pmid=None,
+                raw_path=str(written.raw_path),
+                normalized_path=str(written.normalized_path),
+                raw_sha256=written.raw_sha256,
+                normalized_sha256=written.normalized_sha256,
+                extraction_notes="EMBASE-style search via SerpAPI Google Scholar",
+                terms_licence_note="Google Scholar metadata. Check rights for full text.",
+                extra={
+                    "document_type": result["doc_type"],
+                    "publication_types": publication_types,
+                    "evidence_level": evidence_level.level_id,
+                    "evidence_badge": evidence_level.badge,
+                    "evidence_badge_color": evidence_level.badge_color,
+                    "evidence_priority": evidence_level.priority,
+                },
+            )
+        )
+    
+    if embase_warnings:
+        warnings.extend(embase_warnings)
+
+    logger.info("Added %d sources from EMBASE/Scholar search", len(selected))
     return source_n
 
 def _append_seed_url_sources_helper(
