@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api/keys", tags=["keys"])
 _OPENAI_SECRET_NAME = "openai_api_key"
 _ANTHROPIC_SECRET_NAME = "anthropic_api_key"
 _NCBI_SECRET_NAME = "ncbi_api_key"
+_SERPAPI_SECRET_NAME = "serpapi_api_key"
 
 
 def _effective_openai_api_key() -> str | None:
@@ -30,6 +31,16 @@ def _effective_ncbi_api_key() -> str | None:
 def _effective_anthropic_api_key() -> str | None:
     """Get effective Anthropic API key from DB or environment."""
     return get_secret(settings.db_path, name=_ANTHROPIC_SECRET_NAME) or os.getenv("ANTHROPIC_API_KEY")
+
+
+def _effective_serpapi_api_key() -> str | None:
+    """Get effective SerpAPI key from DB or environment."""
+    return (
+        get_secret(settings.db_path, name=_SERPAPI_SECRET_NAME)
+        or os.getenv("SERPAPI_API_KEY")
+        or os.getenv("PROCEDUREWRITER_SERPAPI_API_KEY")
+        or settings.serpapi_api_key
+    )
 
 
 # OpenAI key endpoints
@@ -151,3 +162,36 @@ def api_anthropic_status() -> ApiKeyStatus:
         return ApiKeyStatus(present=True, ok=False, message="anthropic package not installed")
     except Exception as e:  # noqa: BLE001
         return ApiKeyStatus(present=True, ok=False, message=str(e))
+
+
+# SerpAPI key endpoints
+@router.get("/serpapi", response_model=ApiKeyInfo)
+def api_get_serpapi_key() -> ApiKeyInfo:
+    """Get masked SerpAPI key."""
+    key = _effective_serpapi_api_key()
+    if not key:
+        return ApiKeyInfo(present=False, masked=None)
+    return ApiKeyInfo(present=True, masked=mask_secret(key))
+
+
+@router.put("/serpapi", response_model=ApiKeyInfo)
+def api_set_serpapi_key(req: ApiKeySetRequest) -> ApiKeyInfo:
+    """Set SerpAPI key."""
+    set_secret(settings.db_path, name=_SERPAPI_SECRET_NAME, value=req.api_key.strip())
+    return api_get_serpapi_key()
+
+
+@router.delete("/serpapi", response_model=ApiKeyInfo)
+def api_delete_serpapi_key() -> ApiKeyInfo:
+    """Delete SerpAPI key."""
+    delete_secret(settings.db_path, name=_SERPAPI_SECRET_NAME)
+    return api_get_serpapi_key()
+
+
+@router.get("/serpapi/status", response_model=ApiKeyStatus)
+def api_serpapi_status() -> ApiKeyStatus:
+    """Check if SerpAPI key is set."""
+    key = _effective_serpapi_api_key()
+    if not key:
+        return ApiKeyStatus(present=False, ok=False, message="No SerpAPI key configured.")
+    return ApiKeyStatus(present=True, ok=True, message="OK (key present)")

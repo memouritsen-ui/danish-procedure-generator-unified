@@ -196,6 +196,7 @@ def run_pipeline(
     anthropic_api_key: str | None = None,
     ollama_base_url: str | None = None,
     ncbi_api_key: str | None = None,
+    serpapi_api_key: str | None = None,
 ) -> dict[str, str]:
     run_dir = settings.runs_dir / run_id
     (run_dir / "raw").mkdir(parents=True, exist_ok=True)
@@ -373,10 +374,11 @@ def run_pipeline(
                 )
             )
 
-        # Search international sources (NICE/Cochrane) before local guidelines.
+        # Search international sources (SerpAPI Google Scholar) before local guidelines.
         if not settings.dummy_mode:
             emitter.emit(EventType.PROGRESS, {"message": "Searching international guidelines", "stage": "international_search"})
             query_text = " ".join([procedure, context or ""]).strip()
+            effective_serpapi_api_key = serpapi_api_key or settings.serpapi_api_key
             source_n = _append_international_sources(
                 query=query_text,
                 http=http,
@@ -387,7 +389,7 @@ def run_pipeline(
                 evidence_hierarchy=evidence_hierarchy,
                 max_per_tier=5,
                 strict_mode=evidence_policy == "strict",
-                serpapi_api_key=settings.serpapi_api_key,
+                serpapi_api_key=effective_serpapi_api_key,
                 serpapi_base_url=settings.serpapi_base_url,
                 serpapi_engine=settings.serpapi_engine,
                 allow_html_fallback=settings.allow_html_fallback_international,

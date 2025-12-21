@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 _OPENAI_SECRET_NAME = "openai_api_key"
 _ANTHROPIC_SECRET_NAME = "anthropic_api_key"
 _NCBI_SECRET_NAME = "ncbi_api_key"
+_SERPAPI_SECRET_NAME = "serpapi_api_key"
 
 
 def _effective_openai_api_key(settings: Settings) -> str | None:
@@ -44,6 +45,15 @@ def _effective_anthropic_api_key(settings: Settings) -> str | None:
 
 def _effective_ncbi_api_key(settings: Settings) -> str | None:
     return get_secret(settings.db_path, name=_NCBI_SECRET_NAME) or settings.ncbi_api_key
+
+
+def _effective_serpapi_api_key(settings: Settings) -> str | None:
+    return (
+        get_secret(settings.db_path, name=_SERPAPI_SECRET_NAME)
+        or os.getenv("SERPAPI_API_KEY")
+        or os.getenv("PROCEDUREWRITER_SERPAPI_API_KEY")
+        or settings.serpapi_api_key
+    )
 
 
 async def _heartbeat_loop(
@@ -79,6 +89,7 @@ async def _run_job(
             openai_api_key = _effective_openai_api_key(settings)
             anthropic_api_key = _effective_anthropic_api_key(settings)
             ncbi_api_key = _effective_ncbi_api_key(settings)
+            serpapi_api_key = _effective_serpapi_api_key(settings)
 
             job = lambda: run_pipeline(
                 run_id=run_id,
@@ -91,6 +102,7 @@ async def _run_job(
                 anthropic_api_key=anthropic_api_key,
                 ollama_base_url=settings.ollama_base_url,
                 ncbi_api_key=ncbi_api_key,
+                serpapi_api_key=serpapi_api_key,
             )
             result = await anyio.to_thread.run_sync(job)
             update_run_status(
