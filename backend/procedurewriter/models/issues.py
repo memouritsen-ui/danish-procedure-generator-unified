@@ -161,6 +161,29 @@ class Issue(BaseModel):
         """Get human-readable severity label."""
         return _SEVERITY_LABELS[self.severity]
 
+    def to_db_row(self) -> tuple:
+        """Convert model to database row tuple.
+
+        Returns tuple matching issues table column order:
+        (id, run_id, code, severity, message, line_number, claim_id, source_id,
+         auto_detected, resolved, resolution_note, resolved_at_utc, created_at_utc)
+        """
+        return (
+            str(self.id),
+            self.run_id,
+            self.code.value,
+            self.severity.value,
+            self.message,
+            self.line_number,
+            str(self.claim_id) if self.claim_id else None,
+            self.source_id,
+            1 if self.auto_detected else 0,
+            1 if self.resolved else 0,
+            self.resolution_note,
+            self.resolved_at.isoformat() if self.resolved_at else None,
+            self.created_at.isoformat(),
+        )
+
     model_config = {
         "json_schema_extra": {
             "examples": [

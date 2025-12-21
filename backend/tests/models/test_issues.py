@@ -299,6 +299,110 @@ class TestIssueHelpers:
         assert s2.severity_label == "Warning"
 
 
+class TestIssueDbConversion:
+    """Tests for database conversion methods on Issue."""
+
+    def test_to_db_row_returns_correct_tuple(self):
+        """to_db_row() should return tuple matching DB column order."""
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.issues import Issue, IssueCode, IssueSeverity
+
+        fixed_id = UUID("550e8400-e29b-41d4-a716-446655440000")
+        fixed_claim_id = UUID("550e8400-e29b-41d4-a716-446655440001")
+        fixed_time = datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+        resolved_time = datetime(2024, 12, 21, 14, 0, 0, tzinfo=timezone.utc)
+
+        issue = Issue(
+            id=fixed_id,
+            run_id="test-run-123",
+            code=IssueCode.DOSE_WITHOUT_EVIDENCE,
+            severity=IssueSeverity.S0,
+            message="Dose claim has no source reference",
+            line_number=42,
+            claim_id=fixed_claim_id,
+            source_id="SRC0023",
+            auto_detected=True,
+            resolved=True,
+            resolution_note="Added source reference",
+            resolved_at=resolved_time,
+            created_at=fixed_time,
+        )
+
+        row = issue.to_db_row()
+
+        # Verify tuple structure matches DB schema
+        assert isinstance(row, tuple)
+        assert len(row) == 13
+
+        # Verify each field
+        assert row[0] == "550e8400-e29b-41d4-a716-446655440000"  # id (str)
+        assert row[1] == "test-run-123"  # run_id
+        assert row[2] == "S0-003"  # code (enum value)
+        assert row[3] == "s0"  # severity (enum value)
+        assert row[4] == "Dose claim has no source reference"  # message
+        assert row[5] == 42  # line_number
+        assert row[6] == "550e8400-e29b-41d4-a716-446655440001"  # claim_id (str)
+        assert row[7] == "SRC0023"  # source_id
+        assert row[8] == 1  # auto_detected (bool → int)
+        assert row[9] == 1  # resolved (bool → int)
+        assert row[10] == "Added source reference"  # resolution_note
+        assert row[11] == "2024-12-21T14:00:00+00:00"  # resolved_at_utc
+        assert row[12] == "2024-12-21T12:00:00+00:00"  # created_at_utc
+
+    def test_to_db_row_with_null_optional_fields(self):
+        """to_db_row() should handle None values for optional fields."""
+        from procedurewriter.models.issues import Issue, IssueCode, IssueSeverity
+
+        issue = Issue(
+            run_id="test-run",
+            code=IssueCode.ORPHAN_CITATION,
+            severity=IssueSeverity.S0,
+            message="Minimal issue",
+        )
+
+        row = issue.to_db_row()
+
+        assert row[5] is None  # line_number
+        assert row[6] is None  # claim_id
+        assert row[7] is None  # source_id
+        assert row[8] == 1  # auto_detected (default True)
+        assert row[9] == 0  # resolved (default False)
+        assert row[10] is None  # resolution_note
+        assert row[11] is None  # resolved_at_utc
+
+    def test_to_db_row_bool_to_int_conversion(self):
+        """to_db_row() should convert booleans to integers (0/1)."""
+        from procedurewriter.models.issues import Issue, IssueCode, IssueSeverity
+
+        issue_auto = Issue(
+            run_id="test-run",
+            code=IssueCode.ORPHAN_CITATION,
+            severity=IssueSeverity.S0,
+            message="Auto-detected",
+            auto_detected=True,
+            resolved=False,
+        )
+
+        row = issue_auto.to_db_row()
+        assert row[8] == 1  # auto_detected
+        assert row[9] == 0  # resolved
+
+        issue_manual = Issue(
+            run_id="test-run",
+            code=IssueCode.ORPHAN_CITATION,
+            severity=IssueSeverity.S0,
+            message="Manual",
+            auto_detected=False,
+            resolved=True,
+        )
+
+        row2 = issue_manual.to_db_row()
+        assert row2[8] == 0  # auto_detected
+        assert row2[9] == 1  # resolved
+
+
 class TestIssueResolution:
     """Tests for issue resolution workflow."""
 
