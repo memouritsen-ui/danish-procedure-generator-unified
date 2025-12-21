@@ -122,14 +122,31 @@ cd backend && source .venv/bin/activate && pytest tests/ -x -q
 ## GIT STATUS
 
 **Branch**: main
-**Last Commit**: `05e5bc6 feat: add EMBASE/Scholar search via SerpAPI with Danish→English translation`
-**Uncommitted Changes**: Phase 0 validation files (should be committed)
+**Last Commit**: `e7b23d3 feat: complete Phase 1 - Data Models & Migrations`
+**Uncommitted Changes**: None (clean working tree)
 
-**To Commit**:
+---
+
+## UNCOMMITTED CHANGES TRACKER
+
+⚠️ **BEFORE STARTING ANY NEW TASK**, run this check:
+
 ```bash
-git add tests/phase0_*.py tests/phase0_*.md .claude/
-git commit -m "feat: add Phase 0 validation and session-persistent documentation"
+git status --short
 ```
+
+**If output is NOT empty**, you have uncommitted work. COMMIT IT FIRST:
+```bash
+git add . && git commit -m "feat: P#-###: [description]"
+```
+
+**Current Status**: ✅ Clean (verified 2024-12-22)
+
+| File | Status | Action Required |
+|------|--------|-----------------|
+| (none) | - | - |
+
+**Rule**: Never start a new task with uncommitted changes. If you see uncommitted files here, the previous session failed to commit. Commit them before proceeding.
 
 ---
 

@@ -9,7 +9,42 @@
 1. **NEVER skip tasks** - Complete in order
 2. **NEVER mark complete without tests** - Run verification command
 3. **Update STATE.md** after completing any task
-4. **Commit after milestones** - After phase completion or 3+ tasks
+4. **Commit after EVERY task** - Not just milestones
+
+---
+
+## MANDATORY TASK COMPLETION SEQUENCE
+
+After completing ANY task, you MUST follow this exact sequence:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  TASK COMPLETION CHECKLIST (DO ALL 6 STEPS)                │
+├─────────────────────────────────────────────────────────────┤
+│  1. Run test command for the task                          │
+│  2. Verify ALL tests pass (not just new ones)              │
+│  3. Mark task [x] in this file with test count             │
+│  4. Update STATE.md (current task, recent completions)     │
+│  5. git add . && git commit -m "feat: P#-###: description" │
+│  6. RE-READ CLAUDE.md to refresh context                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Step 6 is CRITICAL**: After every task, re-read the project CLAUDE.md to:
+- Refresh your understanding of project rules
+- Ensure you haven't drifted from the build plan
+- Catch any context loss from long operations
+
+**Commit Message Format**:
+```
+feat: P1-001: Create Claim and ClaimType models
+
+- Added ClaimType enum with 6 claim types
+- Added Claim dataclass with validation
+- 17 tests passing
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+```
 
 ---
 

@@ -30,13 +30,45 @@
 - Mark tasks complete without running tests
 - Make changes without reading STATE.md first
 - Forget to update STATE.md after completing tasks
+- Start new tasks with uncommitted changes
+
+---
+
+## 🔁 MANDATORY: TASK COMPLETION PROTOCOL
+
+After completing EVERY task, you MUST execute this 6-step sequence:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  AFTER EVERY TASK (NO EXCEPTIONS)                          │
+├─────────────────────────────────────────────────────────────┤
+│  1. pytest tests/ -x -q                    # All tests pass │
+│  2. Mark [x] in TASKS.md with test count                   │
+│  3. Update STATE.md (current task → next task)             │
+│  4. git add . && git commit -m "feat: P#-###: desc"        │
+│  5. git push                                               │
+│  6. RE-READ THIS FILE (CLAUDE.md)          # CRITICAL!     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why Step 6 (Re-read CLAUDE.md)?**
+- Long tasks cause context drift
+- Rules get forgotten mid-session
+- Re-reading resets your understanding of project constraints
+- This is how session-persistent memory works
+
+**Verification**: After re-reading, you should be able to state:
+- Current phase and task number
+- What the next task is
+- That git status is clean
 
 ---
 
 ## 🔄 ACTIVE REFACTORING: Auditable Medical Build System
 
-**Current Phase**: Phase 1 - Data Models & Migrations
+**Current Phase**: Phase 2 - Pipeline Stages (Phase 1 COMPLETE)
 **Phase 0 Status**: COMPLETE (Claim extraction feasibility proven)
+**Phase 1 Status**: COMPLETE (12/12 tasks, 113 tests, 3646 lines)
 
 **Target Architecture**: 11-stage pipeline with claim traceability
 ```
