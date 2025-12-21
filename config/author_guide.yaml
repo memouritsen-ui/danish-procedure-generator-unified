@@ -89,6 +89,7 @@ formatting:
 # Validation settings - STRICT is mandatory for gold-standard output
 validation:
   evidence_policy: strict
+  missing_tier_policy: allow_with_ack
   require_all_sections: true
   require_citations: true
   allow_fallback_citations: false

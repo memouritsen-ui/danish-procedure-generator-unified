@@ -27,7 +27,7 @@ This project consolidates 4 medical textbook generator projects into a unified s
 │                          ▼                                   │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │              ORCHESTRATOR (v2.0)                      │   │
-│  │  - Task queue with Redis                              │   │
+│  │  - SQLite-backed job queue + worker                   │   │
 │  │  - Quality loop (8/10 threshold)                      │   │
 │  │  - Cost tracking per operation                        │   │
 │  └───────────────────────┬──────────────────────────────┘   │
@@ -61,10 +61,10 @@ This project consolidates 4 medical textbook generator projects into a unified s
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │                    DATA LAYER                         │   │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────────────────┐     │   │
-│  │  │ SQLite  │ │  Redis  │ │ Source Library      │     │   │
-│  │  │ (runs)  │ │ (tasks) │ │ (SHA256 audit)      │     │   │
-│  │  └─────────┘ └─────────┘ └─────────────────────┘     │   │
+│  │  ┌─────────┐ ┌─────────────────────┐                  │   │
+│  │  │ SQLite  │ │ Source Library      │                  │   │
+│  │  │ (runs)  │ │ (SHA256 audit)      │                  │   │
+│  │  └─────────┘ └─────────────────────┘                  │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘

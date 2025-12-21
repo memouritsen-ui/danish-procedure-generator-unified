@@ -12,3 +12,4 @@ pypdf>=5.0.0
 cryptography>=42.0.0
 anthropic>=0.18.0
 anyio>=4.0.0
+wiley-tdm>=1.0.0

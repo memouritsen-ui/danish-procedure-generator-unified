@@ -1,24 +1,24 @@
 """Encryption utilities for secure secret storage.
 
 Uses Fernet symmetric encryption with a key from environment variable.
-If no key exists, generates one and prints instructions to set it.
+If no key exists, the application must fail fast.
 """
 from __future__ import annotations
 
-import base64
 import os
-import secrets
 
 from cryptography.fernet import Fernet, InvalidToken
 
 
 def get_or_create_key() -> str:
-    """Get encryption key from environment or generate a new one."""
+    """Get encryption key from environment or fail fast if missing."""
     key = os.environ.get("PROCEDUREWRITER_SECRET_KEY")
-    if key:
-        return key
-    new_key = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
-    return new_key
+    if not key:
+        raise ValueError(
+            "PROCEDUREWRITER_SECRET_KEY environment variable not set. "
+            "Set it in your shell profile (e.g., ~/.zshrc) before starting the app."
+        )
+    return key
 
 
 def _get_fernet() -> Fernet:

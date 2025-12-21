@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from procedurewriter.db import (
     RunRow,
@@ -17,6 +18,16 @@ from procedurewriter.db import (
     list_runs,
     update_run_status,
 )
+from procedurewriter.agents.base import AgentResult, AgentStats
+from procedurewriter.agents.models import (
+    EditorOutput,
+    PipelineInput,
+    QualityOutput,
+    SourceReference,
+    ValidatorOutput,
+    WriterOutput,
+)
+from procedurewriter.agents.orchestrator import AgentOrchestrator
 
 
 class TestQualityDatabaseFields:
@@ -212,6 +223,77 @@ class TestQualityScoreCalculation:
         raw_score = 5 + int((supported / total) * 5)  # = 5 + 5 = 10
         clamped_score = max(5, min(10, raw_score))
         assert clamped_score == 10
+
+
+class TestQualityLoopCostCap:
+    """Tests for cost-capped quality loop behavior."""
+
+    def test_quality_loop_stops_on_cost_cap(self):
+        """Quality loop should stop when cost cap is reached in auto mode."""
+        llm = MagicMock()
+        orchestrator = AgentOrchestrator(llm=llm, model="test")
+
+        writer_output = WriterOutput(
+            success=True,
+            content_markdown="## Indikationer\n- Test [S:SRC0001]\n",
+            sections=["Indikationer"],
+            citations_used=["SRC0001"],
+            word_count=5,
+        )
+        editor_output = EditorOutput(
+            success=True,
+            edited_content=writer_output.content_markdown,
+            suggestions_applied=[],
+            danish_quality_notes=None,
+        )
+        validator_output = ValidatorOutput(success=True, validations=[], supported_count=0, unsupported_count=0)
+        quality_output = QualityOutput(
+            success=True,
+            overall_score=7,
+            criteria=[],
+            passes_threshold=False,
+            revision_suggestions=["Forbedre klarhed"],
+            ready_for_publication=False,
+        )
+
+        orchestrator._writer.execute = MagicMock(
+            return_value=AgentResult(output=writer_output, stats=AgentStats(cost_usd=0.3))
+        )
+        orchestrator._editor.execute = MagicMock(
+            return_value=AgentResult(output=editor_output, stats=AgentStats(cost_usd=0.2))
+        )
+        orchestrator._validator.execute = MagicMock(
+            return_value=AgentResult(output=validator_output, stats=AgentStats(cost_usd=0.2))
+        )
+        orchestrator._quality.execute = MagicMock(
+            return_value=AgentResult(output=quality_output, stats=AgentStats(cost_usd=0.2))
+        )
+
+        input_data = PipelineInput(
+            procedure_title="Test Procedure",
+            context=None,
+            max_iterations=3,
+            quality_threshold=9,
+            quality_loop_policy="auto",
+            quality_loop_max_cost_usd=0.5,
+        )
+        sources = [
+            SourceReference(
+                source_id="SRC0001",
+                title="Test source",
+                year=2024,
+                pmid=None,
+                doi=None,
+                url="https://example.com",
+                relevance_score=0.9,
+                abstract_excerpt="Test abstract",
+            )
+        ]
+
+        result = orchestrator.run(input_data=input_data, sources=sources)
+        assert result.success is True
+        assert result.quality_loop_stop_reason == "cost_cap"
+        assert result.iterations_used == 1
 
 
 class TestQualitySchemas:

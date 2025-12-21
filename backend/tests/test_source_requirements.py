@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from procedurewriter.pipeline.evidence import EvidencePolicyError
+from procedurewriter.pipeline.evidence import EvidenceGapAcknowledgementRequired, EvidencePolicyError
 from procedurewriter.pipeline.run import (
     _build_source_selection_report,
     _enforce_source_requirements,
@@ -107,6 +107,30 @@ def test_enforce_source_requirements_missing_international_raises() -> None:
         )
 
     assert "No international sources found (NICE/Cochrane)." in warnings
+
+
+def test_enforce_source_requirements_missing_international_requires_ack() -> None:
+    settings = Settings(require_international_sources=True, require_danish_guidelines=False, dummy_mode=False)
+    warnings: list[str] = []
+    sources = [_make_source("SRC0001", "danish_guideline")]
+    availability = {
+        "nice_candidates": 1,
+        "cochrane_candidates": 1,
+        "pubmed_candidates": 0,
+        "pubmed_review_candidates": 0,
+    }
+
+    with pytest.raises(EvidenceGapAcknowledgementRequired) as exc:
+        _enforce_source_requirements(
+            sources=sources,
+            settings=settings,
+            warnings=warnings,
+            availability=availability,
+            missing_tier_policy="allow_with_ack",
+        )
+
+    assert "NICE guidelines" in exc.value.missing_tiers
+    assert "Cochrane reviews" in exc.value.missing_tiers
 
 
 def test_enforce_source_requirements_missing_danish_raises() -> None:

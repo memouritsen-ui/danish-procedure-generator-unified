@@ -102,6 +102,35 @@ class TestRunsEndpoints:
         finally:
             settings.dummy_mode = original_dummy
 
+    def test_ack_endpoint_requeues_run(self, client: TestClient) -> None:
+        from procedurewriter.db import create_run, set_run_needs_ack, get_run
+
+        run_id = "ack-run-1"
+        run_dir = settings.runs_dir / run_id
+        create_run(
+            settings.db_path,
+            run_id=run_id,
+            procedure="Ack Procedure",
+            context=None,
+            run_dir=run_dir,
+        )
+        set_run_needs_ack(
+            settings.db_path,
+            run_id=run_id,
+            ack_details={"missing_tiers": ["Cochrane"]},
+            error="Missing tiers",
+        )
+
+        response = client.post(f"/api/runs/{run_id}/ack", json={"ack_note": "Proceed anyway"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "QUEUED"
+        assert data["ack_required"] is False
+
+        run = get_run(settings.db_path, run_id)
+        assert run is not None
+        assert run.ack_note == "Proceed anyway"
+
     def test_get_run_not_found(self, client: TestClient) -> None:
         response = client.get("/api/runs/nonexistent123")
         assert response.status_code == 404

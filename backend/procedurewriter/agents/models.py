@@ -147,6 +147,8 @@ class PipelineInput(BaseModel):
     context: str | None = None
     max_iterations: int = Field(default=3, ge=1, le=5)
     quality_threshold: int = Field(default=8, ge=1, le=10)
+    quality_loop_policy: str = Field(default="auto", description="auto or manual")
+    quality_loop_max_cost_usd: float | None = Field(default=None, ge=0.0)
     outline: list[str] | None = Field(default=None, description="Section outline to enforce")
     style_guide: str | None = Field(default=None, description="Style guide text for writers/editors")
     evidence_summary: str | None = Field(default=None, description="Evidence synthesis to include in prompts")
@@ -162,4 +164,5 @@ class PipelineOutput(BaseModel):
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cost_usd: float = 0.0
+    quality_loop_stop_reason: str | None = None
     error: str | None = None

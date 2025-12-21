@@ -21,6 +21,7 @@ class RunSummary(BaseModel):
     updated_at_utc: str
     procedure: str
     status: str
+    ack_required: bool = False
     quality_score: int | None = None
     iterations_used: int | None = None
     total_cost_usd: float | None = None
@@ -34,6 +35,10 @@ class RunDetail(BaseModel):
     context: str | None
     status: str
     error: str | None
+    ack_required: bool = False
+    ack_details: dict[str, Any] | None = None
+    ack_note: str | None = None
+    acked_at_utc: str | None = None
     procedure_md: str | None
     source_count: int | None = None
     warnings: list[str] | None = None
@@ -128,3 +133,7 @@ class CostSummaryResponse(BaseModel):
     total_output_tokens: int
     total_tokens: int
     avg_cost_per_run: float | None = None
+
+
+class RunAckRequest(BaseModel):
+    ack_note: str | None = None

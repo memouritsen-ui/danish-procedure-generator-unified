@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from enum import Enum
+import sys
 from pathlib import Path
 
 import pytest
@@ -108,3 +110,52 @@ def test_apply_wiley_tdm_fulltext_skips_non_wiley_doi(tmp_path, monkeypatch) -> 
     assert stats["downloaded"] == 0
     assert stats["skipped_non_wiley"] == 1
     assert http.calls == []
+
+
+def test_apply_wiley_tdm_fulltext_uses_client(tmp_path, monkeypatch) -> None:
+    class DummyStatus(Enum):
+        SUCCESS = 1
+        EXISTING_FILE = 2
+        API_ERROR = 3
+
+    class DummyResult:
+        def __init__(self, status, path=None, comment=None):
+            self.status = status
+            self.path = path
+            self.comment = comment
+
+    class DummyClient:
+        def __init__(self, api_token, download_dir):
+            self.api_token = api_token
+            self.download_dir = Path(download_dir)
+            self.download_dir.mkdir(parents=True, exist_ok=True)
+
+        def download_pdf(self, doi: str):
+            pdf_path = self.download_dir / "dummy.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4 dummy")
+            return DummyResult(DummyStatus.SUCCESS, pdf_path)
+
+    dummy_mod = SimpleNamespace(TDMClient=DummyClient, DownloadStatus=DummyStatus)
+    monkeypatch.setitem(sys.modules, "wiley_tdm", dummy_mod)
+    monkeypatch.setattr(run_module, "extract_pdf_pages", lambda _p: ["PAGE 1"])
+    monkeypatch.setattr(run_module, "normalize_pdf_pages", lambda _pages: "FULLTEXT")
+
+    http = DummyHttp(content=b"%PDF-1.4 fake pdf")
+    sources = [
+        _make_source(url="https://doi.org/10.1002/14651858.CD000001")
+    ]
+
+    stats = _apply_wiley_tdm_fulltext(
+        sources=sources,
+        http=http,
+        run_dir=tmp_path,
+        token="00000000-0000-0000-0000-000000000000",
+        base_url="https://api.wiley.com/onlinelibrary/tdm/v1",
+        max_downloads=5,
+        allow_non_wiley_doi=False,
+        strict_mode=True,
+        use_client=True,
+    )
+
+    assert stats["downloaded"] == 1
+    assert sources[0].extra.get("tdm_fulltext") is True

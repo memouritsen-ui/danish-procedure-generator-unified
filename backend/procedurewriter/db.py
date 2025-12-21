@@ -129,6 +129,14 @@ def init_db(db_path: Path) -> None:
               procedure TEXT NOT NULL,
               context TEXT,
               status TEXT NOT NULL,
+              attempts INTEGER DEFAULT 0,
+              locked_by TEXT,
+              locked_at_utc TEXT,
+              heartbeat_at_utc TEXT,
+              ack_required INTEGER DEFAULT 0,
+              ack_details_json TEXT,
+              ack_note TEXT,
+              acked_at_utc TEXT,
               error TEXT,
               run_dir TEXT NOT NULL,
               manifest_path TEXT,
@@ -147,6 +155,14 @@ def init_db(db_path: Path) -> None:
         )
         # Add columns to existing tables (migration for existing DBs)
         for col, col_type in [
+            ("attempts", "INTEGER DEFAULT 0"),
+            ("locked_by", "TEXT"),
+            ("locked_at_utc", "TEXT"),
+            ("heartbeat_at_utc", "TEXT"),
+            ("ack_required", "INTEGER DEFAULT 0"),
+            ("ack_details_json", "TEXT"),
+            ("ack_note", "TEXT"),
+            ("acked_at_utc", "TEXT"),
             ("quality_score", "INTEGER"),
             ("iterations_used", "INTEGER"),
             ("total_cost_usd", "REAL"),
@@ -377,6 +393,15 @@ class RunRow:
     total_cost_usd: float | None
     total_input_tokens: int | None
     total_output_tokens: int | None
+    # Queue + acknowledgement fields
+    attempts: int = 0
+    locked_by: str | None = None
+    locked_at_utc: str | None = None
+    heartbeat_at_utc: str | None = None
+    ack_required: bool = False
+    ack_details: dict[str, Any] | None = None
+    ack_note: str | None = None
+    acked_at_utc: str | None = None
     # Versioning fields
     parent_run_id: str | None = None
     version_number: int = 1
@@ -506,6 +531,10 @@ def update_run_status(
 def _row_to_run(row: sqlite3.Row) -> RunRow:
     # Handle both old DBs (without versioning columns) and new DBs
     keys = row.keys()
+    ack_details: dict[str, Any] | None = None
+    if "ack_details_json" in keys and row["ack_details_json"]:
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            ack_details = json.loads(row["ack_details_json"])
     return RunRow(
         run_id=row["run_id"],
         created_at_utc=row["created_at_utc"],
@@ -522,6 +551,14 @@ def _row_to_run(row: sqlite3.Row) -> RunRow:
         total_cost_usd=row["total_cost_usd"],
         total_input_tokens=row["total_input_tokens"],
         total_output_tokens=row["total_output_tokens"],
+        attempts=row["attempts"] if "attempts" in keys and row["attempts"] is not None else 0,
+        locked_by=row["locked_by"] if "locked_by" in keys else None,
+        locked_at_utc=row["locked_at_utc"] if "locked_at_utc" in keys else None,
+        heartbeat_at_utc=row["heartbeat_at_utc"] if "heartbeat_at_utc" in keys else None,
+        ack_required=bool(row["ack_required"]) if "ack_required" in keys and row["ack_required"] is not None else False,
+        ack_details=ack_details,
+        ack_note=row["ack_note"] if "ack_note" in keys else None,
+        acked_at_utc=row["acked_at_utc"] if "acked_at_utc" in keys else None,
         parent_run_id=row["parent_run_id"] if "parent_run_id" in keys else None,
         version_number=row["version_number"] if "version_number" in keys and row["version_number"] else 1,
         version_note=row["version_note"] if "version_note" in keys else None,
@@ -543,6 +580,204 @@ def list_runs(db_path: Path, limit: int = 200) -> list[RunRow]:
             (limit,),
         ).fetchall()
     return [_row_to_run(r) for r in rows]
+
+
+def enqueue_run(db_path: Path, *, run_id: str) -> None:
+    """Re-queue a run for processing."""
+    now = utc_now_iso()
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE runs
+            SET updated_at_utc = ?,
+                status = 'QUEUED',
+                error = NULL,
+                ack_required = 0,
+                ack_note = NULL,
+                acked_at_utc = NULL
+            WHERE run_id = ?
+            """,
+            (now, run_id),
+        )
+
+
+def claim_next_run(
+    db_path: Path,
+    *,
+    worker_id: str,
+    max_attempts: int = 3,
+) -> RunRow | None:
+    """Claim the next queued run for processing.
+
+    Marks the run as RUNNING and sets lock/heartbeat metadata.
+    """
+    now = utc_now_iso()
+    with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """
+            SELECT * FROM runs
+            WHERE status = 'QUEUED'
+              AND (attempts < ? OR attempts IS NULL)
+            ORDER BY created_at_utc ASC
+            LIMIT 1
+            """,
+            (max_attempts,),
+        ).fetchone()
+        if row is None:
+            conn.execute("COMMIT")
+            return None
+        run_id = row["run_id"]
+        attempts = (row["attempts"] or 0) + 1
+        conn.execute(
+            """
+            UPDATE runs
+            SET updated_at_utc = ?,
+                status = 'RUNNING',
+                attempts = ?,
+                locked_by = ?,
+                locked_at_utc = ?,
+                heartbeat_at_utc = ?
+            WHERE run_id = ?
+            """,
+            (now, attempts, worker_id, now, now, run_id),
+        )
+        conn.execute("COMMIT")
+    return get_run(db_path, run_id)
+
+
+def update_run_heartbeat(db_path: Path, *, run_id: str, worker_id: str) -> None:
+    """Update heartbeat for a running job if the worker holds the lock."""
+    now = utc_now_iso()
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE runs
+            SET updated_at_utc = ?,
+                heartbeat_at_utc = ?
+            WHERE run_id = ? AND locked_by = ?
+            """,
+            (now, now, run_id, worker_id),
+        )
+
+
+def release_run_lock(db_path: Path, *, run_id: str) -> None:
+    """Clear lock/heartbeat metadata for a run."""
+    now = utc_now_iso()
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE runs
+            SET updated_at_utc = ?,
+                locked_by = NULL,
+                locked_at_utc = NULL,
+                heartbeat_at_utc = NULL
+            WHERE run_id = ?
+            """,
+            (now, run_id),
+        )
+
+
+def mark_stale_runs(
+    db_path: Path,
+    *,
+    stale_after_s: int,
+    max_attempts: int = 3,
+) -> int:
+    """Mark stale RUNNING runs as QUEUED (or FAILED if max attempts reached)."""
+    now = datetime.now(UTC)
+    updated = 0
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT run_id, attempts, locked_at_utc, heartbeat_at_utc
+            FROM runs
+            WHERE status = 'RUNNING'
+            """
+        ).fetchall()
+        for row in rows:
+            heartbeat = row["heartbeat_at_utc"] or row["locked_at_utc"]
+            if not heartbeat:
+                continue
+            try:
+                last_seen = datetime.fromisoformat(heartbeat)
+            except ValueError:
+                continue
+            age_s = (now - last_seen).total_seconds()
+            if age_s < stale_after_s:
+                continue
+            attempts = row["attempts"] or 0
+            status = "FAILED" if attempts >= max_attempts else "QUEUED"
+            error = (
+                "Run marked failed due to stale worker lock."
+                if status == "FAILED"
+                else None
+            )
+            conn.execute(
+                """
+                UPDATE runs
+                SET updated_at_utc = ?,
+                    status = ?,
+                    error = ?,
+                    locked_by = NULL,
+                    locked_at_utc = NULL,
+                    heartbeat_at_utc = NULL
+                WHERE run_id = ?
+                """,
+                (utc_now_iso(), status, error, row["run_id"]),
+            )
+            updated += 1
+    return updated
+
+
+def set_run_needs_ack(
+    db_path: Path,
+    *,
+    run_id: str,
+    ack_details: dict[str, Any],
+    error: str | None = None,
+) -> None:
+    """Mark a run as needing acknowledgement before proceeding."""
+    now = utc_now_iso()
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE runs
+            SET updated_at_utc = ?,
+                status = 'NEEDS_ACK',
+                error = ?,
+                ack_required = 1,
+                ack_details_json = ?,
+                locked_by = NULL,
+                locked_at_utc = NULL,
+                heartbeat_at_utc = NULL
+            WHERE run_id = ?
+            """,
+            (now, error, json.dumps(ack_details), run_id),
+        )
+
+
+def acknowledge_run(
+    db_path: Path,
+    *,
+    run_id: str,
+    ack_note: str | None = None,
+) -> None:
+    """Acknowledge evidence gaps and re-queue the run."""
+    now = utc_now_iso()
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE runs
+            SET updated_at_utc = ?,
+                status = 'QUEUED',
+                ack_required = 0,
+                ack_note = ?,
+                acked_at_utc = ?
+            WHERE run_id = ?
+            """,
+            (now, ack_note, now, run_id),
+        )
 
 
 def add_library_source(

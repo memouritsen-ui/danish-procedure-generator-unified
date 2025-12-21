@@ -170,6 +170,7 @@ class AgentOrchestrator:
             # Quality loop
             current_content = ""
             quality_score = 0
+            stop_reason: str | None = None
             revision_suggestions: list[str] = []
 
             for iteration in range(1, input_data.max_iterations + 1):
@@ -318,6 +319,20 @@ class AgentOrchestrator:
                     logger.info("Quality threshold met!")
                     break
 
+                # Stop early if manual policy or cost cap reached
+                if input_data.quality_loop_policy == "manual":
+                    stop_reason = "manual"
+                    logger.info("Quality loop stopped: manual approval required")
+                    break
+                if (
+                    input_data.quality_loop_policy == "auto"
+                    and input_data.quality_loop_max_cost_usd is not None
+                    and self._stats.total_cost_usd >= input_data.quality_loop_max_cost_usd
+                ):
+                    stop_reason = "cost_cap"
+                    logger.info("Quality loop stopped: cost cap reached")
+                    break
+
                 # Prepare for next iteration
                 revision_suggestions = quality_result.output.revision_suggestions
                 if not revision_suggestions:
@@ -346,6 +361,7 @@ class AgentOrchestrator:
                 total_input_tokens=self._stats.total_input_tokens,
                 total_output_tokens=self._stats.total_output_tokens,
                 total_cost_usd=self._stats.total_cost_usd,
+                quality_loop_stop_reason=stop_reason,
             )
 
         except Exception as e:

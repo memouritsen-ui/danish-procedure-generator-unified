@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import uuid
-from functools import partial
 from pathlib import Path
 from typing import Any
 
-import anyio
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -30,7 +29,6 @@ from procedurewriter.db import (
     list_unique_procedures,
     mask_secret,
     set_secret,
-    update_run_status,
 )
 from procedurewriter.file_utils import UnsafePathError, safe_path_within
 from procedurewriter.ncbi_status import check_ncbi_status
@@ -44,7 +42,7 @@ from procedurewriter.pipeline.normalize import (
     normalize_html,
     normalize_pdf_pages,
 )
-from procedurewriter.pipeline.run import run_pipeline
+from procedurewriter.crypto import get_or_create_key
 from procedurewriter.pipeline.versioning import (
     create_version_diff,
     diff_to_dict,
@@ -81,6 +79,7 @@ from procedurewriter.schemas import (
     WriteResponse,
 )
 from procedurewriter.settings import settings
+from procedurewriter.worker import run_worker
 app = FastAPI(title="Akut procedure writer", version="0.1.0")
 
 _OPENAI_SECRET_NAME = "openai_api_key"
@@ -117,12 +116,33 @@ app.include_router(templates_router.router)
 
 
 @app.on_event("startup")
-def _startup() -> None:
+async def _startup() -> None:
     settings.runs_dir.mkdir(parents=True, exist_ok=True)
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     (settings.resolved_data_dir / "index").mkdir(parents=True, exist_ok=True)
     init_db(settings.db_path)
+    # Fail fast if encryption key is missing
+    get_or_create_key()
+    # Start background worker loop if enabled
+    if settings.queue_start_worker_on_startup:
+        stop_event = asyncio.Event()
+        app.state.worker_stop_event = stop_event
+        app.state.worker_task = asyncio.create_task(
+            run_worker(settings=settings, stop_event=stop_event)
+        )
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    stop_event = getattr(app.state, "worker_stop_event", None)
+    task = getattr(app.state, "worker_task", None)
+    if stop_event is not None:
+        stop_event.set()
+    if task is not None:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 @app.get("/api/status", response_model=AppStatus)
@@ -188,48 +208,7 @@ async def api_write(req: WriteRequest) -> WriteResponse:
         run_dir=run_dir,
         template_id=req.template_id,
     )
-    asyncio.create_task(_run_background(run_id))
     return WriteResponse(run_id=run_id)
-
-
-async def _run_background(run_id: str) -> None:
-    run = get_run(settings.db_path, run_id)
-    if run is None:
-        return
-    update_run_status(settings.db_path, run_id=run_id, status="RUNNING")
-    try:
-        libs = list_library_sources(settings.db_path)
-        openai_api_key = _effective_openai_api_key()
-        anthropic_api_key = _effective_anthropic_api_key()
-        ncbi_api_key = _effective_ncbi_api_key()
-        job = partial(
-            run_pipeline,
-            run_id=run_id,
-            created_at_utc=run.created_at_utc,
-            procedure=run.procedure,
-            context=run.context,
-            settings=settings,
-            library_sources=libs,
-            openai_api_key=openai_api_key,
-            anthropic_api_key=anthropic_api_key,
-            ollama_base_url=settings.ollama_base_url,
-            ncbi_api_key=ncbi_api_key,
-        )
-        result = await anyio.to_thread.run_sync(job)
-        update_run_status(
-            settings.db_path,
-            run_id=run_id,
-            status="DONE",
-            manifest_path=Path(result["manifest_path"]),
-            docx_path=Path(result["docx_path"]),
-            quality_score=result.get("quality_score"),
-            iterations_used=result.get("iterations_used"),
-            total_cost_usd=result.get("total_cost_usd"),
-            total_input_tokens=result.get("total_input_tokens"),
-            total_output_tokens=result.get("total_output_tokens"),
-        )
-    except Exception as e:  # noqa: BLE001
-        update_run_status(settings.db_path, run_id=run_id, status="FAILED", error=str(e))
 @app.get("/api/costs", response_model=CostSummaryResponse)
 def api_costs() -> CostSummaryResponse:
     """Get aggregated cost summary across all runs."""

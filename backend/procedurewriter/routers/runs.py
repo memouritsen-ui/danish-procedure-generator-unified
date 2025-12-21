@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
 from procedurewriter.db import (
+    acknowledge_run,
     get_run,
     get_version_chain,
     iter_jsonl,
@@ -37,7 +38,7 @@ from procedurewriter.protocols import (
     find_similar_protocols,
 )
 from procedurewriter.run_bundle import build_run_bundle_zip, read_run_manifest
-from procedurewriter.schemas import RunDetail, RunSummary, SourceRecord, SourcesResponse
+from procedurewriter.schemas import RunAckRequest, RunDetail, RunSummary, SourceRecord, SourcesResponse
 from procedurewriter.settings import settings
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
@@ -146,6 +147,7 @@ def api_runs() -> list[RunSummary]:
             updated_at_utc=r.updated_at_utc,
             procedure=r.procedure,
             status=r.status,
+            ack_required=r.ack_required,
             quality_score=r.quality_score,
             iterations_used=r.iterations_used,
             total_cost_usd=r.total_cost_usd,
@@ -195,6 +197,10 @@ def api_run(run_id: str) -> RunDetail:
         context=run.context,
         status=run.status,
         error=run.error,
+        ack_required=run.ack_required,
+        ack_details=run.ack_details,
+        ack_note=run.ack_note,
+        acked_at_utc=run.acked_at_utc,
         procedure_md=procedure_md,
         source_count=source_count,
         warnings=warnings,
@@ -205,6 +211,18 @@ def api_run(run_id: str) -> RunDetail:
         total_output_tokens=run.total_output_tokens,
         has_meta_analysis_report=has_meta_analysis,
     )
+
+
+@router.post("/{run_id}/ack", response_model=RunDetail)
+def api_ack_run(run_id: str, req: RunAckRequest) -> RunDetail:
+    """Acknowledge evidence gaps and re-queue the run."""
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status != "NEEDS_ACK":
+        raise HTTPException(status_code=409, detail="Run does not require acknowledgement")
+    acknowledge_run(settings.db_path, run_id=run_id, ack_note=req.ack_note)
+    return api_run(run_id)
 
 
 @router.get("/{run_id}/docx")

@@ -43,6 +43,21 @@ class EvidencePolicyError(ValueError):
     pass
 
 
+class EvidenceGapAcknowledgementRequired(EvidencePolicyError):
+    """Raised when evidence tiers are missing and user acknowledgement is required."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        missing_tiers: list[str],
+        availability: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.missing_tiers = missing_tiers
+        self.availability = availability or {}
+
+
 # Configurable evidence scoring thresholds
 # Higher thresholds = more stringent evidence requirements
 DEFAULT_MIN_OVERLAP = 3  # Minimum number of overlapping tokens (up from 2)

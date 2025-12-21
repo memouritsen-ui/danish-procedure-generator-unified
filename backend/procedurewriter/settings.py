@@ -33,11 +33,26 @@ class Settings(BaseSettings):
     # Evidence source requirements
     require_international_sources: bool = True
     require_danish_guidelines: bool = True
+    missing_tier_policy: str = "allow_with_ack"
+
+    # Job queue settings (SQLite-backed)
+    queue_poll_interval_s: float = 0.5
+    queue_heartbeat_interval_s: float = 30.0
+    queue_stale_timeout_s: int = 1800
+    queue_max_attempts: int = 3
+    queue_max_concurrency: int = 2
+    queue_start_worker_on_startup: bool = True
 
     # LLM Provider Configuration
     llm_provider: LLMProviderEnum = LLMProviderEnum.OPENAI
     use_llm: bool = True
     llm_model: str = "gpt-5.2"  # Upgraded from gpt-4o-mini for better style processing
+
+    # Quality loop configuration
+    quality_loop_max_iterations: int = 3
+    quality_loop_quality_threshold: int = 8
+    quality_loop_policy: str = "auto"
+    quality_loop_max_cost_usd: float = 2.0
 
     # Provider-specific settings (read from env without prefix)
     # These are typically set as OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
@@ -66,6 +81,7 @@ class Settings(BaseSettings):
     wiley_tdm_base_url: str = "https://api.wiley.com/onlinelibrary/tdm/v1"
     wiley_tdm_max_downloads: int = 5
     wiley_tdm_allow_non_wiley_doi: bool = False
+    wiley_tdm_use_client: bool = True
 
     def get_default_model_for_provider(self) -> str:
         """Get the default model name for the configured provider."""

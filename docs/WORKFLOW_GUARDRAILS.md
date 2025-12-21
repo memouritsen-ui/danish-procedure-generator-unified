@@ -29,7 +29,7 @@ In strict mode, the pipeline enforces:
 - At least 1 NICE guideline source (when available)
 - At least 1 Cochrane systematic review (when available)
 - At least 1 PubMed meta-analysis or systematic review (when available)
-- Warning issued if any tier is missing; error raised if all high-evidence tiers fail.
+- When `missing_tier_policy=allow_with_ack`, missing tiers put the run in `NEEDS_ACK` and require explicit user acknowledgement before continuing.
 
 ### HTTP Client Requirements
 - User-Agent header: `DanishProcedureGenerator/1.0`
@@ -88,6 +88,7 @@ Required sections from `config/author_guide.yaml`:
 - No placeholder text in final outputs.
 - No silent fallback to low-quality sources.
 - No fallback citation injection in strict mode (raises CitationValidationError).
+- `NEEDS_ACK` runs must be acknowledged via the API before resuming when evidence gaps are present.
 - Always log warnings in run manifest.
 - Add or update regression tests for any pipeline changes.
 

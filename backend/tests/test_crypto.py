@@ -34,18 +34,15 @@ def test_get_or_create_key_returns_existing(encryption_key):
     assert key == encryption_key
 
 
-def test_get_or_create_key_generates_new():
-    """Test that get_or_create_key generates new key if none exists."""
+def test_get_or_create_key_requires_env():
+    """Test that get_or_create_key requires an explicit environment key."""
     old_key = os.environ.get("PROCEDUREWRITER_SECRET_KEY")
     if old_key:
         del os.environ["PROCEDUREWRITER_SECRET_KEY"]
 
     try:
-        key = get_or_create_key()
-        assert key is not None
-        assert len(key) > 0
-        # Should be valid base64
-        base64.urlsafe_b64decode(key.encode())
+        with pytest.raises(ValueError, match="PROCEDUREWRITER_SECRET_KEY environment variable not set"):
+            get_or_create_key()
     finally:
         if old_key:
             os.environ["PROCEDUREWRITER_SECRET_KEY"] = old_key

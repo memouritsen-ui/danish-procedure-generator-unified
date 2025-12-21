@@ -29,7 +29,12 @@ from procedurewriter.pipeline.docx_writer import (
     write_source_analysis_docx,
 )
 from procedurewriter.pipeline.events import EventType, get_emitter, remove_emitter
-from procedurewriter.pipeline.evidence import EvidencePolicyError, build_evidence_report, enforce_evidence_policy
+from procedurewriter.pipeline.evidence import (
+    EvidenceGapAcknowledgementRequired,
+    EvidencePolicyError,
+    build_evidence_report,
+    enforce_evidence_policy,
+)
 from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
 from procedurewriter.pipeline.fetcher import CachedHttpClient
 from procedurewriter.pipeline.io import write_json, write_jsonl, write_text
@@ -212,12 +217,16 @@ def run_pipeline(
     # Default to STRICT evidence policy for gold-standard output
     # Only override if explicitly configured in author guide
     evidence_policy = "strict"
+    missing_tier_policy = settings.missing_tier_policy
     if isinstance(author_guide, dict):
         validation = author_guide.get("validation")
         if isinstance(validation, dict):
             p = validation.get("evidence_policy")
             if isinstance(p, str) and p.strip():
                 evidence_policy = p.strip().lower()
+            m = validation.get("missing_tier_policy")
+            if isinstance(m, str) and m.strip():
+                missing_tier_policy = m.strip().lower()
 
     http = CachedHttpClient(cache_dir=settings.cache_dir)
     try:
@@ -225,6 +234,7 @@ def run_pipeline(
         source_n = 1
         warnings: list[str] = []
         orchestrator_cost = 0.0
+        orchestrator_stop_reason: str | None = None
         post_manifest_artifacts: list[tuple[str, Path]] = []
         availability_stats: dict[str, int] = {
             "nice_candidates": 0,
@@ -657,6 +667,7 @@ def run_pipeline(
                         max_downloads=settings.wiley_tdm_max_downloads,
                         allow_non_wiley_doi=settings.wiley_tdm_allow_non_wiley_doi,
                         strict_mode=evidence_policy == "strict",
+                        use_client=settings.wiley_tdm_use_client,
                     )
                     if wiley_tdm_stats.get("failed"):
                         warnings.append(
@@ -713,6 +724,7 @@ def run_pipeline(
             warnings=warnings,
             evidence_policy=evidence_policy,
             availability=availability_stats,
+            missing_tier_policy=missing_tier_policy,
         )
 
         snippets = build_snippets(sources)
@@ -848,8 +860,10 @@ def run_pipeline(
             pipeline_input = AgentPipelineInput(
                 procedure_title=procedure,
                 context=context,
-                max_iterations=3,
-                quality_threshold=8,
+                max_iterations=settings.quality_loop_max_iterations,
+                quality_threshold=settings.quality_loop_quality_threshold,
+                quality_loop_policy=settings.quality_loop_policy,
+                quality_loop_max_cost_usd=settings.quality_loop_max_cost_usd,
                 outline=_author_guide_outline(author_guide) if isinstance(author_guide, dict) else None,
                 style_guide=_author_guide_style_text(author_guide) if isinstance(author_guide, dict) else None,
                 evidence_summary=evidence_summary_text,
@@ -865,6 +879,7 @@ def run_pipeline(
                 orchestrator_quality_score = pipeline_result.quality_score
                 orchestrator_iterations = pipeline_result.iterations_used
                 orchestrator_cost = pipeline_result.total_cost_usd
+                orchestrator_stop_reason = pipeline_result.quality_loop_stop_reason
             else:
                 # Fallback to simple writer if orchestrator fails
                 md = write_procedure_markdown(
@@ -1113,6 +1128,8 @@ def run_pipeline(
             "evidence_supported_count": int(evidence.get("supported_count") or 0),
             "evidence_unsupported_count": int(evidence.get("unsupported_count") or 0),
         }
+        if orchestrator_stop_reason:
+            runtime["quality_loop_stop_reason"] = orchestrator_stop_reason
         if warnings:
             runtime["warnings"] = warnings[:20]
         if verification_result:
@@ -1403,6 +1420,7 @@ def _enforce_source_requirements(
     warnings: list[str],
     availability: dict[str, int] | None = None,
     evidence_policy: str = "strict",
+    missing_tier_policy: str = "strict_fail",
 ) -> None:
     """Enforce per-tier source requirements for gold-standard output.
 
@@ -1485,6 +1503,12 @@ def _enforce_source_requirements(
     # Only fail in strict mode
     if missing and evidence_policy == "strict":
         missing_text = ", ".join(missing)
+        if missing_tier_policy == "allow_with_ack":
+            raise EvidenceGapAcknowledgementRequired(
+                "Evidence gaps require user acknowledgement before proceeding.",
+                missing_tiers=missing,
+                availability=availability or {},
+            )
         raise EvidencePolicyError(
             "Evidence policy STRICT failed: required source tiers missing. "
             f"Missing: {missing_text}. See source_selection.json for tier details."
@@ -2277,8 +2301,19 @@ def _apply_wiley_tdm_fulltext(
     max_downloads: int,
     allow_non_wiley_doi: bool,
     strict_mode: bool,
+    use_client: bool = False,
 ) -> dict[str, int]:
     """Download full-text PDFs via Wiley TDM API and update sources in place."""
+    if use_client:
+        return _apply_wiley_tdm_fulltext_client(
+            sources=sources,
+            run_dir=run_dir,
+            token=token,
+            max_downloads=max_downloads,
+            allow_non_wiley_doi=allow_non_wiley_doi,
+            strict_mode=strict_mode,
+        )
+
     stats = {
         "attempted": 0,
         "downloaded": 0,
@@ -2390,6 +2425,141 @@ def _apply_wiley_tdm_fulltext(
             stats["failed"] += 1
             if strict_mode:
                 raise EvidencePolicyError(f"Wiley TDM download failed for DOI {doi}: {e}") from e
+
+    return stats
+
+
+def _apply_wiley_tdm_fulltext_client(
+    *,
+    sources: list[SourceRecord],
+    run_dir: Path,
+    token: str,
+    max_downloads: int,
+    allow_non_wiley_doi: bool,
+    strict_mode: bool,
+) -> dict[str, int]:
+    """Download full-text PDFs via the Wiley TDM client when available."""
+    stats = {
+        "attempted": 0,
+        "downloaded": 0,
+        "skipped_no_doi": 0,
+        "skipped_non_wiley": 0,
+        "skipped_already_tdm": 0,
+        "failed": 0,
+        "truncated": 0,
+    }
+    try:
+        from wiley_tdm import DownloadStatus, TDMClient
+    except Exception as e:  # noqa: BLE001
+        if strict_mode:
+            raise EvidencePolicyError("wiley-tdm client not available.") from e
+        return stats
+
+    download_dir = run_dir / "tdm_downloads"
+    tdm = TDMClient(api_token=token, download_dir=download_dir)
+    seen_dois: set[str] = set()
+
+    for idx, src in enumerate(sources):
+        if stats["downloaded"] >= max_downloads:
+            stats["truncated"] += 1
+            continue
+
+        doi = (src.doi or _extract_doi_from_url(src.url) or "").strip()
+        if not doi:
+            stats["skipped_no_doi"] += 1
+            continue
+        if doi in seen_dois:
+            continue
+        if not allow_non_wiley_doi and not _looks_like_wiley_source(src.url, doi):
+            stats["skipped_non_wiley"] += 1
+            continue
+        if src.extra.get("tdm_fulltext"):
+            stats["skipped_already_tdm"] += 1
+            continue
+
+        stats["attempted"] += 1
+        result = tdm.download_pdf(doi)
+        status = getattr(result, "status", None)
+        pdf_path = getattr(result, "path", None)
+
+        if status in {DownloadStatus.SUCCESS, DownloadStatus.EXISTING_FILE} and pdf_path:
+            try:
+                pdf_bytes = Path(pdf_path).read_bytes()
+            except Exception as e:  # noqa: BLE001
+                stats["failed"] += 1
+                if strict_mode:
+                    raise EvidencePolicyError(
+                        f"Wiley TDM client failed to read PDF for DOI {doi}: {e}"
+                    ) from e
+                continue
+
+            pages = extract_pdf_pages(Path(pdf_path))
+            normalized_text = normalize_pdf_pages(pages)
+
+            written = write_source_files(
+                run_dir=run_dir,
+                source_id=src.source_id,
+                raw_bytes=pdf_bytes,
+                raw_suffix=".pdf",
+                normalized_text=normalized_text,
+            )
+
+            new_extra = dict(src.extra)
+            new_extra.update(
+                {
+                    "tdm_fulltext": True,
+                    "tdm_doi": doi,
+                    "tdm_url": str(pdf_path),
+                    "tdm_downloaded_at_utc": _utc_now_iso(),
+                    "tdm_original_raw_path": src.raw_path,
+                    "tdm_original_normalized_path": src.normalized_path,
+                    "tdm_original_raw_sha256": src.raw_sha256,
+                    "tdm_original_normalized_sha256": src.normalized_sha256,
+                }
+            )
+
+            tdm_note = (
+                "Wiley TDM full-text accessed under text-and-data mining terms. "
+                "Do not redistribute full text."
+            )
+            terms_note = (src.terms_licence_note or "").strip()
+            if terms_note:
+                terms_note = f"{terms_note} {tdm_note}"
+            else:
+                terms_note = tdm_note
+
+            extraction_notes = (src.extraction_notes or "").strip()
+            if extraction_notes:
+                extraction_notes = f"{extraction_notes} | Wiley TDM full-text applied."
+            else:
+                extraction_notes = "Wiley TDM full-text applied."
+
+            sources[idx] = SourceRecord(
+                source_id=src.source_id,
+                fetched_at_utc=_utc_now_iso(),
+                kind=src.kind,
+                title=src.title,
+                year=src.year,
+                url=src.url,
+                doi=doi,
+                pmid=src.pmid,
+                raw_path=str(written.raw_path),
+                normalized_path=str(written.normalized_path),
+                raw_sha256=written.raw_sha256,
+                normalized_sha256=written.normalized_sha256,
+                extraction_notes=extraction_notes,
+                terms_licence_note=terms_note,
+                extra=new_extra,
+            )
+            stats["downloaded"] += 1
+            seen_dois.add(doi)
+        else:
+            stats["failed"] += 1
+            if strict_mode:
+                detail = getattr(result, "comment", None)
+                raise EvidencePolicyError(
+                    f"Wiley TDM client failed for DOI {doi}: {status} {detail or ''}".strip()
+                )
 
     return stats
 
