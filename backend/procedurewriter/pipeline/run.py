@@ -50,7 +50,7 @@ from procedurewriter.pipeline.structure_validator import (
     StructureValidationError,
     validate_required_sections,
 )
-from procedurewriter.pipeline.types import SourceRecord
+from procedurewriter.pipeline.types import Snippet, SourceRecord
 from procedurewriter.pipeline.writer import write_procedure_markdown
 from procedurewriter.settings import Settings
 
@@ -741,6 +741,15 @@ def run_pipeline(
             openai_api_key=openai_api_key,
         )
 
+        # Ensure source diversity: add international snippets if underrepresented
+        retrieved = _ensure_source_diversity(
+            retrieved=retrieved,
+            all_snippets=snippets,
+            sources=sources,
+            min_international_ratio=0.15,  # At least 15% international sources
+            max_total=80,
+        )
+
         llm: LLMProvider | None = None
         if settings.use_llm and not settings.dummy_mode:
             llm = get_llm_client(
@@ -1257,6 +1266,79 @@ def run_pipeline(
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
+def _ensure_source_diversity(
+    *,
+    retrieved: list[Snippet],
+    all_snippets: list[Snippet],
+    sources: list[SourceRecord],
+    min_international_ratio: float = 0.15,
+    max_total: int = 80,
+) -> list[Snippet]:
+    """Ensure retrieved snippets include international sources.
+
+    If international sources (PubMed, NICE, Cochrane) are underrepresented,
+    add top snippets from those sources to ensure diversity.
+
+    Args:
+        retrieved: Already retrieved snippets (sorted by relevance)
+        all_snippets: All available snippets
+        sources: Source records for type lookup
+        min_international_ratio: Minimum ratio of international snippets (default 15%)
+        max_total: Maximum total snippets to return
+
+    Returns:
+        Snippets with guaranteed international representation
+    """
+    # Build source type lookup
+    source_types: dict[str, str] = {}
+    for src in sources:
+        if src.kind in ("pubmed", "nice_guideline", "cochrane_review", "international_guideline"):
+            source_types[src.source_id] = "international"
+        elif src.extra.get("international_source_type"):
+            source_types[src.source_id] = "international"
+        else:
+            source_types[src.source_id] = "danish"
+
+    # Count current international snippets
+    retrieved_ids = {s.source_id for s in retrieved}
+    international_count = sum(
+        1 for s in retrieved
+        if source_types.get(s.source_id) == "international"
+    )
+
+    min_international = int(max_total * min_international_ratio)
+
+    if international_count >= min_international:
+        return retrieved  # Already diverse enough
+
+    # Need to add more international snippets
+    needed = min_international - international_count
+
+    # Get international snippets not already in retrieved
+    international_snippets = [
+        s for s in all_snippets
+        if source_types.get(s.source_id) == "international"
+        and s.source_id not in retrieved_ids
+    ]
+
+    if not international_snippets:
+        return retrieved  # No international snippets available
+
+    # Add international snippets (take first N - they're from build_snippets order)
+    to_add = international_snippets[:needed]
+
+    # Combine: keep most relevant retrieved, add international
+    result = retrieved[:max_total - len(to_add)] + to_add
+
+    logger.info(
+        "Source diversity: added %d international snippets (was %d/%d, now %d/%d)",
+        len(to_add), international_count, len(retrieved),
+        international_count + len(to_add), len(result)
+    )
+
+    return result
 
 
 def _has_international_sources(sources: list[SourceRecord]) -> bool:

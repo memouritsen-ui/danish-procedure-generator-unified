@@ -206,11 +206,8 @@ def _write_template(
             prefix = "OBS:" if bundle == "safety" else ""
             lines.append(f"- {prefix} Udfyld med konkrete, handlingsorienterede punkter fra kilderne. {cite}".strip())
             lines.append(f"- Markér tydeligt usikkerhed/variation hvis kilderne er svage eller uenige. {cite}")
-            lines.append(f"- Henvis til lokale retningslinjer hvor kilderne ikke dækker. {cite}")
         else:
             lines.append(f"Dette afsnit beskriver kort rationale og vigtige valg som fremgår af kilderne. {cite}")
-            lines.append("")
-            lines.append(f"Hvis de indsamlede kilder ikke dækker centrale spørgsmål, skal det stå eksplicit her. {cite}")
         lines.append("")
 
     # Add references section with evidence badges if sources available
@@ -366,13 +363,14 @@ def _write_llm_section_body(
         "safety": "Sikkerhedsboks: OBS/stop-kriterier/eskalation.",
     }.get(bundle, "")
 
-    # Build quantitative evidence hint for meta-analysis sections
+    # Build quantitative evidence hint - apply to ALL sections, not just evidence
     quant_hint = ""
-    if quantitative_evidence_context and heading.lower() in ("evidens og meta-analyse", "evidens", "meta-analyse"):
+    if quantitative_evidence_context:
         quant_hint = (
-            "\n\nKVANTITATIV EVIDENS (brug disse tal i din tekst):\n"
+            "\n\nINTERNATIONAL EVIDENS (brug i relevante sektioner):\n"
             f"{quantitative_evidence_context}\n"
-            "Inkorporér effektstørrelser, konfidensintervaller og heterogenitet i din tekst.\n"
+            "Integrer international evidens med danske guidelines. Internationale kilder giver "
+            "videnskabelig basis, danske kilder viser lokal implementering.\n"
         )
 
     system = (
@@ -386,8 +384,8 @@ def _write_llm_section_body(
         "UNDGÅ at have én sætning per bullet - det bliver for fragmenteret.\n"
         "- Hver sætning eller bullet skal indeholde mindst én citations-tag.\n"
         "- Du må kun bruge information, der er understøttet af de vedlagte SNIPPETS. Brug ikke generel viden.\n"
-        "- Hvis SNIPPETS ikke dækker noget centralt for sektionen, skal du skrive det eksplicit (fx 'Ikke dækket i de "
-        "indsamlede kilder; følg lokal retningslinje.') og stadig citere med et tilladt source_id.\n"
+        "- Skriv KUN kliniske instruktioner. INGEN meta-kommentarer som 'ikke dækket', 'følg lokal retningslinje', "
+        "'fremgår ikke af kilder' eller lignende. Hvis du ikke har evidens for et punkt, udelad det.\n"
         "- Ingen overskrifter, ingen preface, ingen kilde-URLs i brødteksten.\n"
         "- Bevar medicinske forkortelser som n. (nervus), m. (musculus), v. (vena), a. (arteria) osv. intakte.\n"
         f"{quant_hint}"
@@ -455,7 +453,7 @@ def _normalize_section_lines(
         cleaned.append(line)
 
     if not cleaned:
-        cleaned = ["Ikke dækket i de indsamlede kilder; følg lokal retningslinje."]
+        cleaned = []  # Returner tom liste - sektionen filtreres fra
 
     atomic: list[str] = []
 
@@ -486,7 +484,7 @@ def _normalize_section_lines(
 
         content = _citation_tag_re.sub("", s).strip()
         if not content:
-            content = "Ikke dækket i de indsamlede kilder; følg lokal retningslinje."
+            continue  # Spring tomme linjer over
 
         # Keep each LLM line as one unit - don't split into individual sentences.
         # This preserves the natural flow the LLM intended.
@@ -502,10 +500,8 @@ def _normalize_section_lines(
             setattr(err, "line_number", None)
             setattr(err, "line_text", None)
             raise err
-        if allow_fallback_citations:
-            atomic = [f"Ikke dækket i de indsamlede kilder; følg lokal retningslinje. [S:{fallback_citation}]"]
-        else:
-            atomic = ["Ikke dækket i de indsamlede kilder; følg lokal retningslinje."]
+        # Returner tom liste - sektionen har ingen evidens-baseret indhold
+        atomic = []
 
     if fmt == "bullets":
         return [f"- {s}".strip() for s in atomic]
@@ -626,13 +622,14 @@ def _write_llm(
         source_lines.append(f"- [S:{src.source_id}] {meta}{pub_types_text}{evidence_text}".strip())
     sources_text = "\n".join(source_lines) if source_lines else "(ingen)"
 
-    # Build quantitative evidence hint if available
+    # Build quantitative evidence hint - apply to ALL sections
     quant_hint = ""
     if quantitative_evidence_context:
         quant_hint = (
-            "\n\nKVANTITATIV EVIDENS (brug disse tal i relevante sektioner):\n"
+            "\n\nINTERNATIONAL EVIDENS (brug i relevante sektioner):\n"
             f"{quantitative_evidence_context}\n"
-            "Inkorporér effektstørrelser, konfidensintervaller og heterogenitet i 'Evidens og Meta-analyse' sektionen.\n"
+            "Integrer international evidens med danske guidelines. Internationale kilder giver "
+            "videnskabelig basis, danske kilder viser lokal implementering.\n"
         )
 
     system = (
@@ -642,9 +639,9 @@ def _write_llm(
         "- Du må kun citere kilder ved at bruge tags præcis i formatet [S:<source_id>] hvor <source_id> er et af de "
         "tilladte ids.\n"
         "- Hver sætning skal have mindst én citations-tag.\n"
-        "- Du må kun bruge information, der er understøttet af de vedlagte SNIPPETS. Brug ikke generel viden. Hvis "
-        "noget ikke er dækket af SNIPPETS, skal du skrive det eksplicit (fx 'Ikke dækket i de indsamlede kilder; følg "
-        "lokal retningslinje.').\n"
+        "- Du må kun bruge information, der er understøttet af de vedlagte SNIPPETS. Brug ikke generel viden.\n"
+        "- Skriv KUN kliniske instruktioner. INGEN meta-kommentarer som 'ikke dækket', 'følg lokal retningslinje', "
+        "'fremgår ikke af kilder' eller lignende. Udelad punkter uden evidens.\n"
         "- Følg strukturen og formateringen i AUTHOR_GUIDE: 'bullets' -> Markdown '- ' linjer, 'numbered' -> '1. ' "
         "linjer, 'paragraphs' -> korte afsnit.\n"
         "- Action-bundle: korte, imperative instruktioner. Forklaringslag: kort rationale. Sikkerhedsboks: altid "
