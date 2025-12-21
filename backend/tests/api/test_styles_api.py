@@ -15,6 +15,9 @@ from procedurewriter.settings import Settings
 
 @pytest.fixture
 def test_client():
+    from procedurewriter.settings import settings
+    original_data_dir = settings.data_dir
+
     with tempfile.TemporaryDirectory() as tmpdir:
         data_dir = Path(tmpdir)
         # Create the index directory for the DB
@@ -22,14 +25,15 @@ def test_client():
         db_path = data_dir / "index" / "runs.sqlite3"
         init_db(db_path)
 
-        # Create a new Settings instance with test data_dir
-        # data_dir controls where db_path is computed
-        test_settings = Settings(data_dir=data_dir)
+        # Directly modify the singleton's data_dir
+        settings.data_dir = data_dir
 
-        # Patch the global settings
-        with patch("procedurewriter.main.settings", test_settings):
+        try:
             with TestClient(app) as client:
                 yield client
+        finally:
+            # Restore original data_dir
+            settings.data_dir = original_data_dir
 
 
 def test_list_styles_empty(test_client) -> None:

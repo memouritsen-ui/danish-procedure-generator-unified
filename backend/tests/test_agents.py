@@ -163,10 +163,10 @@ class TestWriterAgent:
         mock_content = """# Anafylaksi
 
 ## Indikationer
-Alvorlig allergisk reaktion [src_001].
+Alvorlig allergisk reaktion [S:src_001].
 
 ## Behandling
-Administrer epinephrin 0.5 mg i.m. [src_001].
+Administrer epinephrin 0.5 mg i.m. [S:src_001].
 """
         mock_llm = MockLLMProvider(responses=[mock_content])
         agent = WriterAgent(mock_llm)

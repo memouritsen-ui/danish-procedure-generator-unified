@@ -2,14 +2,13 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from procedurewriter import db
 from procedurewriter.main import app
-from procedurewriter.settings import Settings
+from procedurewriter.settings import settings
 
 
 @pytest.fixture
@@ -18,29 +17,36 @@ def client(monkeypatch):
     # Set encryption key FIRST
     monkeypatch.setenv("PROCEDUREWRITER_SECRET_KEY", "_GzFguJBCK1SAZdNSkfyofpS-5TL5aN0F0fWTdF2u-s=")
 
+    original_data_dir = settings.data_dir
+    original_config_dir = settings.config_dir
+
     with tempfile.TemporaryDirectory() as tmpdir:
         data_dir = Path(tmpdir)
+        config_dir = data_dir / "config"
         # Create necessary directories
         (data_dir / "index").mkdir(parents=True, exist_ok=True)
-        (data_dir / "config").mkdir(parents=True, exist_ok=True)
-        
+        config_dir.mkdir(parents=True, exist_ok=True)
+
         # Initialize database
         db_path = data_dir / "index" / "runs.sqlite3"
         db.init_db(db_path)
 
         # Create mock config files with valid YAML
-        (data_dir / "config" / "author_guide.yaml").write_text("test: author_guide", encoding="utf-8")
-        (data_dir / "config" / "source_allowlist.yaml").write_text("test: allowlist", encoding="utf-8")
-        (data_dir / "config" / "docx_template.yaml").write_text("test: template", encoding="utf-8")
+        (config_dir / "author_guide.yaml").write_text("test: author_guide", encoding="utf-8")
+        (config_dir / "source_allowlist.yaml").write_text("test: allowlist", encoding="utf-8")
+        (config_dir / "docx_template.yaml").write_text("test: template", encoding="utf-8")
 
-        # Create a new Settings instance with test data_dir
-        test_settings = Settings(data_dir=data_dir)
+        # Directly modify the singleton's data_dir AND config_dir
+        settings.data_dir = data_dir
+        settings.config_dir = config_dir
 
-        # Patch the global settings in both main and router
-        with patch("procedurewriter.main.settings", test_settings), \
-             patch("procedurewriter.routers.config.settings", test_settings):
+        try:
             with TestClient(app) as client:
                 yield client
+        finally:
+            # Restore original values
+            settings.data_dir = original_data_dir
+            settings.config_dir = original_config_dir
 
 
 def test_get_author_guide(client):

@@ -84,9 +84,10 @@ def test_style_agent_fails_on_missing_citations() -> None:
 
     result = agent.execute(input_data)
 
-    # Should indicate failure and fallback to original
-    assert result.output.success is False
-    assert result.output.polished_markdown == input_data.raw_markdown
+    # Should succeed but add warning about missing citations
+    assert result.output.success is True
+    assert "[SRC0002]" in result.output.polished_markdown  # Missing citation added
+    assert len(result.output.warnings) > 0  # Warning about added citations
 
 
 def test_style_agent_applies_tone() -> None:

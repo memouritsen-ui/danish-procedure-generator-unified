@@ -9,8 +9,15 @@ from procedurewriter.main import app, settings
 
 
 @pytest.fixture
-def client(tmp_path: Path):
+def client(tmp_path: Path, monkeypatch):
     """Create test client with isolated data directory."""
+    # Set encryption key for API key storage
+    monkeypatch.setenv("PROCEDUREWRITER_SECRET_KEY", "_GzFguJBCK1SAZdNSkfyofpS-5TL5aN0F0fWTdF2u-s=")
+
+    # Save original values
+    original_data_dir = settings.data_dir
+    original_config_dir = settings.config_dir
+
     # Override settings paths for test isolation
     settings.data_dir = tmp_path / "data"
     settings.config_dir = tmp_path / "config"
@@ -31,8 +38,13 @@ def client(tmp_path: Path):
     from procedurewriter.db import init_db
     init_db(settings.db_path)
 
-    with TestClient(app) as c:
-        yield c
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        # Restore original values
+        settings.data_dir = original_data_dir
+        settings.config_dir = original_config_dir
 
 
 class TestStatusEndpoint:

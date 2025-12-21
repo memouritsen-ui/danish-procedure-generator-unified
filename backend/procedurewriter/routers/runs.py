@@ -38,9 +38,7 @@ from procedurewriter.protocols import (
 )
 from procedurewriter.run_bundle import build_run_bundle_zip, read_run_manifest
 from procedurewriter.schemas import RunDetail, RunSummary, SourceRecord, SourcesResponse
-from procedurewriter.settings import Settings
-
-settings = Settings()
+from procedurewriter.settings import settings
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 

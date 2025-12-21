@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from procedurewriter.settings import Settings
+from procedurewriter.settings import settings
 from procedurewriter.templates import (
     SectionConfig,
     TemplateConfig,
@@ -19,7 +19,6 @@ from procedurewriter.templates import (
     update_template,
 )
 
-settings = Settings()
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 

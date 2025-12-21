@@ -1,3 +1,49 @@
+# Tilladte URL-prefixes til ingest/fetch af guidelines og andre webkilder.
+version: 2
+
 allowed_url_prefixes:
-  - https://new.example/
-seed_urls: []
+  # TIER 1: International Gold Standard Sources
+  - "https://www.nice.org.uk/"
+  - "https://www.who.int/"
+  - "https://www.cochranelibrary.com/"
+  - "https://www.cochrane.org/"
+  - "https://www.erc.edu/"
+  - "https://cprguidelines.eu/"
+  - "https://www.heart.org/"
+  - "https://www.escardio.org/"
+  - "https://www.brit-thoracic.org.uk/"
+  - "https://www.eaaci.org/"
+  - "https://www.chestnet.org/"
+  # TIER 2: Academic/Medical Sources
+  - "https://www.ncbi.nlm.nih.gov/books/"
+  - "https://www.cdc.gov/"
+  - "https://bestpractice.bmj.com/"
+  - "https://www.uptodate.com/"
+  - "https://jamanetwork.com/"
+  - "https://www.nejm.org/"
+  - "https://www.thelancet.com/"
+  # TIER 3: Technique/Educational Sources
+  - "https://emedicine.medscape.com/"
+  - "https://www.medscape.com/"
+  - "https://radiopaedia.org/"
+  - "https://teachmeanatomy.info/"
+  # TIER 4: Danish National Sources
+  - "https://www.sst.dk/"
+  - "https://laegemiddelstyrelsen.dk/"
+  - "https://www.sundhed.dk/"
+  - "https://www.dsam.dk/"
+  - "https://e-dok.rm.dk/"
+  - "https://vip.regionh.dk/"
+  - "https://dok.regionsjaelland.dk/"
+  - "https://pri.rn.dk/"
+  - "https://ekstern.telecare.rh.dk/"
+
+seed_urls:
+  - url: "https://www.nice.org.uk/guidance/ng39"
+    procedure_keywords: ["anafylaksi", "anaphylaxis", "allergisk reaktion"]
+  - url: "https://www.brit-thoracic.org.uk/quality-improvement/guidelines/pleural-disease/"
+    procedure_keywords: ["pleuradræn", "chest drain", "pleural"]
+  - url: "https://cprguidelines.eu/"
+    procedure_keywords: ["hjertestop", "resuscitation", "CPR", "genoplivning"]
+  - url: "https://www.ncbi.nlm.nih.gov/books/NBK557553/"
+    procedure_keywords: ["lumbalpunktur", "lumbar puncture", "spinalpunktur"]

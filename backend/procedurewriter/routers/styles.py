@@ -15,9 +15,7 @@ from procedurewriter.db import (
     update_style_profile,
 )
 from procedurewriter.models.style_profile import StyleProfile
-from procedurewriter.settings import Settings
-
-settings = Settings()
+from procedurewriter.settings import settings
 
 router = APIRouter(prefix="/api/styles", tags=["styles"])
 

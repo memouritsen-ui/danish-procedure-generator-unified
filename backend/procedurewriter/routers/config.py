@@ -4,9 +4,7 @@ from fastapi import APIRouter
 
 from procedurewriter import config_store
 from procedurewriter.schemas import ConfigText
-from procedurewriter.settings import Settings
-
-settings = Settings()
+from procedurewriter.settings import settings
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 

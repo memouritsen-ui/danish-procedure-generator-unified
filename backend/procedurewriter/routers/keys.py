@@ -7,9 +7,7 @@ from fastapi import APIRouter
 from procedurewriter.db import delete_secret, get_secret, mask_secret, set_secret
 from procedurewriter.ncbi_status import check_ncbi_status
 from procedurewriter.schemas import ApiKeyInfo, ApiKeySetRequest, ApiKeyStatus
-from procedurewriter.settings import Settings
-
-settings = Settings()
+from procedurewriter.settings import settings
 
 router = APIRouter(prefix="/api/keys", tags=["keys"])
 

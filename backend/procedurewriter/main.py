@@ -80,9 +80,7 @@ from procedurewriter.schemas import (
     WriteRequest,
     WriteResponse,
 )
-from procedurewriter.settings import Settings
-
-settings = Settings()
+from procedurewriter.settings import settings
 app = FastAPI(title="Akut procedure writer", version="0.1.0")
 
 _OPENAI_SECRET_NAME = "openai_api_key"

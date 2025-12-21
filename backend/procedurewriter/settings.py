@@ -111,3 +111,7 @@ class Settings(BaseSettings):
         if self.guideline_library_path:
             return self.guideline_library_path
         return Path.home() / "guideline_harvester" / "library"
+
+
+# Singleton instance - import this instead of creating Settings()
+settings = Settings()
