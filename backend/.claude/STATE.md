@@ -1,7 +1,7 @@
 # STATE.md - Current Project State
 
-**LAST UPDATED**: 2024-12-22 01:15 UTC
-**UPDATED BY**: Claude (Phase 1 COMPLETE: All 12 tasks done)
+**LAST UPDATED**: 2024-12-22 02:00 UTC
+**UPDATED BY**: Claude (P1-HF5 complete, 5/8 hotfix tasks done)
 
 ---
 
@@ -51,10 +51,10 @@ Must complete P1-HOTFIX (8 tasks) before starting Phase 2.
 ## CURRENT TASK
 
 ```
-TASK: P1-HF5 - Add to_db_row() method to Gate model
+TASK: P1-HF6 - Add from_db_row() classmethod to all models
 STATUS: NOT STARTED
 BLOCKED BY: None
-NEXT ACTION: Add to_db_row() to Gate model
+NEXT ACTION: Add from_db_row() to Claim model first
 
 ⚠️ Phase 2 is BLOCKED until all P1-HF tasks are complete
 ```
@@ -76,6 +76,7 @@ NEXT ACTION: Add to_db_row() to Gate model
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | P1-HF5: Add to_db_row() to Gate model | 21 tests pass |
 | 2024-12-22 | P1-HF4: Add to_db_row() to Issue model | 22 tests pass |
 | 2024-12-22 | P1-HF3: Add to_db_row() to ClaimEvidenceLink model | 22 tests pass |
 | 2024-12-22 | P1-HF2: Add to_db_row() to EvidenceChunk model | 19 tests pass |

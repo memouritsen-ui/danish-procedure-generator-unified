@@ -106,6 +106,25 @@ class Gate(BaseModel):
         """Get human-readable gate label."""
         return _GATE_LABELS[self.gate_type]
 
+    def to_db_row(self) -> tuple:
+        """Convert model to database row tuple.
+
+        Returns tuple matching gates table column order:
+        (id, run_id, gate_type, status, issues_checked, issues_failed,
+         message, created_at_utc, evaluated_at_utc)
+        """
+        return (
+            str(self.id),
+            self.run_id,
+            self.gate_type.value,
+            self.status.value,
+            self.issues_checked,
+            self.issues_failed,
+            self.message,
+            self.created_at.isoformat(),
+            self.evaluated_at.isoformat() if self.evaluated_at else None,
+        )
+
     model_config = {
         "json_schema_extra": {
             "examples": [

@@ -290,6 +290,79 @@ class TestGateHelpers:
         assert final.gate_label == "Final Gate"
 
 
+class TestGateDbConversion:
+    """Tests for database conversion methods on Gate."""
+
+    def test_to_db_row_returns_correct_tuple(self):
+        """to_db_row() should return tuple matching DB column order."""
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        from procedurewriter.models.gates import Gate, GateStatus, GateType
+
+        fixed_id = UUID("550e8400-e29b-41d4-a716-446655440000")
+        created_time = datetime(2024, 12, 21, 12, 0, 0, tzinfo=timezone.utc)
+        evaluated_time = datetime(2024, 12, 21, 12, 5, 0, tzinfo=timezone.utc)
+
+        gate = Gate(
+            id=fixed_id,
+            run_id="test-run-123",
+            gate_type=GateType.S0_SAFETY,
+            status=GateStatus.PASS,
+            issues_checked=15,
+            issues_failed=0,
+            message="All safety checks passed",
+            created_at=created_time,
+            evaluated_at=evaluated_time,
+        )
+
+        row = gate.to_db_row()
+
+        # Verify tuple structure matches DB schema
+        assert isinstance(row, tuple)
+        assert len(row) == 9
+
+        # Verify each field
+        assert row[0] == "550e8400-e29b-41d4-a716-446655440000"  # id (str)
+        assert row[1] == "test-run-123"  # run_id
+        assert row[2] == "s0_safety"  # gate_type (enum value)
+        assert row[3] == "pass"  # status (enum value)
+        assert row[4] == 15  # issues_checked
+        assert row[5] == 0  # issues_failed
+        assert row[6] == "All safety checks passed"  # message
+        assert row[7] == "2024-12-21T12:00:00+00:00"  # created_at_utc
+        assert row[8] == "2024-12-21T12:05:00+00:00"  # evaluated_at_utc
+
+    def test_to_db_row_with_null_optional_fields(self):
+        """to_db_row() should handle None values for optional fields."""
+        from procedurewriter.models.gates import Gate, GateStatus, GateType
+
+        gate = Gate(
+            run_id="test-run",
+            gate_type=GateType.S1_QUALITY,
+            status=GateStatus.PENDING,
+        )
+
+        row = gate.to_db_row()
+
+        assert row[6] is None  # message
+        assert row[8] is None  # evaluated_at_utc
+
+    def test_to_db_row_all_gate_types(self):
+        """to_db_row() should handle all gate types correctly."""
+        from procedurewriter.models.gates import Gate, GateStatus, GateType
+
+        for gate_type in GateType:
+            gate = Gate(
+                run_id="test-run",
+                gate_type=gate_type,
+                status=GateStatus.PENDING,
+            )
+
+            row = gate.to_db_row()
+            assert row[2] == gate_type.value
+
+
 class TestGateValidation:
     """Tests for gate validation logic."""
 
