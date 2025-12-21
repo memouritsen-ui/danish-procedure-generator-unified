@@ -318,24 +318,35 @@ def init_db(db_path: Path) -> None:
 
 
 def set_secret(db_path: Path, *, name: str, value: str) -> None:
+    """Store a secret value encrypted in the database."""
+    from procedurewriter.crypto import encrypt_value, is_encrypted
     now = utc_now_iso()
+    # Only encrypt if not already encrypted
+    encrypted_value = encrypt_value(value) if not is_encrypted(value) else value
     with _connect(db_path) as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO secrets(name, updated_at_utc, value)
             VALUES(?, ?, ?)
             """,
-            (name, now, value),
+            (name, now, encrypted_value),
         )
 
 
 def get_secret(db_path: Path, *, name: str) -> str | None:
+    """Retrieve and decrypt a secret value from the database."""
+    from procedurewriter.crypto import decrypt_value, is_encrypted
     with _connect(db_path) as conn:
         row = conn.execute("SELECT value FROM secrets WHERE name = ?", (name,)).fetchone()
         if row is None:
             return None
         value = row["value"]
-        return str(value) if value is not None else None
+        if value is None:
+            return None
+        # Decrypt if encrypted, otherwise return as-is (for backwards compatibility)
+        if is_encrypted(str(value)):
+            return decrypt_value(str(value))
+        return str(value)
 
 
 def delete_secret(db_path: Path, *, name: str) -> None:
