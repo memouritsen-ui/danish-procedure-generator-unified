@@ -92,6 +92,7 @@ class NICEClient:
         """
         results: list[InternationalSource] = []
         soup = BeautifulSoup(html, "html.parser")
+        seen_urls: set[str] = set()
 
         # Try JSON-LD first (more stable)
         for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
@@ -104,7 +105,8 @@ class NICEClient:
                 for item in items:
                     url = item.get("url") if isinstance(item, dict) else None
                     name = item.get("name") if isinstance(item, dict) else None
-                    if url and name:
+                    if url and name and url not in seen_urls:
+                        seen_urls.add(url)
                         results.append(
                             InternationalSource(
                                 url=url,
@@ -119,28 +121,35 @@ class NICEClient:
         if results:
             return results
 
-        # Fallback: regex-based parsing of cards
-        article_pattern = re.compile(
-            r'<article[^>]*class="card"[^>]*data-url="([^"]*)"[^>]*>.*?'
-            r'<a[^>]*>([^<]+)</a>.*?'
-            r'Published:\s*(\d{1,2}\s+\w+\s+(\d{4}))'
-            r'.*?<p[^>]*class="card__snippet"[^>]*>\s*([^<]+)',
-            re.DOTALL | re.IGNORECASE,
-        )
+        # Parse guidance links directly (current NICE website structure 2024+)
+        for link in soup.find_all("a", href=True):
+            href = link.get("href", "")
+            # Only get top-level guidance pages (e.g. /guidance/cg134, /guidance/ng39)
+            if not href.startswith("/guidance/"):
+                continue
+            # Skip chapter/section links
+            if "/chapter/" in href or "/resources/" in href:
+                continue
+            # Skip if just a number suffix (like recommendations)
+            path_parts = href.split("/")
+            if len(path_parts) < 3:
+                continue
 
-        for match in article_pattern.finditer(html):
-            url_path = match.group(1).strip()
-            title = match.group(2).strip()
-            year_str = match.group(4)
-            snippet = match.group(5).strip()
+            # Get guideline ID (like cg134, ng39)
+            guideline_id = path_parts[2].lower()
+            # Skip if already seen
+            full_url = f"{self.BASE_URL}{href}"
+            if full_url in seen_urls:
+                continue
+            seen_urls.add(full_url)
 
-            snippet = " ".join(snippet.split())
-            try:
-                year = int(year_str)
-            except ValueError:
-                year = None
-
-            full_url = f"{self.BASE_URL}{url_path}" if url_path.startswith("/") else url_path
+            # Get link text as title
+            title = link.get_text(strip=True)
+            if not title or len(title) < 5:
+                continue
+            # Skip generic link texts
+            if title.lower() in ("view", "overview", "recommendations"):
+                continue
 
             results.append(
                 InternationalSource(
@@ -148,8 +157,8 @@ class NICEClient:
                     title=title,
                     source_type="nice_guideline",
                     evidence_tier=SourceTier.TIER_1_INTERNATIONAL,
-                    abstract=snippet,
-                    publication_year=year,
+                    abstract=None,
+                    publication_year=None,
                 )
             )
 
@@ -185,12 +194,18 @@ class CochraneClient:
         return results[:max_results]
 
     def _build_search_url(self, query: str) -> str:
+        """Build Cochrane CDSR search URL for a query.
+
+        Uses the CDSR reviews endpoint with searchBy=6 (all text) and proper params.
+        """
         encoded_query = query.replace(" ", "+")
-        return f"{self.BASE_URL}/search?text={encoded_query}"
+        # searchBy=6 means all text, resultPerPage controls results
+        return f"{self.BASE_URL}/cdsr/reviews?searchBy=6&searchText={encoded_query}&resultPerPage=25"
 
     def _parse_search_html(self, html: str) -> list[InternationalSource]:
         results: list[InternationalSource] = []
         soup = BeautifulSoup(html, "html.parser")
+        seen_urls: set[str] = set()
 
         # JSON-LD parsing for item lists
         for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
@@ -203,7 +218,8 @@ class CochraneClient:
                 for item in items:
                     url = item.get("url") if isinstance(item, dict) else None
                     name = item.get("name") if isinstance(item, dict) else None
-                    if url and name:
+                    if url and name and url not in seen_urls:
+                        seen_urls.add(url)
                         results.append(
                             InternationalSource(
                                 url=url,
@@ -218,22 +234,32 @@ class CochraneClient:
         if results:
             return results
 
-        # Fallback: parse search result links
+        # Parse DOI links from search results (current Cochrane structure 2024+)
         for link in soup.find_all("a", href=True):
             href = link.get("href") or ""
-            text = " ".join(link.get_text(strip=True).split())
-            if not text:
+            # Look for CDSR DOI links
+            if "/cdsr/doi/" not in href:
                 continue
-            if "/cdsr/" in href and "doi" in href:
-                url = href if href.startswith("http") else f"{self.BASE_URL}{href}"
-                results.append(
-                    InternationalSource(
-                        url=url,
-                        title=text,
-                        source_type="cochrane_review",
-                        evidence_tier=SourceTier.TIER_1_INTERNATIONAL,
-                    )
+            # Skip if URL params are just highlight params
+            text = " ".join(link.get_text(strip=True).split())
+            if not text or len(text) < 10:
+                continue
+
+            full_url = href if href.startswith("http") else f"{self.BASE_URL}{href}"
+            # Normalize URL - remove highlight params for deduplication
+            base_url = full_url.split("?")[0]
+            if base_url in seen_urls:
+                continue
+            seen_urls.add(base_url)
+
+            results.append(
+                InternationalSource(
+                    url=full_url,
+                    title=text,
+                    source_type="cochrane_review",
+                    evidence_tier=SourceTier.TIER_1_INTERNATIONAL,
                 )
+            )
         return results
 
     def _parse_search_response(self, json_str: str) -> list[InternationalSource]:

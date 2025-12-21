@@ -59,7 +59,7 @@ class TestLLMResponse:
         assert response.cost_usd == 0.0
 
     def test_cost_calculation_unknown_model_uses_default(self) -> None:
-        """Test that unknown models use default pricing."""
+        """Test that unknown models use GPT-5.2 default pricing (high-end assumption)."""
         response = LLMResponse(
             content="test",
             model="unknown-model-xyz",
@@ -67,8 +67,8 @@ class TestLLMResponse:
             output_tokens=500,
             total_tokens=1500,
         )
-        # Default: $0.15/1M input, $0.60/1M output
-        expected = (1000 / 1_000_000) * 0.15 + (500 / 1_000_000) * 0.60
+        # Default: $15/1M input, $60/1M output (GPT-5.2 pricing for gold standard)
+        expected = (1000 / 1_000_000) * 15.00 + (500 / 1_000_000) * 60.00
         assert abs(response.cost_usd - expected) < 0.0001
 
 
@@ -257,7 +257,7 @@ class TestDefaultModels:
         assert LLMProviderType.OLLAMA in DEFAULT_MODELS
 
     def test_get_default_model(self) -> None:
-        """Test get_default_model function."""
-        assert get_default_model(LLMProviderType.OPENAI) == "gpt-4o-mini"
-        assert get_default_model(LLMProviderType.ANTHROPIC) == "claude-3-5-sonnet-20241022"
+        """Test get_default_model function (GPT-5.2 + Claude Opus 4.5 for gold standard)."""
+        assert get_default_model(LLMProviderType.OPENAI) == "gpt-5.2"
+        assert get_default_model(LLMProviderType.ANTHROPIC) == "claude-opus-4-5-20251101"
         assert get_default_model(LLMProviderType.OLLAMA) == "llama3.1"

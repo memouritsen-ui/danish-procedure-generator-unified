@@ -37,10 +37,10 @@ def make_test_profile() -> StyleProfile:
 
 
 def test_style_agent_preserves_citations() -> None:
-    """StyleAgent must preserve all citations."""
+    """StyleAgent must preserve all citations using [S:xxx] format."""
     mock_llm = MagicMock()
     mock_llm.chat_completion.return_value = LLMResponse(
-        content="Poleret tekst med [SRC0001] og [SRC0002] bevaret.",
+        content="Poleret tekst med [S:SRC0001] og [S:SRC0002] bevaret.",
         input_tokens=100,
         output_tokens=50,
         total_tokens=150,
@@ -50,7 +50,7 @@ def test_style_agent_preserves_citations() -> None:
     agent = StyleAgent(llm=mock_llm, model="test")
     input_data = StyleInput(
         procedure_title="Test",
-        raw_markdown="Original tekst med [SRC0001] og [SRC0002].",
+        raw_markdown="Original tekst med [S:SRC0001] og [S:SRC0002].",
         sources=[],
         style_profile=make_test_profile(),
     )
@@ -58,16 +58,16 @@ def test_style_agent_preserves_citations() -> None:
     result = agent.execute(input_data)
 
     assert result.output.success is True
-    assert "[SRC0001]" in result.output.polished_markdown
-    assert "[SRC0002]" in result.output.polished_markdown
+    assert "[S:SRC0001]" in result.output.polished_markdown
+    assert "[S:SRC0002]" in result.output.polished_markdown
 
 
 def test_style_agent_fails_on_missing_citations() -> None:
-    """StyleAgent should fallback to original if LLM drops citations after retries."""
+    """StyleAgent marks success=False if LLM drops citations after retries (no fallback injection)."""
     mock_llm = MagicMock()
-    # LLM response is missing [SRC0002]
+    # LLM response is missing [S:SRC0002]
     mock_llm.chat_completion.return_value = LLMResponse(
-        content="Poleret tekst med [SRC0001] men mangler den anden.",
+        content="Poleret tekst med [S:SRC0001] men mangler den anden.",
         input_tokens=100,
         output_tokens=50,
         total_tokens=150,
@@ -77,17 +77,19 @@ def test_style_agent_fails_on_missing_citations() -> None:
     agent = StyleAgent(llm=mock_llm, model="test")
     input_data = StyleInput(
         procedure_title="Test",
-        raw_markdown="Original tekst med [SRC0001] og [SRC0002].",
+        raw_markdown="Original tekst med [S:SRC0001] og [S:SRC0002].",
         sources=[],
         style_profile=make_test_profile(),
     )
 
     result = agent.execute(input_data)
 
-    # Should succeed but add warning about missing citations
-    assert result.output.success is True
-    assert "[SRC0002]" in result.output.polished_markdown  # Missing citation added
-    assert len(result.output.warnings) > 0  # Warning about added citations
+    # In non-strict mode: returns polished text but marks success=False
+    assert result.output.success is False
+    # Missing citation is NOT injected (no fallback)
+    assert "[S:SRC0002]" not in result.output.polished_markdown
+    # Warning about lost citations
+    assert len(result.output.warnings) > 0
 
 
 def test_style_agent_applies_tone() -> None:

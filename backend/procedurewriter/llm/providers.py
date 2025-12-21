@@ -45,15 +45,20 @@ class LLMResponse:
     @property
     def cost_usd(self) -> float:
         """Estimate cost based on model and token usage."""
-        # Pricing per 1M tokens (as of Dec 2024)
+        # Pricing per 1M tokens (as of Dec 2024 / Jan 2025)
         pricing = {
-            # OpenAI
+            # OpenAI - GPT-5 series (gold standard)
+            "gpt-5.2": (15.00, 60.00),  # GPT-5.2 pricing estimate
+            "gpt-5": (15.00, 60.00),  # GPT-5 series base pricing
+            "gpt-5.1": (15.00, 60.00),  # GPT-5.1 pricing estimate
+            # OpenAI - GPT-4 series (legacy)
             "gpt-4o": (2.50, 10.00),
             "gpt-4o-mini": (0.15, 0.60),
             "gpt-4-turbo": (10.00, 30.00),
             "gpt-4": (30.00, 60.00),
             "gpt-3.5-turbo": (0.50, 1.50),
             # Anthropic
+            "claude-opus-4-5-20251101": (15.00, 75.00),  # Claude Opus 4.5 (current)
             "claude-opus-4-5-20250929": (15.00, 75.00),
             "claude-sonnet-4-5-20250929": (3.00, 15.00),
             "claude-3-5-sonnet-20241022": (3.00, 15.00),
@@ -69,7 +74,7 @@ class LLMResponse:
             "mixtral": (0.0, 0.0),
         }
 
-        # Find matching model or default to OpenAI gpt-4o-mini pricing
+        # Find matching model or default to GPT-5.2 pricing (the gold standard)
         model_key = self.model.lower()
         for key, (input_price, output_price) in pricing.items():
             if key in model_key:
@@ -77,8 +82,8 @@ class LLMResponse:
                 output_cost = (self.output_tokens / 1_000_000) * output_price
                 return input_cost + output_cost
 
-        # Default pricing
-        return (self.input_tokens / 1_000_000) * 0.15 + (self.output_tokens / 1_000_000) * 0.60
+        # Default to GPT-5.2 pricing for unknown models (assume high-end usage)
+        return (self.input_tokens / 1_000_000) * 15.00 + (self.output_tokens / 1_000_000) * 60.00
 
 
 class LLMProvider(ABC):
@@ -387,14 +392,14 @@ def get_llm_client(
     return client
 
 
-# Default models per provider
+# Default models per provider - GPT-5.2 is required for gold-standard output
 DEFAULT_MODELS = {
-    LLMProviderType.OPENAI: "gpt-4o-mini",
-    LLMProviderType.ANTHROPIC: "claude-3-5-sonnet-20241022",
+    LLMProviderType.OPENAI: "gpt-5.2",
+    LLMProviderType.ANTHROPIC: "claude-opus-4-5-20251101",
     LLMProviderType.OLLAMA: "llama3.1",
 }
 
 
 def get_default_model(provider: LLMProviderType) -> str:
     """Get the default model for a provider."""
-    return DEFAULT_MODELS.get(provider, "gpt-4o-mini")
+    return DEFAULT_MODELS.get(provider, "gpt-5.2")

@@ -44,26 +44,13 @@ class StyleOutput(AgentOutput):
 
 STYLE_SYSTEM_PROMPT = """Du er en erfaren medicinsk redaktør af kliniske procedurebøger.
 
-Din opgave er at omskrive procedurer så de følger denne REDAKTIONELLE RAMME:
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OBLIGATORISK STRUKTUR (følg denne rækkefølge):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Indikationer
-2. Kontraindikationer
-3. Forberedelse (inkl. kompetencevurdering)
-4. Udstyr (specifikt efter forberedelse)
-5. Fremgangsmåde
-6. Forklaringslag ← TILFØJ DETTE AFSNIT
-7. Sikkerhedsboks
-8. Komplikationer
-9. Disposition og opfølgning
+Din opgave er at polere teksten stilistisk UDEN at ændre struktur eller indhold.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 REDAKTIONELLE PRINCIPPER:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. BYDENDE IMPERATIV-FORM i Fremgangsmåde:
+1. BYDENDE IMPERATIV-FORM i procedureafsnit:
    FORKERT: "Patienten placeres i liggende position"
    KORREKT: "Placér patienten i sideleje med flekteret ryg"
    FORKERT: "Der desinficeres med klorhexidin"
@@ -75,45 +62,35 @@ REDAKTIONELLE PRINCIPPER:
    FORKERT: "Desinfektionsmiddel"
    KORREKT: "Klorhexidin 0.5% i sprit"
 
-3. FORKLARINGSLAG (obligatorisk sektion efter Fremgangsmåde):
-   Tilføj et afsnit der forklarer:
-   - HVORFOR specifikke valg træffes
-   - Evidensgrundlag for anbefalinger
-   - Rationalet bag teknikken
-   Eksempel: "Brug af atraumatisk nål reducerer risikoen for
-   postdural punktur-hovedpine og bør være standard."
+3. KOMPETENCE-BEVIDSTHED hvor relevant:
+   "Søg hjælp hos erfaren kollega, hvis du ikke er godkendt til..."
+   "Spørg kollega ved tvivl om afdelingens vanlige udstyr"
 
-4. KOMPETENCE-BEVIDSTHED i Forberedelse:
-   Tilføj: "Søg hjælp hos erfaren kollega, hvis du ikke er godkendt til..."
-   Tilføj: "Spørg kollega ved tvivl om afdelingens vanlige udstyr"
-
-5. HANDLINGSRETTET SIKKERHED i Sikkerhedsboks:
+4. HANDLINGSRETTET SIKKERHED:
    FORKERT: "ADVARSEL: Vær opmærksom på tegn på infektion"
    KORREKT: "Gennemgå altid kontraindikationer før start"
    Giv HANDLINGER, ikke advarsler.
 
-6. PRAKTISKE DETALJER inline:
-   Tilføj: "(det kan være en langsommelig proces)"
-   Tilføj: "(spørg til afdelingens vanlige udstyr)"
-   Tilføj: "(lokal protokol varierer)"
+5. PRAKTISKE DETALJER inline:
+   "(det kan være en langsommelig proces)"
+   "(spørg til afdelingens vanlige udstyr)"
+   "(lokal protokol varierer)"
 
-7. FEJLHÅNDTERING INLINE i Fremgangsmåde:
-   "Ved mistanke om kontaminering: gør steril teknik om"
-   "Dry tap: ny indstiksretning eller nyt interspatie"
-
-8. KRYSTALKLART SPROG:
+6. KRYSTALKLART SPROG:
    - Ingen unødige formuleringer
    - Ingen passiv form hvor aktiv kan bruges
-   - Ingen sproglige variationer for variationens skyld
    - Korte, præcise sætninger
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ABSOLUTTE REGLER (må ALDRIG brydes):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. BEVAR alle citations [SRC0001], [SRC0002] osv. PRÆCIST
-2. BEVAR alle fakta og medicinsk indhold
-3. Fjern markdown-syntaks (**bold**, *italic*) - brug ren tekst
-4. Bevar sektionsoverskrifter som ## Overskrift
+1. BEVAR ALLE sektionsoverskrifter (## Overskrifter) PRÆCIST som de er
+2. BEVAR ALLE citations [S:SRC0001], [S:SRC0002] osv. PRÆCIST
+   (Format er [S:<source_id>], fx [S:SRC0001] - bevar dette format UÆNDRET)
+3. BEVAR alle fakta og medicinsk indhold
+4. Fjern markdown-syntaks (**bold**, *italic*) - brug ren tekst
+5. TILFØJ ALDRIG nye sektioner - behold strukturen som den er
+6. FJERN ALDRIG eksisterende sektioner
 
 STIL-PROFIL: {tone_description}
 MÅLGRUPPE: {target_audience}
@@ -134,12 +111,25 @@ class StyleAgent(BaseAgent[StyleInput, StyleOutput]):
         self,
         input_data: StyleInput,
         max_retries: int = 3,
+        strict_mode: bool = False,
     ) -> AgentResult[StyleOutput]:
-        """Execute style polishing with citation validation."""
+        """Execute style polishing with citation validation.
+
+        Args:
+            input_data: StyleInput with raw markdown and style profile
+            max_retries: Number of retry attempts if citations are missing
+            strict_mode: If True, raise StyleValidationError on missing citations
+                        instead of adding fallback section
+
+        Raises:
+            StyleValidationError: When strict_mode=True and citations are missing
+                                 after all retries
+        """
         self.reset_stats()
 
         profile = input_data.style_profile
         original_citations = self._extract_citations(input_data.raw_markdown)
+        original_headings = self._extract_headings(input_data.raw_markdown)
 
         system_prompt = STYLE_SYSTEM_PROMPT.format(
             tone_description=profile.tone_description,
@@ -150,22 +140,24 @@ class StyleAgent(BaseAgent[StyleInput, StyleOutput]):
             citation_style=profile.citation_style,
         )
 
-        # List all citations explicitly in the prompt
+        # List all citations explicitly in the prompt - use correct [S:xxx] format
         citations_list = ", ".join(sorted(original_citations))
 
-        user_prompt = f"""Omskriv følgende procedure til bogkvalitet.
+        user_prompt = f"""Polér følgende procedure stilistisk til bogkvalitet.
 
 KRITISK: Du SKAL bevare ALLE disse citations i dit output: {citations_list}
-Hver citation skal stå præcist som vist (fx [SRC0001]) et sted i teksten.
+Hver citation skal stå præcist som vist (fx [S:SRC0001]) et sted i teksten.
+
+KRITISK: Bevar ALLE sektioner og overskrifter PRÆCIST som de er. Tilføj INGEN nye sektioner.
 
 ORIGINAL TEKST:
 {input_data.raw_markdown}
 
 OUTPUT KRAV:
 - Bevar alle {len(original_citations)} citations: {citations_list}
-- Følg den redaktionelle ramme præcist
-- Tilføj Forklaringslag-sektion
-- Brug imperativ form i Fremgangsmåde"""
+- Bevar alle sektionsoverskrifter uændret
+- Brug imperativ form i proceduretrin
+- Ingen nye sektioner - kun stilistisk polering"""
 
         for attempt in range(max_retries + 1):
             response = self.llm_call(
@@ -178,9 +170,27 @@ OUTPUT KRAV:
 
             polished = response.content
             polished_citations = self._extract_citations(polished)
+            polished_headings = self._extract_headings(polished)
 
-            missing = original_citations - polished_citations
-            if not missing:
+            missing_citations = original_citations - polished_citations
+            missing_headings = original_headings - polished_headings
+            added_headings = polished_headings - original_headings
+
+            # Check for structural violations in strict mode
+            if strict_mode and (missing_headings or added_headings):
+                raise StyleValidationError(
+                    f"StyleAgent modified document structure in strict mode. "
+                    f"Missing headings: {missing_headings}, Added headings: {added_headings}",
+                    missing_citations=missing_citations,
+                )
+
+            if not missing_citations:
+                warnings = []
+                if added_headings:
+                    warnings.append(f"New sections added by style polishing: {added_headings}")
+                if missing_headings:
+                    warnings.append(f"Sections removed by style polishing: {missing_headings}")
+
                 return AgentResult(
                     output=StyleOutput(
                         success=True,
@@ -190,13 +200,13 @@ OUTPUT KRAV:
                             f"audience: {profile.target_audience}",
                             f"detail: {profile.detail_level}",
                         ],
-                        warnings=[],
+                        warnings=warnings,
                     ),
                     stats=self.get_stats(),
                 )
 
             # Retry with stronger prompt - include previous attempt for context
-            missing_list = ", ".join(sorted(missing))
+            missing_list = ", ".join(sorted(missing_citations))
             user_prompt = f"""FEJL: Dit tidligere forsøg manglede disse citations: {missing_list}
 
 Du SKAL inkludere ALLE {len(original_citations)} citations fra originalen.
@@ -204,33 +214,48 @@ Du SKAL inkludere ALLE {len(original_citations)} citations fra originalen.
 KOMPLET LISTE AF PÅKRÆVEDE CITATIONS: {citations_list}
 
 Du må IKKE udelade nogen af disse. Placer dem ved relevante fakta.
+Du må IKKE tilføje nye sektioner eller ændre overskrifter.
 
 ORIGINAL TEKST:
 {input_data.raw_markdown}
 
 FORSØG IGEN og inkluder ALLE citations denne gang."""
 
-        # All retries failed - use best attempt with warning
-        # Insert missing citations at end of document with note
-        missing_refs = "\n\n## Supplerende referencer\n" + "\n".join(
-            f"- {cit}: Se originalkilde" for cit in sorted(missing)
-        )
-        polished_with_missing = polished + missing_refs
+        # All retries failed
+        if strict_mode:
+            raise StyleValidationError(
+                f"StyleAgent failed to preserve all citations after {max_retries + 1} attempts. "
+                f"Missing: {missing_citations}",
+                missing_citations=missing_citations,
+            )
 
+        # Non-strict mode: return polished text with warning (no fallback section injection)
         return AgentResult(
             output=StyleOutput(
-                success=True,  # Accept with warnings rather than failing
-                polished_markdown=polished_with_missing,
+                success=False,  # Mark as failure since citations were lost
+                polished_markdown=polished,
                 applied_rules=[
                     f"tone: {profile.tone_description}",
                     f"audience: {profile.target_audience}",
                     f"detail: {profile.detail_level}",
                 ],
-                warnings=[f"Nogle citations blev tilføjet som supplerende referencer: {missing}"],
+                warnings=[f"Citations lost during polishing: {missing_citations}"],
             ),
             stats=self.get_stats(),
         )
 
+    def _extract_headings(self, text: str) -> set[str]:
+        """Extract all ## Heading style headings from text."""
+        headings: set[str] = set()
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("## "):
+                headings.add(line[3:].strip())
+        return headings
+
     def _extract_citations(self, text: str) -> set[str]:
-        """Extract all [SRC0001] style citations from text."""
-        return set(re.findall(r'\[SRC\d+\]', text))
+        """Extract all [S:SRC0001] style citations from text.
+
+        The pipeline uses [S:<source_id>] format, e.g., [S:SRC0001].
+        """
+        return set(re.findall(r'\[S:[^\]]+\]', text))

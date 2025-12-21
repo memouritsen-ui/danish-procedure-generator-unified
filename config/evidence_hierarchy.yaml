@@ -61,7 +61,7 @@ evidence_levels:
       - "cdc.gov"
       - "ahrq.gov"
 
-  # Level 5: Systematic Reviews & Meta-analyses (PubMed)
+  # Level 5: Systematic Reviews & Meta-analyses (PubMed + Cochrane)
   systematic_review:
     priority: 700
     badge: "Syst Review"
@@ -70,6 +70,10 @@ evidence_levels:
     pubmed_types:
       - "systematic review"
       - "meta-analysis"
+    url_patterns:
+      - "cochranelibrary.com"
+      - "www.cochranelibrary.com"
+      - "doi.org/10.1002/14651858"  # Cochrane DOI prefix
 
   # Level 6: Practice Guidelines (PubMed)
   practice_guideline:

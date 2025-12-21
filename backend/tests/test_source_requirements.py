@@ -86,6 +86,29 @@ def test_enforce_source_requirements_missing_danish_raises() -> None:
 
 
 def test_enforce_source_requirements_allows_when_present() -> None:
+    """Test that no error is raised when all required source tiers are present."""
+    settings = Settings(require_international_sources=True, require_danish_guidelines=True, dummy_mode=False)
+    warnings: list[str] = []
+    # Include all required source types: Danish, NICE, Cochrane, PubMed meta-analysis
+    sources = [
+        _make_source("SRC0001", "danish_guideline"),
+        _make_source("SRC0002", "nice_guideline"),
+        _make_source("SRC0003", "cochrane_review"),
+        _make_source(
+            "SRC0004",
+            "pubmed",
+            evidence_level="systematic_review",
+            evidence_priority=700,
+        ),
+    ]
+    # Add publication_types to PubMed source for meta-analysis detection
+    sources[3].extra["publication_types"] = ["Systematic Review"]
+
+    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings)
+
+
+def test_enforce_source_requirements_warns_missing_tier_in_warn_mode() -> None:
+    """Test that warn mode adds warnings but doesn't raise errors."""
     settings = Settings(require_international_sources=True, require_danish_guidelines=True, dummy_mode=False)
     warnings: list[str] = []
     sources = [
@@ -93,7 +116,8 @@ def test_enforce_source_requirements_allows_when_present() -> None:
         _make_source("SRC0002", "cochrane_review"),
     ]
 
-    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings)
+    # Should not raise in warn mode, just add warnings
+    _enforce_source_requirements(sources=sources, settings=settings, warnings=warnings, evidence_policy="warn")
 
 
 def test_enforce_source_requirements_skips_in_dummy_mode() -> None:

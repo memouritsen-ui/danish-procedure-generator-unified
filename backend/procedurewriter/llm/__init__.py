@@ -12,13 +12,13 @@ Usage:
     # Or explicitly specify provider
     client = get_llm_client(LLMProviderType.ANTHROPIC)
 
-    # Make a request
+    # Make a request (GPT-5.2 is the default for gold-standard output)
     response = client.chat_completion(
         messages=[
             {"role": "system", "content": "You are helpful."},
             {"role": "user", "content": "Hello!"},
         ],
-        model="gpt-4o-mini",
+        model="gpt-5.2",
         temperature=0.2,
     )
 

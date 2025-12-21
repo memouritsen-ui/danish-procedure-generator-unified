@@ -9,6 +9,15 @@ _citation_id_re = re.compile(r"\[S:([^\]]+)\]")
 _citation_tag_re = re.compile(r"\[S:[^\]]+\]")
 
 
+class CitationValidationError(ValueError):
+    """Raised when a line lacks citations in strict mode."""
+
+    def __init__(self, message: str, line_number: int | None = None, line_text: str | None = None):
+        super().__init__(message)
+        self.line_number = line_number
+        self.line_text = line_text
+
+
 def _parse_sections(author_guide: dict[str, Any]) -> list[dict[str, str]]:
     sections = ((author_guide.get("structure") or {}).get("sections")) if isinstance(author_guide, dict) else None
     parsed: list[dict[str, str]] = []
@@ -31,17 +40,23 @@ def _parse_sections(author_guide: dict[str, Any]) -> list[dict[str, str]]:
     if parsed:
         return parsed
 
+    # Canonical default structure matching config/author_guide.yaml and
+    # backend/tests/fixtures/pleuradraen.md - used as safe fallback if config missing
     return [
+        {"heading": "Formål og Målgruppe", "format": "paragraphs", "bundle": "explanation"},
+        {"heading": "Scope og Setting", "format": "paragraphs", "bundle": "explanation"},
+        {"heading": "Key Points", "format": "bullets", "bundle": "safety"},
         {"heading": "Indikationer", "format": "bullets", "bundle": "action"},
         {"heading": "Kontraindikationer", "format": "bullets", "bundle": "action"},
-        {"heading": "Forberedelse", "format": "bullets", "bundle": "action"},
-        {"heading": "Udstyr", "format": "bullets", "bundle": "action"},
-        {"heading": "Fremgangsmåde (trin-for-trin)", "format": "numbered", "bundle": "action"},
-        {"heading": "Forklaringslag (baggrund og rationale)", "format": "paragraphs", "bundle": "explanation"},
-        {"heading": "Sikkerhedsboks", "format": "bullets", "bundle": "safety"},
-        {"heading": "Komplikationer og fejlfinding", "format": "bullets", "bundle": "action"},
-        {"heading": "Disposition og opfølgning", "format": "bullets", "bundle": "action"},
-        {"heading": "Evidens og begrænsninger", "format": "bullets", "bundle": "explanation"},
+        {"heading": "Anatomi og orientering", "format": "paragraphs", "bundle": "explanation"},
+        {"heading": "Forudsætninger", "format": "bullets", "bundle": "action"},
+        {"heading": "Udstyr og Forberedelse", "format": "bullets", "bundle": "action"},
+        {"heading": "Procedure (trin-for-trin)", "format": "numbered", "bundle": "action"},
+        {"heading": "Monitorering", "format": "bullets", "bundle": "action"},
+        {"heading": "Komplikationer", "format": "bullets", "bundle": "action"},
+        {"heading": "Dokumentation og Kommunikation", "format": "bullets", "bundle": "action"},
+        {"heading": "Kvalitetstjekliste", "format": "bullets", "bundle": "safety"},
+        {"heading": "Evidens og Meta-analyse", "format": "paragraphs", "bundle": "explanation"},
     ]
 
 
@@ -357,7 +372,26 @@ def _write_llm_section_body(
     return _normalize_section_lines(raw, fmt=fmt, fallback_citation=allowed_source_ids[0])
 
 
-def _normalize_section_lines(text: str, *, fmt: str, fallback_citation: str) -> list[str]:
+def _normalize_section_lines(
+    text: str,
+    *,
+    fmt: str,
+    fallback_citation: str,
+    strict_mode: bool = False,
+    allow_fallback_citations: bool = True,
+) -> list[str]:
+    """Normalize section lines with citation handling.
+
+    Args:
+        text: Raw text from LLM
+        fmt: Output format (bullets, numbered, paragraphs)
+        fallback_citation: Source ID to use as fallback when no citations present
+        strict_mode: If True, raise CitationValidationError on missing citations
+        allow_fallback_citations: If False in strict mode, reject lines without citations
+
+    Raises:
+        CitationValidationError: When strict_mode=True and lines lack citations
+    """
     cleaned: list[str] = []
     for raw in text.splitlines():
         line = raw.strip()
@@ -374,7 +408,7 @@ def _normalize_section_lines(text: str, *, fmt: str, fallback_citation: str) -> 
 
     atomic: list[str] = []
 
-    for line in cleaned:
+    for line_idx, line in enumerate(cleaned):
         s = line.strip()
         if s.startswith(("-", "*")) and len(s) > 1 and s[1].isspace():
             s = s[2:].strip()
@@ -383,8 +417,18 @@ def _normalize_section_lines(text: str, *, fmt: str, fallback_citation: str) -> 
             continue
 
         citation_ids = _citation_id_re.findall(s)
+
         if not citation_ids:
+            # Strict mode: refuse to inject fallback citations
+            if strict_mode and not allow_fallback_citations:
+                raise CitationValidationError(
+                    f"Line lacks citations in strict mode: {s[:100]}...",
+                    line_number=line_idx + 1,
+                    line_text=s,
+                )
+            # Fallback injection allowed (default behavior)
             citation_ids = [fallback_citation]
+
         citation_ids = _dedupe_preserve(citation_ids)
 
         content = _citation_tag_re.sub("", s).strip()
@@ -397,6 +441,12 @@ def _normalize_section_lines(text: str, *, fmt: str, fallback_citation: str) -> 
         atomic.append(f"{content} {tags}".strip())
 
     if not atomic:
+        if strict_mode and not allow_fallback_citations:
+            raise CitationValidationError(
+                "No content with citations found in strict mode",
+                line_number=None,
+                line_text=None,
+            )
         atomic = [f"Ikke dækket i de indsamlede kilder; følg lokal retningslinje. [S:{fallback_citation}]"]
 
     if fmt == "bullets":

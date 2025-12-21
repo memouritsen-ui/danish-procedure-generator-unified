@@ -29,6 +29,14 @@ class CachedResponse:
     cache_path: str
 
 
+# Default User-Agent for HTTP requests - identifies the tool for compliance
+DEFAULT_USER_AGENT = (
+    "DanishProcedureGenerator/1.0 "
+    "(Medical evidence synthesis tool; https://github.com/danish-procedure-generator; "
+    "contact: procedure-bot@example.com)"
+)
+
+
 class CachedHttpClient:
     def __init__(
         self,
@@ -39,15 +47,29 @@ class CachedHttpClient:
         backoff_s: float = 0.6,
         per_host_min_interval_s: dict[str, float] | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
+        user_agent: str = DEFAULT_USER_AGENT,
+        strict_mode: bool = False,
     ) -> None:
         self._cache_dir = cache_dir
         self._timeout_s = timeout_s
-        self._client = httpx.Client(timeout=timeout_s, follow_redirects=True)
+        self._user_agent = user_agent
+        self._strict_mode = strict_mode
+        self._client = httpx.Client(
+            timeout=timeout_s,
+            follow_redirects=True,
+            headers={"User-Agent": user_agent},
+        )
         self._max_retries = max_retries
         self._backoff_s = backoff_s
         self._per_host_min_interval_s = per_host_min_interval_s or {
             # NCBI recommends <= 3 req/sec without API key.
             "eutils.ncbi.nlm.nih.gov": 0.40,
+            # NICE - polite crawling (1 req/sec)
+            "www.nice.org.uk": 1.0,
+            "nice.org.uk": 1.0,
+            # Cochrane Library - polite crawling (1 req/sec)
+            "www.cochranelibrary.com": 1.0,
+            "cochranelibrary.com": 1.0,
         }
         self._sleep_fn = sleep_fn
         self._last_request_at_by_host: dict[str, float] = {}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -285,6 +286,8 @@ def run_pipeline(
                 sources=sources,
                 warnings=warnings,
                 evidence_hierarchy=evidence_hierarchy,
+                procedure=procedure,
+                context=context,
             )
 
         if settings.dummy_mode:
@@ -618,6 +621,7 @@ def run_pipeline(
             sources=sources,
             settings=settings,
             warnings=warnings,
+            evidence_policy=evidence_policy,
         )
 
         snippets = build_snippets(sources)
@@ -728,70 +732,43 @@ def run_pipeline(
         if orchestrator_quality_score is None:
             validate_citations(md, valid_source_ids={s.source_id for s in sources})
 
-        # Apply style profile if available (LLM-powered markdown polishing)
-        style_profile_data = get_default_style_profile(settings.db_path)
-        style_profile: StyleProfile | None = None
-        if style_profile_data:
-            style_profile = StyleProfile.from_db_dict(style_profile_data)
-
-        if style_profile and settings.use_llm and not settings.dummy_mode:
-            try:
-                style_llm = get_llm_client(
-                    provider=settings.llm_provider,
-                    openai_api_key=openai_api_key,
-                    anthropic_api_key=anthropic_api_key,
-                    ollama_base_url=ollama_base_url or settings.ollama_base_url,
-                )
-                polished_md = _apply_style_profile(
-                    raw_markdown=md,
-                    sources=sources,
-                    procedure_name=procedure,
-                    style_profile=style_profile,
-                    llm=style_llm,
-                    model=settings.llm_model,
-                )
-            except Exception as e:
-                logger.warning("Failed to apply style profile: %s", e)
-                polished_md = md
-        else:
-            polished_md = md
-
-        # Generalize hospital-specific content to universal Danish output
-        generalizer = ContentGeneralizer(use_lokal_markers=True)
-        final_md, gen_stats = generalizer.generalize(polished_md)
-        if gen_stats.total_replacements > 0:
-            logger.info(
-                "Generalized content: %d replacements (phones=%d, rooms=%d, locations=%d, hospitals=%d)",
-                gen_stats.total_replacements,
-                gen_stats.phone_numbers,
-                gen_stats.room_references,
-                gen_stats.location_references,
-                gen_stats.hospital_references,
-            )
-
         # ---------------------------------------------------------------------
-        # AUTOMATED META-ANALYSIS (run before final evidence checks)
+        # AUTOMATED META-ANALYSIS (run BEFORE style polishing)
+        # This allows the meta-analysis content to be polished along with other text
         # ---------------------------------------------------------------------
         meta_summary_lines: list[str] = []
         if settings.use_llm and not settings.dummy_mode:
+            # Collect quantitative studies from ALL source types
             quantitative_candidates = []
             for src in sources:
-                if src.kind != "pubmed":
-                    continue
-
+                # Check if source has quantitative evidence indicators
                 level = str(src.extra.get("evidence_level", "")).lower()
-                is_quant = any(x in level for x in ["meta_analysis", "systematic_review", "rct", "randomized"])
-                pub_types = [str(t).lower() for t in src.extra.get("publication_types", [])]
-                is_quant_pub = any("randomized" in t or "meta-analysis" in t or "systematic review" in t for t in pub_types)
+                is_quant_level = any(
+                    x in level
+                    for x in ["meta_analysis", "systematic_review", "rct", "randomized", "syst_review"]
+                )
 
-                if is_quant or is_quant_pub:
+                pub_types = [str(t).lower() for t in src.extra.get("publication_types", [])]
+                is_quant_pub = any(
+                    kw in t
+                    for t in pub_types
+                    for kw in ["randomized", "meta-analysis", "systematic review", "clinical trial"]
+                )
+
+                # Also check kind for known high-evidence source types
+                is_high_evidence_kind = src.kind in {
+                    "pubmed", "cochrane", "nice_guideline", "systematic_review",
+                }
+
+                # Include if any quantitative indicator is positive
+                if is_quant_level or is_quant_pub or is_high_evidence_kind:
                     if src.normalized_path and Path(src.normalized_path).exists():
                         text = Path(src.normalized_path).read_text(encoding="utf-8")
                         quantitative_candidates.append({
                             "study_id": src.source_id,
                             "title": src.title,
                             "abstract": text[:3000],
-                            "source": "pubmed",
+                            "source": src.kind,  # Use actual kind, not hardcoded "pubmed"
                         })
 
             if len(quantitative_candidates) >= 2:
@@ -848,8 +825,50 @@ def run_pipeline(
                     logger.error("Meta-analysis failed: %s", e)
                     emitter.emit(EventType.ERROR, {"error": f"Meta-analysis failed: {str(e)}"})
 
+        # Inject meta-analysis summary into markdown BEFORE style polishing
         if meta_summary_lines:
-            final_md = _replace_section(final_md, heading="Evidens og Meta-analyse", new_lines=meta_summary_lines)
+            md = _replace_section(md, heading="Evidens og Meta-analyse", new_lines=meta_summary_lines)
+
+        # Apply style profile if available (LLM-powered markdown polishing)
+        style_profile_data = get_default_style_profile(settings.db_path)
+        style_profile: StyleProfile | None = None
+        if style_profile_data:
+            style_profile = StyleProfile.from_db_dict(style_profile_data)
+
+        if style_profile and settings.use_llm and not settings.dummy_mode:
+            try:
+                style_llm = get_llm_client(
+                    provider=settings.llm_provider,
+                    openai_api_key=openai_api_key,
+                    anthropic_api_key=anthropic_api_key,
+                    ollama_base_url=ollama_base_url or settings.ollama_base_url,
+                )
+                polished_md = _apply_style_profile(
+                    raw_markdown=md,
+                    sources=sources,
+                    procedure_name=procedure,
+                    style_profile=style_profile,
+                    llm=style_llm,
+                    model=settings.llm_model,
+                )
+            except Exception as e:
+                logger.warning("Failed to apply style profile: %s", e)
+                polished_md = md
+        else:
+            polished_md = md
+
+        # Generalize hospital-specific content to universal Danish output
+        generalizer = ContentGeneralizer(use_lokal_markers=True)
+        final_md, gen_stats = generalizer.generalize(polished_md)
+        if gen_stats.total_replacements > 0:
+            logger.info(
+                "Generalized content: %d replacements (phones=%d, rooms=%d, locations=%d, hospitals=%d)",
+                gen_stats.total_replacements,
+                gen_stats.phone_numbers,
+                gen_stats.room_references,
+                gen_stats.location_references,
+                gen_stats.hospital_references,
+            )
 
         required_headings = _author_guide_outline(author_guide) if isinstance(author_guide, dict) else []
         if required_headings:
@@ -879,7 +898,9 @@ def run_pipeline(
         evidence = build_evidence_report(final_md, snippets=snippets)
         write_json(evidence_report_path, evidence)
 
-        evidence_policy = "warn"
+        # Default to STRICT evidence policy for gold-standard output
+        # Only override if explicitly configured in author guide
+        evidence_policy = "strict"
         if isinstance(author_guide, dict):
             validation = author_guide.get("validation")
             if isinstance(validation, dict):
@@ -951,6 +972,47 @@ def run_pipeline(
             except Exception as e:
                 logger.warning("Evidence verification failed: %s", e)
                 verification_result = {"error": str(e)}
+
+        # Strict mode enforcement for evidence verification
+        # Read verification requirements from author guide
+        require_verification = False
+        min_verification_score = 70.0  # Default minimum score
+        if isinstance(author_guide, dict):
+            validation = author_guide.get("validation")
+            if isinstance(validation, dict):
+                require_verification = validation.get("require_evidence_verification", False)
+                score_setting = validation.get("min_verification_score")
+                if isinstance(score_setting, (int, float)):
+                    min_verification_score = float(score_setting)
+
+        # In strict mode, evidence verification is required by default
+        if evidence_policy == "strict":
+            require_verification = True
+
+        if require_verification:
+            if not anthropic_api_key:
+                raise EvidencePolicyError(
+                    "Evidence verification required in strict mode but ANTHROPIC_API_KEY not set. "
+                    "Set the key or use evidence_policy: warn in author_guide.yaml."
+                )
+            if verification_result is None:
+                raise EvidencePolicyError(
+                    "Evidence verification required but not performed. "
+                    "Check that enable_evidence_verification is True in settings."
+                )
+            if "error" in verification_result:
+                raise EvidencePolicyError(
+                    f"Evidence verification required but failed: {verification_result.get('error')}"
+                )
+            actual_score = verification_result.get("overall_score", 0)
+            if actual_score < min_verification_score:
+                raise EvidencePolicyError(
+                    f"Evidence verification score {actual_score}% below minimum {min_verification_score}%. "
+                    f"Fully supported: {verification_result.get('fully_supported', 0)}, "
+                    f"Not supported: {verification_result.get('not_supported', 0)}, "
+                    f"Contradicted: {verification_result.get('contradicted', 0)}. "
+                    "Fix evidence gaps or lower min_verification_score in author_guide.yaml."
+                )
 
         runtime: dict[str, Any] = {
             "dummy_mode": settings.dummy_mode,
@@ -1158,27 +1220,86 @@ def _enforce_source_requirements(
     sources: list[SourceRecord],
     settings: Settings,
     warnings: list[str],
+    evidence_policy: str = "strict",
 ) -> None:
+    """Enforce per-tier source requirements for gold-standard output.
+
+    In strict mode, requires:
+    - At least one NICE source
+    - At least one Cochrane source
+    - At least one PubMed meta-analysis/systematic review (when available)
+    - Danish guidelines when require_danish_guidelines is True
+    """
     if settings.dummy_mode:
         return
 
     missing: list[str] = []
-    if settings.require_international_sources and not _has_international_sources(sources):
-        msg = "No international sources found (NICE/Cochrane)."
+    tier_details: dict[str, dict[str, Any]] = {}
+
+    # Check NICE sources
+    nice_sources = [s for s in sources if s.kind == "nice_guideline"
+                    or (s.extra.get("international_source_type") == "nice")]
+    tier_details["nice"] = {"count": len(nice_sources), "required": True}
+    if not nice_sources:
+        msg = "No NICE guideline sources found."
         if msg not in warnings:
             warnings.append(msg)
-        missing.append("international (NICE/Cochrane)")
+        missing.append("NICE guidelines")
+
+    # Check Cochrane sources
+    cochrane_sources = [s for s in sources if s.kind == "cochrane_review"
+                        or (s.extra.get("international_source_type") == "cochrane")
+                        or "cochranelibrary.com" in (s.url or "")]
+    tier_details["cochrane"] = {"count": len(cochrane_sources), "required": True}
+    if not cochrane_sources:
+        msg = "No Cochrane systematic review sources found."
+        if msg not in warnings:
+            warnings.append(msg)
+        missing.append("Cochrane reviews")
+
+    # Check PubMed meta-analyses/systematic reviews
+    pubmed_reviews = [
+        s for s in sources
+        if s.kind == "pubmed"
+        and isinstance(s.extra, dict)
+        and any(
+            pt.lower() in ("systematic review", "meta-analysis")
+            for pt in (s.extra.get("publication_types") or [])
+            if isinstance(pt, str)
+        )
+    ]
+    tier_details["pubmed_reviews"] = {"count": len(pubmed_reviews), "required": True}
+    if not pubmed_reviews:
+        msg = "No PubMed systematic reviews or meta-analyses found."
+        if msg not in warnings:
+            warnings.append(msg)
+        missing.append("PubMed meta-analyses")
+
+    # Check for general international sources (legacy check)
+    if settings.require_international_sources and not _has_international_sources(sources):
+        if "international (NICE/Cochrane)" not in missing:
+            msg = "No international sources found (NICE/Cochrane)."
+            if msg not in warnings:
+                warnings.append(msg)
+            missing.append("international (NICE/Cochrane)")
+
+    # Check Danish guidelines
     if settings.require_danish_guidelines and not _has_danish_guidelines(sources):
         msg = "No Danish guideline sources found in local library."
         if msg not in warnings:
             warnings.append(msg)
         missing.append("Danish guidelines")
+    tier_details["danish"] = {
+        "count": len([s for s in sources if s.kind == "danish_guideline"]),
+        "required": settings.require_danish_guidelines,
+    }
 
-    if missing:
+    # Only fail in strict mode
+    if missing and evidence_policy == "strict":
         missing_text = ", ".join(missing)
         raise EvidencePolicyError(
             "Evidence policy STRICT failed: required source tiers missing. "
-            f"Missing: {missing_text}. See source_selection.json for details."
+            f"Missing: {missing_text}. See source_selection.json for tier details."
         )
 
 
@@ -1214,14 +1335,56 @@ def _allowlist_prefixes(allowlist: dict[str, Any]) -> list[str]:
     return out
 
 
-def _seed_urls(allowlist: dict[str, Any]) -> list[str]:
+@dataclass(frozen=True)
+class _SeedUrlEntry:
+    """A seed URL with optional procedure keyword filtering."""
+
+    url: str
+    keywords: list[str]  # Empty list means no filtering (always include)
+
+
+def _seed_urls(allowlist: dict[str, Any]) -> list[_SeedUrlEntry]:
+    """Extract seed URLs from allowlist config.
+
+    Seed URLs can be either:
+    - Simple strings: "https://example.com/page" (always included)
+    - Dicts with url key: {"url": "https://example.com", "procedure_keywords": [...]}
+      (only included if keywords match the procedure + context)
+    """
     urls = allowlist.get("seed_urls", []) if isinstance(allowlist, dict) else []
-    out: list[str] = []
+    out: list[_SeedUrlEntry] = []
     for u in urls:
-        s = str(u).strip()
-        if s:
-            out.append(s)
+        if isinstance(u, dict):
+            # Dict format with optional keywords
+            url = u.get("url", "").strip()
+            keywords = u.get("procedure_keywords", [])
+            if isinstance(keywords, str):
+                keywords = [keywords]
+            keywords = [k.strip().lower() for k in keywords if k and isinstance(k, str)]
+        else:
+            # Simple string format - no filtering
+            url = str(u).strip()
+            keywords = []
+        if url:
+            out.append(_SeedUrlEntry(url=url, keywords=keywords))
     return out
+
+
+def _matches_procedure_keywords(
+    entry: _SeedUrlEntry, *, procedure: str, context: str | None
+) -> bool:
+    """Check if a seed URL entry matches the procedure/context.
+
+    Returns True if:
+    - The entry has no keywords (always matches)
+    - Any keyword appears in procedure or context (case-insensitive)
+    """
+    if not entry.keywords:
+        # No keywords means always include
+        return True
+
+    search_text = f"{procedure} {context or ''}".lower()
+    return any(kw in search_text for kw in entry.keywords)
 
 
 def _is_allowed_url(url: str, *, prefixes: list[str]) -> bool:
@@ -1250,14 +1413,32 @@ def _append_seed_url_sources(
     sources: list[SourceRecord],
     warnings: list[str],
     evidence_hierarchy: EvidenceHierarchy,
+    procedure: str,
+    context: str | None,
 ) -> int:
     prefixes = _allowlist_prefixes(allowlist)
-    urls = _seed_urls(allowlist)
-    if not urls:
+    all_entries = _seed_urls(allowlist)
+    if not all_entries:
+        return source_n
+
+    # Filter entries by procedure_keywords matching
+    matching_entries = [
+        e for e in all_entries
+        if _matches_procedure_keywords(e, procedure=procedure, context=context)
+    ]
+
+    filtered_count = len(all_entries) - len(matching_entries)
+    if filtered_count > 0:
+        warnings.append(
+            f"seed_urls: {filtered_count} URL(s) filtered out (keywords not matching procedure)"
+        )
+
+    if not matching_entries:
         return source_n
 
     # Keep conservative; users can still ingest many URLs via the UI.
     max_per_run = 8
+    urls = [e.url for e in matching_entries]
     for url in urls[:max_per_run]:
         if not _is_allowed_url(url, prefixes=prefixes):
             warnings.append(f"Seed URL not allowed by allowlist: {url}")

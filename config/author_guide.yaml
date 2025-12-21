@@ -1,5 +1,96 @@
+# Author Guide for Danish Medical Procedures
+# Defines the required structure and style for procedure documents
+# Canonical structure matching backend/tests/fixtures/pleuradraen.md
+
 structure:
-  title_prefix: Updated
+  title_prefix: "Procedure:"
   sections:
-    - heading: Test
+    - heading: "Formål og Målgruppe"
+      format: prose
+      required: true
+      description: "Kort formål og målgruppe for proceduren"
+
+    - heading: "Scope og Setting"
+      format: prose
+      required: true
+      description: "Klinisk setting og scope (fx akutmodtagelse, intensiv)"
+
+    - heading: "Key Points"
       format: bullets
+      required: true
+      description: "Vigtigste punkter og kritiske handlinger"
+
+    - heading: "Indikationer"
+      format: bullets
+      required: true
+      description: "Kliniske situationer hvor proceduren er indiceret"
+
+    - heading: "Kontraindikationer"
+      format: bullets
+      required: true
+      description: "Absolutte og relative kontraindikationer"
+
+    - heading: "Anatomi og orientering"
+      format: prose
+      required: true
+      description: "Anatomiske landmærker, orientering og safety zones"
+
+    - heading: "Forudsætninger"
+      format: bullets
+      required: true
+      description: "Kompetencer, erfaring og monitorering påkrævet"
+
+    - heading: "Udstyr og Forberedelse"
+      format: bullets
+      required: true
+      description: "Nødvendigt udstyr, materialer og forberedelse"
+
+    - heading: "Procedure (trin-for-trin)"
+      format: numbered
+      required: true
+      description: "Detaljeret trin-for-trin vejledning med doser og vinkler"
+
+    - heading: "Monitorering"
+      format: bullets
+      required: true
+      description: "Løbende overvågning under og efter proceduren"
+
+    - heading: "Komplikationer"
+      format: bullets
+      required: true
+      description: "Potentielle komplikationer og håndtering"
+
+    - heading: "Dokumentation og Kommunikation"
+      format: bullets
+      required: true
+      description: "Dokumentationskrav og kommunikation til patient/pårørende"
+
+    - heading: "Kvalitetstjekliste"
+      format: bullets
+      required: true
+      description: "Tjekliste for kvalitetssikring"
+
+    - heading: "Evidens og Meta-analyse"
+      format: prose
+      required: true
+      description: "Evidensgrundlag, meta-analyse resultater og metodiske begrænsninger"
+
+style:
+  language: "da-DK"
+  terminology: "sundhedsfaglig"
+  tone: "professionel"
+  audience: "sundhedspersonale"
+
+formatting:
+  heading_case: "sentence"
+  list_style: "dash"
+  citation_format: "inline"
+
+# Validation settings - STRICT is mandatory for gold-standard output
+validation:
+  evidence_policy: strict
+  require_all_sections: true
+  require_citations: true
+  allow_fallback_citations: false
+  require_evidence_verification: true
+  min_verification_score: 70
