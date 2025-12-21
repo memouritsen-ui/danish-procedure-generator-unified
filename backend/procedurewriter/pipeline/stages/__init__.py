@@ -17,5 +17,23 @@ Stage order:
 """
 
 from procedurewriter.pipeline.stages.base import PipelineStage
+from procedurewriter.pipeline.stages.s00_bootstrap import (
+    BootstrapInput,
+    BootstrapOutput,
+    BootstrapStage,
+)
+from procedurewriter.pipeline.stages.s01_termexpand import (
+    TermExpandInput,
+    TermExpandOutput,
+    TermExpandStage,
+)
 
-__all__ = ["PipelineStage"]
+__all__ = [
+    "PipelineStage",
+    "BootstrapInput",
+    "BootstrapOutput",
+    "BootstrapStage",
+    "TermExpandInput",
+    "TermExpandOutput",
+    "TermExpandStage",
+]
