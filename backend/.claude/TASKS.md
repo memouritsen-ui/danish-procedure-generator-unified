@@ -1,6 +1,6 @@
 # TASKS.md - Master Task Checklist
 
-**LAST UPDATED**: 2024-12-22 02:00 UTC
+**LAST UPDATED**: 2024-12-22 11:00 UTC
 
 ---
 
@@ -315,7 +315,7 @@ pytest tests/claims/ -v
 |----|------|--------|--------------|-------|
 | P4-001 | Create Linter base class | [x] | `pytest tests/evals/test_linter.py` | 18 tests pass |
 | P4-002 | Implement citation_integrity lint | [x] | `pytest tests/evals/test_citation.py` | 16 tests pass |
-| P4-003 | Implement template_compliance lint | [ ] | `pytest tests/evals/test_template.py` | 14 sections |
+| P4-003 | Implement template_compliance lint | [x] 17 tests (1502 total) | `pytest tests/evals/test_template.py` | 14 sections |
 | P4-004 | Implement claim_coverage lint | [ ] | `pytest tests/evals/test_coverage.py` | All claims bound |
 | P4-005 | Implement unit_check lint | [ ] | `pytest tests/evals/test_units.py` | Valid SI units |
 | P4-006 | Implement overconfidence lint | [ ] | `pytest tests/evals/test_overconfidence.py` | Strong language check |
@@ -396,4 +396,4 @@ unzip -l release.zip
 
 ---
 
-**Next Task**: P4-003 - Implement template_compliance lint
+**Next Task**: P4-004 - Implement claim_coverage lint
