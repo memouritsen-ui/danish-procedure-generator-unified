@@ -314,7 +314,7 @@ pytest tests/claims/ -v
 | ID | Task | Status | Test Command | Notes |
 |----|------|--------|--------------|-------|
 | P4-001 | Create Linter base class | [x] | `pytest tests/evals/test_linter.py` | 18 tests pass |
-| P4-002 | Implement citation_integrity lint | [ ] | `pytest tests/evals/test_citation.py` | [CIT-X] resolves |
+| P4-002 | Implement citation_integrity lint | [x] | `pytest tests/evals/test_citation.py` | 16 tests pass |
 | P4-003 | Implement template_compliance lint | [ ] | `pytest tests/evals/test_template.py` | 14 sections |
 | P4-004 | Implement claim_coverage lint | [ ] | `pytest tests/evals/test_coverage.py` | All claims bound |
 | P4-005 | Implement unit_check lint | [ ] | `pytest tests/evals/test_units.py` | Valid SI units |
@@ -390,10 +390,10 @@ unzip -l release.zip
 | P1: Data Models | 12 | 12 | 0 |
 | P2: Pipeline Stages | 12 | 12 | 0 |
 | P3: Claim System | 12 | 12 | 0 |
-| P4: Eval Suite | 12 | 1 | 11 |
+| P4: Eval Suite | 12 | 2 | 10 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **44** | **23** |
+| **TOTAL** | **67** | **45** | **22** |
 
 ---
 
-**Next Task**: P4-002 - Implement citation_integrity lint
+**Next Task**: P4-003 - Implement template_compliance lint

@@ -6,6 +6,7 @@ This module provides:
 - Individual linter implementations for each issue type
 """
 
+from procedurewriter.evals.citation import CitationIntegrityLinter
 from procedurewriter.evals.linter import Linter, LintContext
 
-__all__ = ["Linter", "LintContext"]
+__all__ = ["Linter", "LintContext", "CitationIntegrityLinter"]
