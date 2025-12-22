@@ -24,6 +24,7 @@ from procedurewriter.db import (
 )
 from procedurewriter.models.claims import Claim, ClaimType
 from procedurewriter.models.issues import Issue, IssueSeverity
+from procedurewriter.models.gates import Gate, GateStatus, GateType
 from procedurewriter.file_utils import UnsafePathError, safe_path_within
 from procedurewriter.pipeline.events import get_emitter_if_exists
 from procedurewriter.pipeline.versioning import (
@@ -900,3 +901,69 @@ def api_get_issues(run_id: str, severity: str | None = None) -> list[Issue]:
 
     # Convert to Issue objects
     return [Issue.from_db_row(row) for row in rows]
+
+
+@router.get("/{run_id}/gates", response_model=list[Gate])
+def api_get_gates(
+    run_id: str, status: str | None = None, type: str | None = None
+) -> list[Gate]:
+    """Get all gates for a specific run.
+
+    Args:
+        run_id: The procedure run ID.
+        status: Optional filter by gate status (e.g., 'pass', 'fail', 'pending').
+        type: Optional filter by gate type (e.g., 's0_safety', 's1_quality', 'final').
+
+    Returns:
+        List of gates for the run.
+
+    Raises:
+        HTTPException: 404 if run not found, 400 if invalid filter.
+    """
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Validate status filter if provided
+    if status is not None:
+        valid_statuses = [s.value for s in GateStatus]
+        if status not in valid_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status '{status}'. Valid statuses: {valid_statuses}",
+            )
+
+    # Validate type filter if provided
+    if type is not None:
+        valid_types = [t.value for t in GateType]
+        if type not in valid_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid type '{type}'. Valid types: {valid_types}",
+            )
+
+    # Build query based on filters
+    with _connect(settings.db_path) as conn:
+        base_query = """
+            SELECT id, run_id, gate_type, status, issues_checked, issues_failed,
+                   message, created_at_utc, evaluated_at_utc
+            FROM gates
+            WHERE run_id = ?
+        """
+        params: list = [run_id]
+
+        if status is not None:
+            base_query += " AND status = ?"
+            params.append(status)
+
+        if type is not None:
+            base_query += " AND gate_type = ?"
+            params.append(type)
+
+        base_query += " ORDER BY created_at_utc"
+
+        cursor = conn.execute(base_query, params)
+        rows = cursor.fetchall()
+
+    # Convert to Gate objects
+    return [Gate.from_db_row(row) for row in rows]
