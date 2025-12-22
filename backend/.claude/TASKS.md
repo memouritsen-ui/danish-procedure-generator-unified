@@ -269,7 +269,7 @@ grep -r "str(claim\|str(chunk\|str(link\|str(issue\|str(gate" tests/
 | P2-008 | Create Stage 07: Bind | [x] | `pytest tests/stages/test_07_bind.py` | 15 tests pass |
 | P2-009 | Create Stage 08: Evals | [x] | `pytest tests/stages/test_08_evals.py` | 16 tests pass |
 | P2-010 | Create Stage 09: ReviseLoop | [x] | `pytest tests/stages/test_09_reviseloop.py` | 13 tests pass |
-| P2-011 | Create Stage 10: PackageRelease | [ ] | `pytest tests/stages/test_10_package.py` | ZIP bundle |
+| P2-011 | Create Stage 10: PackageRelease | [x] | `pytest tests/stages/test_10_package.py` | 14 tests pass |
 | P2-012 | Wire stages into main pipeline | [ ] | `pytest tests/test_pipeline.py -v` | Integration |
 
 **Phase 2 Verification**:
@@ -388,12 +388,12 @@ unzip -l release.zip
 |-------|-------|----------|-----------|
 | P0: Validation | 7 | 7 | 0 |
 | P1: Data Models | 12 | 12 | 0 |
-| P2: Pipeline Stages | 12 | 4 | 8 |
+| P2: Pipeline Stages | 12 | 11 | 1 |
 | P3: Claim System | 12 | 0 | 12 |
 | P4: Eval Suite | 12 | 0 | 12 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **23** | **44** |
+| **TOTAL** | **67** | **30** | **37** |
 
 ---
 
-**Next Task**: P2-005 - Create Stage 04: EvidenceNotes
+**Next Task**: P2-012 - Wire stages into main pipeline
