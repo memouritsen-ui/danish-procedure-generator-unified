@@ -344,6 +344,32 @@ def api_evidence(run_id: str) -> dict[str, Any]:
     return obj
 
 
+@router.get("/{run_id}/evidence-notes")
+def api_evidence_notes(run_id: str) -> dict[str, Any]:
+    """Get LLM-generated clinical notes from evidence chunks.
+
+    Returns structured summaries of evidence used in the procedure.
+    Each note contains a clinical summary extracted from an evidence chunk.
+
+    Returns:
+        JSON object with notes array and metadata.
+
+    Raises:
+        HTTPException: 404 if run or notes file not found.
+    """
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    run_dir = Path(run.run_dir)
+    path = run_dir / "evidence_notes.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Evidence notes not available")
+    obj = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(obj, dict):
+        raise HTTPException(status_code=500, detail="Invalid evidence notes format")
+    return obj
+
+
 @router.post("/{run_id}/verify-evidence")
 async def api_verify_evidence(run_id: str) -> dict[str, Any]:
     """
