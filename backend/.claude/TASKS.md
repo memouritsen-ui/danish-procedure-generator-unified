@@ -346,7 +346,7 @@ pytest tests/evals/ -v
 | P5-004 | Create GET /api/runs/{id}/bundle | [x] 10 tests (1661 total) | `pytest tests/api/test_bundle_endpoint.py` | ZIP download |
 | P5-005 | Create GET /api/runs/{id}/manifest | [x] 10 tests (1671 total) | `pytest tests/api/test_manifest_endpoint.py` | Checksums |
 | P5-006 | Create GET /api/runs/{id}/evidence-notes | [x] 9 tests (1680 total) | `pytest tests/api/test_notes_endpoint.py` | LLM summaries |
-| P5-007 | Create GET /api/runs/{id}/chunks | [ ] | `pytest tests/api/test_chunks_endpoint.py` | Evidence chunks |
+| P5-007 | Create GET /api/runs/{id}/chunks | [x] 9 tests (1689 total) | `pytest tests/api/test_chunks_endpoint.py` | Evidence chunks |
 | P5-008 | Implement ZipBuilder class | [ ] | `pytest tests/bundle/test_builder.py` | Create ZIP |
 | P5-009 | Implement ManifestBuilder class | [ ] | `pytest tests/bundle/test_manifest.py` | Checksums, versions |
 | P5-010 | Integration test: full bundle | [ ] | `pytest tests/integration/test_bundle.py` | End-to-end |
@@ -391,9 +391,9 @@ unzip -l release.zip
 | P2: Pipeline Stages | 12 | 12 | 0 |
 | P3: Claim System | 12 | 12 | 0 |
 | P4: Eval Suite | 12 | 12 | 0 |
-| P5: API & Bundle | 12 | 6 | 6 |
-| **TOTAL** | **67** | **61** | **6** |
+| P5: API & Bundle | 12 | 7 | 5 |
+| **TOTAL** | **67** | **62** | **5** |
 
 ---
 
-**Next Task**: P5-007 - Create GET /api/runs/{id}/chunks endpoint
+**Next Task**: P5-008 - Implement ZipBuilder class

@@ -23,6 +23,7 @@ from procedurewriter.db import (
     list_runs,
 )
 from procedurewriter.models.claims import Claim, ClaimType
+from procedurewriter.models.evidence import EvidenceChunk
 from procedurewriter.models.issues import Issue, IssueSeverity
 from procedurewriter.models.gates import Gate, GateStatus, GateType
 from procedurewriter.file_utils import UnsafePathError, safe_path_within
@@ -993,3 +994,52 @@ def api_get_gates(
 
     # Convert to Gate objects
     return [Gate.from_db_row(row) for row in rows]
+
+
+@router.get("/{run_id}/chunks", response_model=list[EvidenceChunk])
+def api_get_chunks(run_id: str, source_id: str | None = None) -> list[EvidenceChunk]:
+    """Get all evidence chunks for a specific run.
+
+    Args:
+        run_id: The procedure run ID.
+        source_id: Optional filter by source ID (e.g., 'SRC001').
+
+    Returns:
+        List of evidence chunks for the run, ordered by source_id then chunk_index.
+
+    Raises:
+        HTTPException: 404 if run not found.
+    """
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Query chunks from database
+    with _connect(settings.db_path) as conn:
+        if source_id is not None:
+            cursor = conn.execute(
+                """
+                SELECT id, run_id, source_id, text, chunk_index, start_char, end_char,
+                       embedding_vector_json, metadata_json, created_at_utc
+                FROM evidence_chunks
+                WHERE run_id = ? AND source_id = ?
+                ORDER BY source_id, chunk_index
+                """,
+                (run_id, source_id),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT id, run_id, source_id, text, chunk_index, start_char, end_char,
+                       embedding_vector_json, metadata_json, created_at_utc
+                FROM evidence_chunks
+                WHERE run_id = ?
+                ORDER BY source_id, chunk_index
+                """,
+                (run_id,),
+            )
+
+        rows = cursor.fetchall()
+
+    # Convert to EvidenceChunk objects
+    return [EvidenceChunk.from_db_row(row) for row in rows]
