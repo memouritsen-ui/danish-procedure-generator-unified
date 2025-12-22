@@ -51,11 +51,13 @@ ClaimExtractor, UnitNormalizer, EvidenceBinder with keyword+semantic binding.
 ## CURRENT TASK
 
 ```
-TASK: P4-010 - Implement S0 gate (safety)
-STATUS: NOTE: Already implemented in P4-009 GateEvaluator
+TASK: P4-012 - Create IssueCollector class
+STATUS: PENDING
 BLOCKED BY: None
-NEXT ACTION: Verify S0 gate is fully implemented (or skip if covered)
+NEXT ACTION: Implement IssueCollector to aggregate issues from all linters
 
+✅ P4-011 complete - S1 gate (implemented in P4-009) - 19 tests (1609 total)
+✅ P4-010 complete - S0 gate (implemented in P4-009) - 19 tests (1609 total)
 ✅ P4-009 complete - GateEvaluator with 19 tests (1609 total)
 ✅ P4-008 complete - RecencyCheckLinter with 17 tests (1590 total)
 ✅ P4-007 complete - ConflictDetectionLinter with 18 tests (1573 total)
@@ -108,6 +110,8 @@ NEXT ACTION: Verify S0 gate is fully implemented (or skip if covered)
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | **P4-011: S1 gate (in P4-009)** | 19 tests pass (1609 total) |
+| 2024-12-22 | **P4-010: S0 gate (in P4-009)** | 19 tests pass (1609 total) |
 | 2024-12-22 | **P4-009: Create GateEvaluator class** | 19 tests pass (1609 total) |
 | 2024-12-22 | **P4-008: Implement recency_check lint** | 17 tests pass (1590 total) |
 | 2024-12-22 | **P4-007: Implement conflict_detection lint** | 18 tests pass (1573 total) |
