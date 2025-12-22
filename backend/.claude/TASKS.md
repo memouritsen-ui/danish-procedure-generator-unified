@@ -270,7 +270,7 @@ grep -r "str(claim\|str(chunk\|str(link\|str(issue\|str(gate" tests/
 | P2-009 | Create Stage 08: Evals | [x] | `pytest tests/stages/test_08_evals.py` | 16 tests pass |
 | P2-010 | Create Stage 09: ReviseLoop | [x] | `pytest tests/stages/test_09_reviseloop.py` | 13 tests pass |
 | P2-011 | Create Stage 10: PackageRelease | [x] | `pytest tests/stages/test_10_package.py` | 14 tests pass |
-| P2-012 | Wire stages into main pipeline | [ ] | `pytest tests/test_pipeline.py -v` | Integration |
+| P2-012 | Wire stages into main pipeline | [x] | `pytest tests/test_pipeline.py -v` | 15 tests pass |
 
 **Phase 2 Verification**:
 ```bash
@@ -388,12 +388,12 @@ unzip -l release.zip
 |-------|-------|----------|-----------|
 | P0: Validation | 7 | 7 | 0 |
 | P1: Data Models | 12 | 12 | 0 |
-| P2: Pipeline Stages | 12 | 11 | 1 |
+| P2: Pipeline Stages | 12 | 12 | 0 |
 | P3: Claim System | 12 | 0 | 12 |
 | P4: Eval Suite | 12 | 0 | 12 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **30** | **37** |
+| **TOTAL** | **67** | **31** | **36** |
 
 ---
 
-**Next Task**: P2-012 - Wire stages into main pipeline
+**Next Task**: P3-001 - Create ClaimExtractor class (Phase 3 Start)
