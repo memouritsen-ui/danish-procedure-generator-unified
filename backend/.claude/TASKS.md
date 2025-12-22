@@ -262,7 +262,7 @@ grep -r "str(claim\|str(chunk\|str(link\|str(issue\|str(gate" tests/
 | P2-001 | Create Stage 00: Bootstrap | [x] | `pytest tests/stages/test_00_bootstrap.py` | 12 tests pass |
 | P2-002 | Create Stage 01: TermExpand | [x] | `pytest tests/stages/test_01_termexpand.py` | 12 tests pass |
 | P2-003 | Create Stage 02: Retrieve | [x] | `pytest tests/stages/test_02_retrieve.py` | 12 tests pass |
-| P2-004 | Create Stage 03: Chunk | [ ] | `pytest tests/stages/test_03_chunk.py` | Evidence chunking |
+| P2-004 | Create Stage 03: Chunk | [x] | `pytest tests/stages/test_03_chunk.py` | 13 tests pass |
 | P2-005 | Create Stage 04: EvidenceNotes | [ ] | `pytest tests/stages/test_04_evidencenotes.py` | LLM summarization |
 | P2-006 | Create Stage 05: Draft | [ ] | `pytest tests/stages/test_05_draft.py` | Writer agent |
 | P2-007 | Create Stage 06: ClaimExtract | [ ] | `pytest tests/stages/test_06_claimextract.py` | Parse claims |
@@ -388,12 +388,12 @@ unzip -l release.zip
 |-------|-------|----------|-----------|
 | P0: Validation | 7 | 7 | 0 |
 | P1: Data Models | 12 | 12 | 0 |
-| P2: Pipeline Stages | 12 | 3 | 9 |
+| P2: Pipeline Stages | 12 | 4 | 8 |
 | P3: Claim System | 12 | 0 | 12 |
 | P4: Eval Suite | 12 | 0 | 12 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **22** | **45** |
+| **TOTAL** | **67** | **23** | **44** |
 
 ---
 
-**Next Task**: P2-004 - Create Stage 03: Chunk
+**Next Task**: P2-005 - Create Stage 04: EvidenceNotes

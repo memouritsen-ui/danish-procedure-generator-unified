@@ -33,6 +33,11 @@ from procedurewriter.pipeline.stages.s02_retrieve import (
     RetrieveStage,
     SourceInfo,
 )
+from procedurewriter.pipeline.stages.s03_chunk import (
+    ChunkInput,
+    ChunkOutput,
+    ChunkStage,
+)
 
 __all__ = [
     "PipelineStage",
@@ -46,4 +51,7 @@ __all__ = [
     "RetrieveOutput",
     "RetrieveStage",
     "SourceInfo",
+    "ChunkInput",
+    "ChunkOutput",
+    "ChunkStage",
 ]
