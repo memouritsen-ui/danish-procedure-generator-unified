@@ -183,10 +183,14 @@ class QualityAgent(BaseAgent[QualityInput, QualityOutput]):
         for attempt in range(1, max_parse_retries + 2):  # +2 for initial + retries
             try:
                 # Call LLM for quality evaluation
+                # GPT-5.x models use reasoning tokens internally, which count against
+                # max_completion_tokens. If the limit is too low, all tokens may be
+                # consumed by reasoning, leaving 0 for actual content output.
+                # Set generous limit to ensure content is always generated.
                 response = self.llm_call(
                     messages=messages,
                     temperature=0.1,  # Low temperature for consistent scoring
-                    max_tokens=1500,
+                    max_tokens=16000,
                 )
 
                 # Parse response - may raise QualityParsingError

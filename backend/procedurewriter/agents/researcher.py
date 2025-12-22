@@ -253,13 +253,14 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
 
     def _generate_search_terms(self, procedure_title: str) -> list[str]:
         """Generate search terms using LLM for multi-source search."""
+        # GPT-5.x models may use reasoning tokens - set generous limit
         response = self.llm_call(
             messages=[
                 self._make_system_message(SYSTEM_PROMPT),
                 self._make_user_message(f"Generate search terms for: {procedure_title}"),
             ],
             temperature=0.3,
-            max_tokens=300,
+            max_tokens=4000,
         )
 
         try:
@@ -579,7 +580,7 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                 ),
             ],
             temperature=0.1,
-            max_tokens=1000,
+            max_tokens=16000,  # GPT-5.x may use reasoning tokens
         )
 
         try:

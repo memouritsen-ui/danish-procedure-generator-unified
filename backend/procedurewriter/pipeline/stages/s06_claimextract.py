@@ -195,6 +195,7 @@ Content to analyze:
 
 Extract all verifiable medical claims from this procedure. Return as JSON array."""
 
+        # GPT-5.x may use reasoning tokens - set generous limit
         response = llm.chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -202,7 +203,7 @@ Extract all verifiable medical claims from this procedure. Return as JSON array.
             ],
             model=model,
             temperature=0.2,  # Low temperature for consistent extraction
-            max_tokens=4000,
+            max_tokens=16000,  # GPT-5.x needs headroom for reasoning tokens
         )
 
         # Parse JSON response

@@ -211,6 +211,7 @@ Evidence text:
 
 Generate a concise clinical note summarizing the key findings from this evidence."""
 
+        # GPT-5.x may use reasoning tokens - set generous limit
         response = llm.chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -218,7 +219,7 @@ Generate a concise clinical note summarizing the key findings from this evidence
             ],
             model=model,
             temperature=0.3,  # Low temperature for consistent output
-            max_tokens=300,  # Keep notes concise
+            max_tokens=4000,  # GPT-5.x needs headroom for reasoning tokens
         )
 
         return EvidenceNote(

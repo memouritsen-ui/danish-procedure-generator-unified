@@ -1978,11 +1978,12 @@ Fokusér på:
 - Specifikke procedure-navne"""
 
     try:
+        # GPT-5.x may use reasoning tokens - set generous limit
         response = llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             model=model,
             temperature=0.1,
-            max_tokens=200,
+            max_tokens=4000,
         )
         content = response.content.strip()
 

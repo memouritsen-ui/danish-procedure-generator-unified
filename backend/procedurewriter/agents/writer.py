@@ -120,7 +120,7 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
                     ),
                 ],
                 temperature=0.4,
-                max_tokens=8000,
+                max_tokens=16000,  # GPT-5.x may use reasoning tokens
             )
 
             content = response.content.strip()

@@ -110,7 +110,7 @@ class EditorAgent(BaseAgent[EditorInput, EditorOutput]):
                     ),
                 ],
                 temperature=0.3,
-                max_tokens=8000,
+                max_tokens=16000,  # GPT-5.x may use reasoning tokens
             )
 
             # Parse response

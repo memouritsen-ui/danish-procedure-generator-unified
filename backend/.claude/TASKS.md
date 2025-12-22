@@ -350,7 +350,7 @@ pytest tests/evals/ -v
 | P5-008 | Implement ZipBuilder class | [x] 22 tests (1711 total) | `pytest tests/bundle/test_builder.py` | Create ZIP |
 | P5-009 | Implement ManifestBuilder class | [x] 30 tests (1741 total) | `pytest tests/bundle/test_manifest.py` | Checksums, versions |
 | P5-010 | Integration test: full bundle | [x] 17 tests (1758 total) | `pytest tests/integration/test_bundle.py` | End-to-end |
-| P5-011 | Demo: "Anafylaksi behandling" | [ ] | Manual verification | Produces valid ZIP |
+| P5-011 | Demo: "Anafylaksi behandling" | [ ] | Manual verification | UNBLOCKED: GPT-5.2 reasoning tokens fix applied - ready to retry |
 | P5-012 | Documentation: Danish audit guide | [ ] | File exists check | README.md |
 
 **Phase 5 Verification**:

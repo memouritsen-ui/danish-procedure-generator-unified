@@ -117,7 +117,7 @@ class ValidatorAgent(BaseAgent[ValidatorInput, ValidatorOutput]):
                     ),
                 ],
                 temperature=0.1,
-                max_tokens=2000,
+                max_tokens=16000,  # GPT-5.x may use reasoning tokens
             )
 
             # Parse validations
