@@ -288,7 +288,7 @@ pytest tests/stages/ -v && pytest tests/test_pipeline.py -v
 |----|------|--------|--------------|-------|
 | P3-001 | Create ClaimExtractor class | [x] | `pytest tests/claims/test_extractor.py` | 27 tests pass |
 | P3-002 | Implement DOSE extraction | [x] | `pytest tests/claims/test_dose.py` | 35 tests pass |
-| P3-003 | Implement THRESHOLD extraction | [ ] | `pytest tests/claims/test_threshold.py` | Clinical thresholds |
+| P3-003 | Implement THRESHOLD extraction | [x] | `pytest tests/claims/test_threshold.py` | 35 tests pass |
 | P3-004 | Implement RECOMMENDATION extraction | [ ] | `pytest tests/claims/test_recommendation.py` | "bør", "skal" |
 | P3-005 | Implement CONTRAINDICATION extraction | [ ] | `pytest tests/claims/test_contraindication.py` | "må ikke" |
 | P3-006 | Implement RED_FLAG extraction | [ ] | `pytest tests/claims/test_redflag.py` | Warning signs |
@@ -389,11 +389,11 @@ unzip -l release.zip
 | P0: Validation | 7 | 7 | 0 |
 | P1: Data Models | 12 | 12 | 0 |
 | P2: Pipeline Stages | 12 | 12 | 0 |
-| P3: Claim System | 12 | 2 | 10 |
+| P3: Claim System | 12 | 3 | 9 |
 | P4: Eval Suite | 12 | 0 | 12 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **33** | **34** |
+| **TOTAL** | **67** | **34** | **33** |
 
 ---
 
-**Next Task**: P3-003 - Implement THRESHOLD extraction (Phase 3 continues)
+**Next Task**: P3-004 - Implement RECOMMENDATION extraction (Phase 3 continues)
