@@ -5,6 +5,7 @@ This extractor uses regex patterns to identify verifiable medical claims:
 - THRESHOLD: Clinical thresholds (e.g., "CURB-65 >= 3", "SpO2 < 92%")
 - RECOMMENDATION: Clinical recommendations (e.g., "bør indlægges", "skal behandles")
 - CONTRAINDICATION: When NOT to do something (e.g., "må ikke gives", "kontraindiceret")
+- RED_FLAG: Warning signs requiring action (e.g., "OBS:", "mistanke om", "tilkald")
 
 The patterns are derived from Phase 0 validation work on Danish medical procedures.
 """
@@ -161,6 +162,71 @@ CONTRAINDICATION_PATTERNS: list[re.Pattern[str]] = [
     ),
 ]
 
+# Regex patterns for red flag extraction
+# Danish warning patterns: advarsel, OBS, vigtigt, kritisk, akut, mistanke, risiko
+RED_FLAG_PATTERNS: list[re.Pattern[str]] = [
+    # "advarsel" patterns: Advarsel:, advarselstegn, advarselssymptomer
+    re.compile(
+        r"(advarsel(?:stegn|ssymptomer)?(?:\s*:)?)",
+        re.IGNORECASE,
+    ),
+    # "OBS" and "NB" attention patterns
+    re.compile(
+        r"((?:OBS|NB)\s*[!:])",
+        re.IGNORECASE,
+    ),
+    # "vigtigt" patterns: Vigtigt:, vigtigt at
+    re.compile(
+        r"(vigtigt(?:\s*:|(?:\s+at)))",
+        re.IGNORECASE,
+    ),
+    # "kritisk" and "livstruende" patterns
+    re.compile(
+        r"((?:kritisk|livstruende)\s+\w+)",
+        re.IGNORECASE,
+    ),
+    # "akut" + urgency patterns: akut behov, akut risiko, akut fare, akut henvisning
+    re.compile(
+        r"(akut\s+(?:behov|risiko|fare|henvisning))",
+        re.IGNORECASE,
+    ),
+    # "mistanke om" and "mistænkes" patterns
+    re.compile(
+        r"(mistanke\s+om|mistænkes)",
+        re.IGNORECASE,
+    ),
+    # "risiko for" and "fare for" patterns
+    re.compile(
+        r"((?:høj\s+)?risiko\s+for|øget\s+risiko|fare\s+for)",
+        re.IGNORECASE,
+    ),
+    # "henvis straks/akut" patterns
+    re.compile(
+        r"(henvis\s+(?:straks|akut))",
+        re.IGNORECASE,
+    ),
+    # "tilkald" patterns: tilkald, tilkald hjælp
+    re.compile(
+        r"(tilkald(?:\s+\w+)?)",
+        re.IGNORECASE,
+    ),
+    # "kontakt straks" patterns
+    re.compile(
+        r"(kontakt\s+straks)",
+        re.IGNORECASE,
+    ),
+    # "øjeblikkelig" patterns
+    re.compile(
+        r"(øjeblikkelig\s+\w+)",
+        re.IGNORECASE,
+    ),
+    # "straks" in treatment context
+    re.compile(
+        r"((?:behandling|intervention)\s+straks)",
+        re.IGNORECASE,
+    ),
+]
+
 # Pattern for source references [SRC001] or [S:SRC001]
 SOURCE_REF_PATTERN = re.compile(r"\[S?:?SRC(\d+)\]", re.IGNORECASE)
 
@@ -220,6 +286,9 @@ class ClaimExtractor:
 
             # Extract contraindications
             claims.extend(self._extract_contraindications(line, line_num, source_refs))
+
+            # Extract red flags
+            claims.extend(self._extract_red_flags(line, line_num, source_refs))
 
         return claims
 
@@ -429,6 +498,48 @@ class ClaimExtractor:
                 claim = Claim(
                     run_id=self.run_id,
                     claim_type=ClaimType.CONTRAINDICATION,
+                    text=full_text,
+                    normalized_value=full_text.strip(),
+                    unit=None,
+                    source_refs=source_refs.copy(),
+                    line_number=line_num,
+                    confidence=confidence,
+                )
+                claims.append(claim)
+
+        return claims
+
+    def _extract_red_flags(
+        self,
+        line: str,
+        line_num: int,
+        source_refs: list[str],
+    ) -> list[Claim]:
+        """Extract red flag claims from a line of text.
+
+        Identifies Danish warning sign patterns: advarsel (warning),
+        OBS (attention), vigtigt (important), kritisk (critical),
+        akut (acute), mistanke (suspicion), risiko (risk).
+
+        Args:
+            line: Line of text to search.
+            line_num: Line number (1-based).
+            source_refs: Source references found on this line.
+
+        Returns:
+            List of red flag claims found.
+        """
+        claims: list[Claim] = []
+
+        for pattern in RED_FLAG_PATTERNS:
+            for match in pattern.finditer(line):
+                full_text = match.group(0)
+                # Confidence is higher if we have source references
+                confidence = 0.9 if source_refs else 0.7
+
+                claim = Claim(
+                    run_id=self.run_id,
+                    claim_type=ClaimType.RED_FLAG,
                     text=full_text,
                     normalized_value=full_text.strip(),
                     unit=None,
