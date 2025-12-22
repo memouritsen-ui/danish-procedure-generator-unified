@@ -341,7 +341,7 @@ pytest tests/evals/ -v
 | ID | Task | Status | Test Command | Notes |
 |----|------|--------|--------------|-------|
 | P5-001 | Create GET /api/runs/{id}/claims | [x] 8 tests (1632 total) | `pytest tests/api/test_claims_endpoint.py` | Return claims |
-| P5-002 | Create GET /api/runs/{id}/issues | [ ] | `pytest tests/api/test_issues_endpoint.py` | Return issues |
+| P5-002 | Create GET /api/runs/{id}/issues | [x] 9 tests (1641 total) | `pytest tests/api/test_issues_endpoint.py` | Return issues |
 | P5-003 | Create GET /api/runs/{id}/gates | [ ] | `pytest tests/api/test_gates_endpoint.py` | Return gate status |
 | P5-004 | Create GET /api/runs/{id}/bundle | [ ] | `pytest tests/api/test_bundle_endpoint.py` | ZIP download |
 | P5-005 | Create GET /api/runs/{id}/manifest | [ ] | `pytest tests/api/test_manifest_endpoint.py` | Checksums |
@@ -391,9 +391,9 @@ unzip -l release.zip
 | P2: Pipeline Stages | 12 | 12 | 0 |
 | P3: Claim System | 12 | 12 | 0 |
 | P4: Eval Suite | 12 | 12 | 0 |
-| P5: API & Bundle | 12 | 1 | 11 |
-| **TOTAL** | **67** | **56** | **11** |
+| P5: API & Bundle | 12 | 2 | 10 |
+| **TOTAL** | **67** | **57** | **10** |
 
 ---
 
-**Next Task**: P5-002 - Create GET /api/runs/{id}/issues endpoint
+**Next Task**: P5-003 - Create GET /api/runs/{id}/gates endpoint

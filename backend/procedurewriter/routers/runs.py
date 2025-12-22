@@ -23,6 +23,7 @@ from procedurewriter.db import (
     list_runs,
 )
 from procedurewriter.models.claims import Claim, ClaimType
+from procedurewriter.models.issues import Issue, IssueSeverity
 from procedurewriter.file_utils import UnsafePathError, safe_path_within
 from procedurewriter.pipeline.events import get_emitter_if_exists
 from procedurewriter.pipeline.versioning import (
@@ -841,3 +842,61 @@ def api_get_claims(run_id: str, type: str | None = None) -> list[Claim]:
 
     # Convert to Claim objects
     return [Claim.from_db_row(row) for row in rows]
+
+
+@router.get("/{run_id}/issues", response_model=list[Issue])
+def api_get_issues(run_id: str, severity: str | None = None) -> list[Issue]:
+    """Get all issues for a specific run.
+
+    Args:
+        run_id: The procedure run ID.
+        severity: Optional filter by severity level (e.g., 's0', 's1', 's2').
+
+    Returns:
+        List of issues for the run.
+
+    Raises:
+        HTTPException: 404 if run not found, 400 if invalid severity filter.
+    """
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Validate severity filter if provided
+    if severity is not None:
+        valid_severities = [s.value for s in IssueSeverity]
+        if severity not in valid_severities:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid severity '{severity}'. Valid severities: {valid_severities}",
+            )
+
+    # Query issues from database
+    with _connect(settings.db_path) as conn:
+        if severity is not None:
+            cursor = conn.execute(
+                """
+                SELECT id, run_id, code, severity, message, line_number, claim_id, source_id,
+                       auto_detected, resolved, resolution_note, resolved_at_utc, created_at_utc
+                FROM issues
+                WHERE run_id = ? AND severity = ?
+                ORDER BY line_number
+                """,
+                (run_id, severity),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT id, run_id, code, severity, message, line_number, claim_id, source_id,
+                       auto_detected, resolved, resolution_note, resolved_at_utc, created_at_utc
+                FROM issues
+                WHERE run_id = ?
+                ORDER BY line_number
+                """,
+                (run_id,),
+            )
+
+        rows = cursor.fetchall()
+
+    # Convert to Issue objects
+    return [Issue.from_db_row(row) for row in rows]
