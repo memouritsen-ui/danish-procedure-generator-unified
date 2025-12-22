@@ -293,7 +293,7 @@ pytest tests/stages/ -v && pytest tests/test_pipeline.py -v
 | P3-005 | Implement CONTRAINDICATION extraction | [x] | `pytest tests/claims/test_contraindication.py` | 37 tests pass |
 | P3-006 | Implement RED_FLAG extraction | [x] | `pytest tests/claims/test_redflag.py` | 37 tests pass |
 | P3-007 | Implement ALGORITHM_STEP extraction | [x] | `pytest tests/claims/test_algorithmstep.py` | 33 tests pass |
-| P3-008 | Create unit normalizer | [ ] | `pytest tests/claims/test_normalizer.py` | mg→mg, mcg→μg |
+| P3-008 | Create unit normalizer | [x] | `pytest tests/claims/test_normalizer.py` | 49 tests pass |
 | P3-009 | Create EvidenceBinder class | [ ] | `pytest tests/claims/test_binder.py` | Semantic matching |
 | P3-010 | Implement keyword binding | [ ] | `pytest tests/claims/test_binder.py` | Keyword overlap |
 | P3-011 | Implement semantic binding | [ ] | `pytest tests/claims/test_binder.py` | Embedding similarity |
@@ -389,11 +389,11 @@ unzip -l release.zip
 | P0: Validation | 7 | 7 | 0 |
 | P1: Data Models | 12 | 12 | 0 |
 | P2: Pipeline Stages | 12 | 12 | 0 |
-| P3: Claim System | 12 | 7 | 5 |
+| P3: Claim System | 12 | 8 | 4 |
 | P4: Eval Suite | 12 | 0 | 12 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **38** | **29** |
+| **TOTAL** | **67** | **39** | **28** |
 
 ---
 
-**Next Task**: P3-008 - Create unit normalizer (Phase 3 continues)
+**Next Task**: P3-009 - Create EvidenceBinder class (Phase 3 continues)
