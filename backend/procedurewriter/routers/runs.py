@@ -15,12 +15,14 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
 from procedurewriter.db import (
+    _connect,
     acknowledge_run,
     get_run,
     get_version_chain,
     iter_jsonl,
     list_runs,
 )
+from procedurewriter.models.claims import Claim, ClaimType
 from procedurewriter.file_utils import UnsafePathError, safe_path_within
 from procedurewriter.pipeline.events import get_emitter_if_exists
 from procedurewriter.pipeline.versioning import (
@@ -781,3 +783,61 @@ def api_diff_runs(run_id: str, other_run_id: str) -> dict[str, Any]:
     )
 
     return diff_to_dict(diff)
+
+
+@router.get("/{run_id}/claims", response_model=list[Claim])
+def api_get_claims(run_id: str, type: str | None = None) -> list[Claim]:
+    """Get all claims for a specific run.
+
+    Args:
+        run_id: The procedure run ID.
+        type: Optional filter by claim type (e.g., 'dose', 'threshold').
+
+    Returns:
+        List of claims for the run.
+
+    Raises:
+        HTTPException: 404 if run not found, 400 if invalid type filter.
+    """
+    run = get_run(settings.db_path, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Validate type filter if provided
+    if type is not None:
+        valid_types = [ct.value for ct in ClaimType]
+        if type not in valid_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid claim type '{type}'. Valid types: {valid_types}",
+            )
+
+    # Query claims from database
+    with _connect(settings.db_path) as conn:
+        if type is not None:
+            cursor = conn.execute(
+                """
+                SELECT id, run_id, claim_type, text, normalized_value, unit,
+                       source_refs_json, line_number, confidence, created_at_utc
+                FROM claims
+                WHERE run_id = ? AND claim_type = ?
+                ORDER BY line_number
+                """,
+                (run_id, type),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT id, run_id, claim_type, text, normalized_value, unit,
+                       source_refs_json, line_number, confidence, created_at_utc
+                FROM claims
+                WHERE run_id = ?
+                ORDER BY line_number
+                """,
+                (run_id,),
+            )
+
+        rows = cursor.fetchall()
+
+    # Convert to Claim objects
+    return [Claim.from_db_row(row) for row in rows]
