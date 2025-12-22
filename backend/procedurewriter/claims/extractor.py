@@ -6,6 +6,7 @@ This extractor uses regex patterns to identify verifiable medical claims:
 - RECOMMENDATION: Clinical recommendations (e.g., "bør indlægges", "skal behandles")
 - CONTRAINDICATION: When NOT to do something (e.g., "må ikke gives", "kontraindiceret")
 - RED_FLAG: Warning signs requiring action (e.g., "OBS:", "mistanke om", "tilkald")
+- ALGORITHM_STEP: Numbered procedure steps (e.g., "1. Sikr luftveje", "Trin 1:")
 
 The patterns are derived from Phase 0 validation work on Danish medical procedures.
 """
@@ -227,6 +228,47 @@ RED_FLAG_PATTERNS: list[re.Pattern[str]] = [
     ),
 ]
 
+# Regex patterns for algorithm step extraction
+# Danish step patterns: numbered (1. 2. 3.), lettered (A. B. C.), Trin X, Fase X, etc.
+ALGORITHM_STEP_PATTERNS: list[re.Pattern[str]] = [
+    # "1. Action" or "1: Action" or "1) Action" - numbered steps at line start
+    # Must be at start of line to avoid matching numbers mid-sentence
+    re.compile(
+        r"^(\d{1,2}[.):]\s+\S.+)",
+        re.MULTILINE,
+    ),
+    # "Trin 1:" or "Trin 1" or "TRIN 1:" - Step prefix
+    re.compile(
+        r"((?:trin|TRIN)\s+\d+\s*:?\s*\S.+)",
+        re.IGNORECASE,
+    ),
+    # "Fase 1:" or "FASE 1:" - Phase prefix
+    re.compile(
+        r"((?:fase|FASE)\s+\d+\s*:?\s*\S.+)",
+        re.IGNORECASE,
+    ),
+    # "Del 1:" or "DEL 1:" - Part prefix
+    re.compile(
+        r"((?:del|DEL)\s+\d+\s*:?\s*\S.+)",
+        re.IGNORECASE,
+    ),
+    # "A. Action" or "A) Action" - uppercase lettered steps at line start
+    re.compile(
+        r"^([A-Z][.):]\s+\S.+)",
+        re.MULTILINE,
+    ),
+    # "a. Action" or "a) Action" - lowercase lettered steps at line start
+    re.compile(
+        r"^([a-z][.):]\s+\S.+)",
+        re.MULTILINE,
+    ),
+    # "Første:" or "Andet:" or "Tredje:" or "Fjerde:" - Danish ordinals
+    re.compile(
+        r"((?:første|andet|tredje|fjerde|femte|sjette|syvende|ottende|niende|tiende)\s*:\s*\S.+)",
+        re.IGNORECASE,
+    ),
+]
+
 # Pattern for source references [SRC001] or [S:SRC001]
 SOURCE_REF_PATTERN = re.compile(r"\[S?:?SRC(\d+)\]", re.IGNORECASE)
 
@@ -289,6 +331,9 @@ class ClaimExtractor:
 
             # Extract red flags
             claims.extend(self._extract_red_flags(line, line_num, source_refs))
+
+            # Extract algorithm steps
+            claims.extend(self._extract_algorithm_steps(line, line_num, source_refs))
 
         return claims
 
@@ -540,6 +585,48 @@ class ClaimExtractor:
                 claim = Claim(
                     run_id=self.run_id,
                     claim_type=ClaimType.RED_FLAG,
+                    text=full_text,
+                    normalized_value=full_text.strip(),
+                    unit=None,
+                    source_refs=source_refs.copy(),
+                    line_number=line_num,
+                    confidence=confidence,
+                )
+                claims.append(claim)
+
+        return claims
+
+    def _extract_algorithm_steps(
+        self,
+        line: str,
+        line_num: int,
+        source_refs: list[str],
+    ) -> list[Claim]:
+        """Extract algorithm step claims from a line of text.
+
+        Identifies Danish step patterns: numbered steps (1. 2. 3.),
+        lettered steps (A. B. C.), Trin X (Step X), Fase X (Phase X),
+        Del X (Part X), and ordinal patterns (Første, Andet, etc.).
+
+        Args:
+            line: Line of text to search.
+            line_num: Line number (1-based).
+            source_refs: Source references found on this line.
+
+        Returns:
+            List of algorithm step claims found.
+        """
+        claims: list[Claim] = []
+
+        for pattern in ALGORITHM_STEP_PATTERNS:
+            for match in pattern.finditer(line):
+                full_text = match.group(0)
+                # Confidence is higher if we have source references
+                confidence = 0.85 if source_refs else 0.65
+
+                claim = Claim(
+                    run_id=self.run_id,
+                    claim_type=ClaimType.ALGORITHM_STEP,
                     text=full_text,
                     normalized_value=full_text.strip(),
                     unit=None,
