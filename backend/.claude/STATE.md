@@ -51,11 +51,12 @@ All 11 stages wired into PipelineOrchestrator with full integration.
 ## CURRENT TASK
 
 ```
-TASK: P3-004 - Implement RECOMMENDATION extraction
+TASK: P3-005 - Implement CONTRAINDICATION extraction
 STATUS: NOT STARTED
 BLOCKED BY: None
-NEXT ACTION: Create RECOMMENDATION tests for "bør", "skal" patterns
+NEXT ACTION: Create CONTRAINDICATION tests for "må ikke" patterns
 
+✅ P3-004 complete - RECOMMENDATION extraction validated with 36 tests
 ✅ P3-003 complete - THRESHOLD extraction validated with 35 tests
 ✅ P3-002 complete - DOSE extraction validated with 35 tests
 ✅ P3-001 complete - ClaimExtractor class created with 27 tests (PHASE 3 START)
@@ -90,6 +91,7 @@ NEXT ACTION: Create RECOMMENDATION tests for "bør", "skal" patterns
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | **P3-004: Implement RECOMMENDATION extraction** | 36 tests pass (1242 total) |
 | 2024-12-22 | **P3-003: Implement THRESHOLD extraction** | 35 tests pass (1206 total) |
 | 2024-12-22 | **P3-002: Implement DOSE extraction** | 35 tests pass (1171 total) |
 | 2024-12-22 | **P3-001: Create ClaimExtractor class (PHASE 3 START)** | 27 tests pass (1136 total) |
@@ -164,8 +166,8 @@ None currently blocked.
 
 ## TEST STATUS
 
-**Last Run**: 2024-12-22 (P3-003 complete)
-**Result**: 1206 tests passed, 1 skipped
+**Last Run**: 2024-12-22 (P3-004 complete)
+**Result**: 1242 tests passed, 1 skipped
 
 **Verification**:
 ```bash
@@ -263,7 +265,7 @@ When starting a new session:
 
 | Session | Started At | Ended At | Tasks Completed | Context % |
 |---------|------------|----------|-----------------|-----------|
-| (current) | 2024-12-22 | - | 3 | ~30% |
+| (current) | 2024-12-22 | - | 1 | ~15% |
 
 **RULES** (from CLAUDE.md):
 - Max 4 tasks per session

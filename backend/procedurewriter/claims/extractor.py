@@ -3,6 +3,7 @@
 This extractor uses regex patterns to identify verifiable medical claims:
 - DOSE: Drug dosages (e.g., "amoxicillin 50 mg/kg/d")
 - THRESHOLD: Clinical thresholds (e.g., "CURB-65 >= 3", "SpO2 < 92%")
+- RECOMMENDATION: Clinical recommendations (e.g., "bør indlægges", "skal behandles")
 
 The patterns are derived from Phase 0 validation work on Danish medical procedures.
 """
@@ -73,6 +74,48 @@ THRESHOLD_PATTERNS: list[re.Pattern[str]] = [
     ),
 ]
 
+# Regex patterns for recommendation extraction
+# Danish modal verbs: "bør" (should), "skal" (must), "anbefales" (recommended)
+# Note: Danish allows 0-3 words between modal and verb (e.g., "bør patienten indlægges")
+RECOMMENDATION_PATTERNS: list[re.Pattern[str]] = [
+    # "bør" + [0-3 words] + verb: bør indlægges, bør patienten indlægges, etc.
+    re.compile(
+        r"(bør\s+(?:\w+\s+){0,3}(?:indlægges|behandles|gives|vurderes|overvejes|"
+        r"suppleres|pauseres|undgås|konfereres|monitoreres|sikres|"
+        r"påbegyndes|afsluttes|seponeres|reduceres|øges|"
+        r"administreres|ordineres|iværksættes|afventes|genoptages))",
+        re.IGNORECASE,
+    ),
+    # "skal" + [0-3 words] + verb: skal indlægges, skal antibiotika gives, etc.
+    re.compile(
+        r"(skal\s+(?:\w+\s+){0,3}(?:indlægges|behandles|gives|vurderes|overvejes|"
+        r"suppleres|pauseres|undgås|konfereres|monitoreres|sikres|"
+        r"påbegyndes|afsluttes|seponeres|reduceres|øges|"
+        r"administreres|ordineres|iværksættes|afventes|genoptages))",
+        re.IGNORECASE,
+    ),
+    # "anbefales" patterns: det anbefales at, anbefales i.v., etc.
+    re.compile(
+        r"((?:det\s+)?anbefales\s+(?:at|i\.?v\.?|p\.?o\.?|ved|hvis|når)?)",
+        re.IGNORECASE,
+    ),
+    # "anbefalet" patterns: den anbefalede behandling
+    re.compile(
+        r"((?:den\s+)?anbefale(?:t|de)\s+\w+)",
+        re.IGNORECASE,
+    ),
+    # "tilrådes" patterns: tilrådes, det tilrådes at
+    re.compile(
+        r"((?:det\s+)?tilrådes(?:\s+at)?)",
+        re.IGNORECASE,
+    ),
+    # "indicerer" / "indiceres" patterns
+    re.compile(
+        r"(indice(?:rer|res)\s+(?:\w+\s+)?(?:for|ved|behov)?)",
+        re.IGNORECASE,
+    ),
+]
+
 # Pattern for source references [SRC001] or [S:SRC001]
 SOURCE_REF_PATTERN = re.compile(r"\[S?:?SRC(\d+)\]", re.IGNORECASE)
 
@@ -126,6 +169,9 @@ class ClaimExtractor:
 
             # Extract thresholds
             claims.extend(self._extract_thresholds(line, line_num, source_refs))
+
+            # Extract recommendations
+            claims.extend(self._extract_recommendations(line, line_num, source_refs))
 
         return claims
 
@@ -264,3 +310,43 @@ class ClaimExtractor:
             if group and group.lower() in {u.lower() for u in units}:
                 return group
         return None
+
+    def _extract_recommendations(
+        self,
+        line: str,
+        line_num: int,
+        source_refs: list[str],
+    ) -> list[Claim]:
+        """Extract recommendation claims from a line of text.
+
+        Identifies Danish modal verbs: bør (should), skal (must), anbefales (recommended).
+
+        Args:
+            line: Line of text to search.
+            line_num: Line number (1-based).
+            source_refs: Source references found on this line.
+
+        Returns:
+            List of recommendation claims found.
+        """
+        claims: list[Claim] = []
+
+        for pattern in RECOMMENDATION_PATTERNS:
+            for match in pattern.finditer(line):
+                full_text = match.group(0)
+                # Confidence is higher if we have source references
+                confidence = 0.85 if source_refs else 0.6
+
+                claim = Claim(
+                    run_id=self.run_id,
+                    claim_type=ClaimType.RECOMMENDATION,
+                    text=full_text,
+                    normalized_value=full_text.strip(),
+                    unit=None,
+                    source_refs=source_refs.copy(),
+                    line_number=line_num,
+                    confidence=confidence,
+                )
+                claims.append(claim)
+
+        return claims
