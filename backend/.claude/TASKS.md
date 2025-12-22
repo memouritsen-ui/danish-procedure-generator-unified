@@ -295,7 +295,7 @@ pytest tests/stages/ -v && pytest tests/test_pipeline.py -v
 | P3-007 | Implement ALGORITHM_STEP extraction | [x] | `pytest tests/claims/test_algorithmstep.py` | 33 tests pass |
 | P3-008 | Create unit normalizer | [x] | `pytest tests/claims/test_normalizer.py` | 49 tests pass |
 | P3-009 | Create EvidenceBinder class | [x] | `pytest tests/claims/test_binder.py` | 29 tests pass |
-| P3-010 | Implement keyword binding | [ ] | `pytest tests/claims/test_binder.py` | Keyword overlap |
+| P3-010 | Implement keyword binding | [x] | `pytest tests/claims/test_binder.py` | 29 tests pass (done in P3-009) |
 | P3-011 | Implement semantic binding | [ ] | `pytest tests/claims/test_binder.py` | Embedding similarity |
 | P3-012 | Integration: extract + bind workflow | [ ] | `pytest tests/claims/test_integration.py` | End-to-end |
 
@@ -389,11 +389,11 @@ unzip -l release.zip
 | P0: Validation | 7 | 7 | 0 |
 | P1: Data Models | 12 | 12 | 0 |
 | P2: Pipeline Stages | 12 | 12 | 0 |
-| P3: Claim System | 12 | 9 | 3 |
+| P3: Claim System | 12 | 10 | 2 |
 | P4: Eval Suite | 12 | 0 | 12 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **40** | **27** |
+| **TOTAL** | **67** | **41** | **26** |
 
 ---
 
-**Next Task**: P3-010 - Implement keyword binding (Phase 3 continues)
+**Next Task**: P3-011 - Implement semantic binding (embedding similarity)
