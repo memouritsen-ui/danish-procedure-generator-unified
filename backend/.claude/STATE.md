@@ -1,7 +1,7 @@
 # STATE.md - Current Project State
 
-**LAST UPDATED**: 2024-12-22 11:00 UTC
-**UPDATED BY**: Claude (P4-003 complete - TemplateComplianceLinter, 17 tests, 1502 total)
+**LAST UPDATED**: 2024-12-22 11:30 UTC
+**UPDATED BY**: Claude (P4-004 complete - ClaimCoverageLinter, 13 tests, 1515 total)
 
 ---
 
@@ -51,11 +51,12 @@ ClaimExtractor, UnitNormalizer, EvidenceBinder with keyword+semantic binding.
 ## CURRENT TASK
 
 ```
-TASK: P4-004 - Implement claim_coverage lint
+TASK: P4-005 - Implement unit_check lint
 STATUS: NOT STARTED
 BLOCKED BY: None
-NEXT ACTION: Create linter that checks all claims are bound
+NEXT ACTION: Create linter that validates SI units
 
+✅ P4-004 complete - ClaimCoverageLinter with 13 tests (1515 total)
 ✅ P4-003 complete - TemplateComplianceLinter with 17 tests (1502 total)
 ✅ P4-002 complete - CitationIntegrityLinter with 16 tests
 ✅ P4-001 complete - Linter base class with 18 tests (PHASE 4 START)
@@ -102,6 +103,7 @@ NEXT ACTION: Create linter that checks all claims are bound
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | **P4-004: Implement claim_coverage lint** | 13 tests pass (1515 total) |
 | 2024-12-22 | **P4-003: Implement template_compliance lint** | 17 tests pass (1502 total) |
 | 2024-12-22 | **P4-002: Implement citation_integrity lint** | 16 tests pass (1485 total) |
 | 2024-12-22 | **P4-001: Create Linter base class (PHASE 4 START)** | 18 tests pass (1469 total) |
@@ -188,8 +190,8 @@ None currently blocked.
 
 ## TEST STATUS
 
-**Last Run**: 2024-12-22 (P4-003 complete)
-**Result**: 1502 tests passed, 1 skipped
+**Last Run**: 2024-12-22 (P4-004 complete)
+**Result**: 1515 tests passed, 1 skipped
 
 **Verification**:
 ```bash
@@ -287,7 +289,7 @@ When starting a new session:
 
 | Session | Started At | Ended At | Tasks Completed | Context % |
 |---------|------------|----------|-----------------|-----------|
-| (current) | 2024-12-22 | - | 3 | ~25% |
+| (current) | 2024-12-22 | - | 4 | ~35% |
 
 **RULES** (from CLAUDE.md):
 - Max 4 tasks per session

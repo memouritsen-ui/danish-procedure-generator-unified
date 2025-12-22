@@ -316,7 +316,7 @@ pytest tests/claims/ -v
 | P4-001 | Create Linter base class | [x] | `pytest tests/evals/test_linter.py` | 18 tests pass |
 | P4-002 | Implement citation_integrity lint | [x] | `pytest tests/evals/test_citation.py` | 16 tests pass |
 | P4-003 | Implement template_compliance lint | [x] 17 tests (1502 total) | `pytest tests/evals/test_template.py` | 14 sections |
-| P4-004 | Implement claim_coverage lint | [ ] | `pytest tests/evals/test_coverage.py` | All claims bound |
+| P4-004 | Implement claim_coverage lint | [x] 13 tests (1515 total) | `pytest tests/evals/test_coverage.py` | All claims bound |
 | P4-005 | Implement unit_check lint | [ ] | `pytest tests/evals/test_units.py` | Valid SI units |
 | P4-006 | Implement overconfidence lint | [ ] | `pytest tests/evals/test_overconfidence.py` | Strong language check |
 | P4-007 | Implement conflict_detection lint | [ ] | `pytest tests/evals/test_conflict.py` | Same topic conflicts |
@@ -396,4 +396,4 @@ unzip -l release.zip
 
 ---
 
-**Next Task**: P4-004 - Implement claim_coverage lint
+**Next Task**: P4-005 - Implement unit_check lint

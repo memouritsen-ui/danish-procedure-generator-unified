@@ -7,7 +7,14 @@ This module provides:
 """
 
 from procedurewriter.evals.citation import CitationIntegrityLinter
+from procedurewriter.evals.coverage import ClaimCoverageLinter
 from procedurewriter.evals.linter import Linter, LintContext
 from procedurewriter.evals.template import TemplateComplianceLinter
 
-__all__ = ["Linter", "LintContext", "CitationIntegrityLinter", "TemplateComplianceLinter"]
+__all__ = [
+    "Linter",
+    "LintContext",
+    "CitationIntegrityLinter",
+    "ClaimCoverageLinter",
+    "TemplateComplianceLinter",
+]
