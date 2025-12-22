@@ -61,6 +61,7 @@ class IssueCode(str, Enum):
     EVIDENCE_REDUNDANCY = "S2-002"  # Same claim bound to >3 sources
     INFORMAL_LANGUAGE = "S2-003"  # Non-clinical phrasing detected
     MISSING_DURATION = "S2-004"  # Treatment without duration specified
+    OVERCONFIDENT_LANGUAGE = "S2-005"  # Absolute terms like "always", "never", "guaranteed"
 
 
 # Mapping of issue codes to their severity
@@ -85,6 +86,7 @@ _CODE_TO_SEVERITY = {
     IssueCode.EVIDENCE_REDUNDANCY: IssueSeverity.S2,
     IssueCode.INFORMAL_LANGUAGE: IssueSeverity.S2,
     IssueCode.MISSING_DURATION: IssueSeverity.S2,
+    IssueCode.OVERCONFIDENT_LANGUAGE: IssueSeverity.S2,
 }
 
 # Human-readable labels for severity levels

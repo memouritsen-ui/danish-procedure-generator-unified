@@ -39,6 +39,7 @@ _CODE_TO_SEVERITY = {
     IssueCode.EVIDENCE_REDUNDANCY: IssueSeverity.S2,
     IssueCode.INFORMAL_LANGUAGE: IssueSeverity.S2,
     IssueCode.MISSING_DURATION: IssueSeverity.S2,
+    IssueCode.OVERCONFIDENT_LANGUAGE: IssueSeverity.S2,
 }
 
 

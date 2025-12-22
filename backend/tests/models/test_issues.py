@@ -80,10 +80,10 @@ class TestIssueCode:
         assert IssueCode.MISSING_DURATION.value == "S2-004"
 
     def test_issue_code_count(self):
-        """Should have exactly 17 issue codes (7+6+4)."""
+        """Should have exactly 18 issue codes (7+6+5)."""
         from procedurewriter.models.issues import IssueCode
 
-        assert len(IssueCode) == 17
+        assert len(IssueCode) == 18
 
 
 class TestIssue:
