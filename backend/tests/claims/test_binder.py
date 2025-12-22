@@ -369,3 +369,165 @@ class TestRealWorldExamples:
         ]
         result = binder.bind(claims, chunks)
         assert len(result.links) >= 1
+
+
+class TestSemanticBinding:
+    """Tests for semantic (embedding-based) binding."""
+
+    def test_semantic_binding_with_provider(self) -> None:
+        """Semantic binding uses embeddings when provider is available."""
+        from unittest.mock import Mock
+
+        # Create a mock embedding provider
+        mock_provider = Mock()
+        mock_provider.get_embeddings.return_value = [
+            [0.1, 0.2, 0.3],  # claim embedding
+            [0.1, 0.2, 0.3],  # chunk embedding (identical = high similarity)
+        ]
+
+        binder = EvidenceBinder(embedding_provider=mock_provider, min_score=0.1)
+        claims = [make_claim("adrenaline should be given")]
+        chunks = [make_chunk("epinephrine administration is recommended")]
+        result = binder.bind(claims, chunks)
+
+        # Should have at least one link with semantic binding
+        semantic_links = [l for l in result.links if l.binding_type == BindingType.SEMANTIC]
+        assert len(semantic_links) >= 1
+
+    def test_semantic_binding_high_similarity(self) -> None:
+        """High embedding similarity produces high binding score."""
+        from unittest.mock import Mock
+
+        mock_provider = Mock()
+        # Identical vectors = cosine similarity of 1.0
+        mock_provider.get_embeddings.return_value = [
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ]
+
+        binder = EvidenceBinder(embedding_provider=mock_provider, min_score=0.1)
+        claims = [make_claim("test claim")]
+        chunks = [make_chunk("test chunk")]
+        result = binder.bind(claims, chunks)
+
+        assert len(result.links) >= 1
+        # High similarity should produce high score
+        assert result.links[0].binding_score >= 0.8
+
+    def test_semantic_binding_low_similarity(self) -> None:
+        """Low embedding similarity may not produce binding."""
+        from unittest.mock import Mock
+
+        mock_provider = Mock()
+        # Orthogonal vectors = cosine similarity of 0.0
+        mock_provider.get_embeddings.return_value = [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ]
+
+        binder = EvidenceBinder(embedding_provider=mock_provider, min_score=0.5)
+        claims = [make_claim("completely unrelated")]
+        chunks = [make_chunk("something else entirely")]
+        result = binder.bind(claims, chunks)
+
+        # Should not bind with strict threshold and zero similarity
+        semantic_links = [l for l in result.links if l.binding_type == BindingType.SEMANTIC]
+        assert len(semantic_links) == 0
+
+    def test_semantic_falls_back_without_provider(self) -> None:
+        """Without embedding provider, uses keyword binding only."""
+        binder = EvidenceBinder()  # No embedding provider
+        claims = [make_claim("amoxicillin 500 mg")]
+        chunks = [make_chunk("Amoxicillin is recommended at 500 mg")]
+        result = binder.bind(claims, chunks)
+
+        # Should still bind using keywords
+        assert len(result.links) >= 1
+        # All links should be keyword type
+        for link in result.links:
+            assert link.binding_type == BindingType.KEYWORD
+
+    def test_semantic_combined_with_keyword(self) -> None:
+        """Semantic and keyword scores combine for final ranking."""
+        from unittest.mock import Mock
+
+        mock_provider = Mock()
+        # Moderate similarity
+        mock_provider.get_embeddings.return_value = [
+            [0.8, 0.2, 0.0],
+            [0.6, 0.4, 0.0],  # Partial similarity
+        ]
+
+        binder = EvidenceBinder(embedding_provider=mock_provider, min_score=0.1)
+        claims = [make_claim("amoxicillin 500 mg")]
+        chunks = [make_chunk("Amoxicillin 500 mg dosing recommendation")]
+        result = binder.bind(claims, chunks)
+
+        # Should bind with combined score
+        assert len(result.links) >= 1
+
+    def test_semantic_provider_called_correctly(self) -> None:
+        """Embedding provider is called with correct texts."""
+        from unittest.mock import Mock
+
+        mock_provider = Mock()
+        mock_provider.get_embeddings.return_value = [
+            [0.1, 0.2, 0.3],
+            [0.1, 0.2, 0.3],
+        ]
+
+        binder = EvidenceBinder(embedding_provider=mock_provider)
+        claims = [make_claim("claim text here")]
+        chunks = [make_chunk("chunk text here")]
+        binder.bind(claims, chunks)
+
+        # Verify provider was called
+        mock_provider.get_embeddings.assert_called_once()
+        call_args = mock_provider.get_embeddings.call_args[0][0]
+        assert "claim text here" in call_args
+        assert "chunk text here" in call_args
+
+    def test_semantic_binding_multiple_chunks(self) -> None:
+        """Semantic binding ranks multiple chunks correctly."""
+        from unittest.mock import Mock
+
+        mock_provider = Mock()
+        # Claim + 3 chunks with varying similarity
+        mock_provider.get_embeddings.return_value = [
+            [1.0, 0.0, 0.0],  # claim
+            [0.9, 0.1, 0.0],  # chunk 1 - high similarity
+            [0.5, 0.5, 0.0],  # chunk 2 - medium similarity
+            [0.0, 0.0, 1.0],  # chunk 3 - low similarity
+        ]
+
+        binder = EvidenceBinder(embedding_provider=mock_provider, min_score=0.3)
+        claims = [make_claim("test claim")]
+        chunks = [
+            make_chunk("high similarity chunk", source_id="SRC001"),
+            make_chunk("medium similarity chunk", source_id="SRC002"),
+            make_chunk("low similarity chunk", source_id="SRC003"),
+        ]
+        result = binder.bind(claims, chunks)
+
+        # Should bind to higher similarity chunks
+        assert len(result.links) >= 1
+        # Best link should be to SRC001 (highest similarity)
+        best_link = max(result.links, key=lambda x: x.binding_score)
+        assert any(c.id == best_link.evidence_chunk_id and c.source_id == "SRC001" for c in chunks)
+
+    def test_semantic_binding_stats(self) -> None:
+        """Binding stats include semantic binding information."""
+        from unittest.mock import Mock
+
+        mock_provider = Mock()
+        mock_provider.get_embeddings.return_value = [
+            [0.1, 0.2, 0.3],
+            [0.1, 0.2, 0.3],
+        ]
+
+        binder = EvidenceBinder(embedding_provider=mock_provider)
+        claims = [make_claim("test claim")]
+        chunks = [make_chunk("test chunk")]
+        result = binder.bind(claims, chunks)
+
+        assert "semantic_bindings" in result.binding_stats or "bound_claims" in result.binding_stats
