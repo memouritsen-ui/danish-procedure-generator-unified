@@ -136,10 +136,11 @@ class OpenAIProvider(LLMProvider):
     def _get_client(self) -> Any:
         if self._client is None:
             from openai import OpenAI
+            # Use generous default timeout - individual calls can override
             self._client = OpenAI(
                 api_key=self._api_key,
                 base_url=self._base_url,
-                timeout=60.0,
+                timeout=300.0,  # 5 minutes default for GPT-5.x with reasoning
                 max_retries=2,
             )
         return self._client
@@ -150,7 +151,7 @@ class OpenAIProvider(LLMProvider):
         model: str,
         temperature: float = 0.2,
         max_tokens: int | None = None,
-        timeout: float = 60.0,
+        timeout: float = 300.0,  # 5 minutes default for GPT-5.x with reasoning
     ) -> LLMResponse:
         client = self._get_client()
 
@@ -158,6 +159,7 @@ class OpenAIProvider(LLMProvider):
             "model": model,
             "messages": messages,
             "temperature": temperature,
+            "timeout": timeout,  # Pass timeout to the API call
         }
         if max_tokens:
             # GPT-5 series and newer models use max_completion_tokens instead of max_tokens
