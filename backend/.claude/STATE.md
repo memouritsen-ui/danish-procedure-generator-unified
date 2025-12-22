@@ -14,13 +14,13 @@
 ║  PHASE 1 HOTFIX: ARCHITECTURAL DEBT          ✅ COMPLETE   ║
 ║  PHASE 2: PIPELINE STAGES                    ✅ COMPLETE   ║
 ║  PHASE 3: CLAIM SYSTEM                       ✅ COMPLETE   ║
-║  PHASE 4: EVAL SUITE                         ⏳ PENDING    ║
+║  PHASE 4: EVAL SUITE                         ✅ COMPLETE   ║
 ║  PHASE 5: API & BUNDLE                       ⏳ PENDING    ║
 ╚════════════════════════════════════════════════════════════╝
 ```
 
-**✅ COMPLETE**: Phase 3 - Claim System (12/12 tasks).
-ClaimExtractor, UnitNormalizer, EvidenceBinder with keyword+semantic binding.
+**✅ COMPLETE**: Phase 4 - Eval Suite (12/12 tasks).
+8 Linters, GateEvaluator, IssueCollector. All gates and evaluation rules implemented.
 
 ---
 
@@ -51,11 +51,12 @@ ClaimExtractor, UnitNormalizer, EvidenceBinder with keyword+semantic binding.
 ## CURRENT TASK
 
 ```
-TASK: P4-012 - Create IssueCollector class
+TASK: P5-001 - Create GET /api/runs/{id}/claims endpoint
 STATUS: PENDING
 BLOCKED BY: None
-NEXT ACTION: Implement IssueCollector to aggregate issues from all linters
+NEXT ACTION: Start Phase 5 - API & Bundle
 
+✅ P4-012 complete - IssueCollector with 15 tests (1624 total) - PHASE 4 COMPLETE
 ✅ P4-011 complete - S1 gate (implemented in P4-009) - 19 tests (1609 total)
 ✅ P4-010 complete - S0 gate (implemented in P4-009) - 19 tests (1609 total)
 ✅ P4-009 complete - GateEvaluator with 19 tests (1609 total)
@@ -110,6 +111,7 @@ NEXT ACTION: Implement IssueCollector to aggregate issues from all linters
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | **P4-012: IssueCollector (PHASE 4 COMPLETE)** | 15 tests pass (1624 total) |
 | 2024-12-22 | **P4-011: S1 gate (in P4-009)** | 19 tests pass (1609 total) |
 | 2024-12-22 | **P4-010: S0 gate (in P4-009)** | 19 tests pass (1609 total) |
 | 2024-12-22 | **P4-009: Create GateEvaluator class** | 19 tests pass (1609 total) |
@@ -204,8 +206,8 @@ None currently blocked.
 
 ## TEST STATUS
 
-**Last Run**: 2024-12-22 (P4-009 complete)
-**Result**: 1609 tests passed, 1 skipped
+**Last Run**: 2024-12-22 (P4-012 complete - PHASE 4 COMPLETE)
+**Result**: 1624 tests passed, 1 skipped
 
 **Verification**:
 ```bash
@@ -303,7 +305,7 @@ When starting a new session:
 
 | Session | Started At | Ended At | Tasks Completed | Context % |
 |---------|------------|----------|-----------------|-----------|
-| (current) | 2024-12-22 | - | 3 | ~20% |
+| (current) | 2024-12-22 | - | 3 (P4-010, P4-011, P4-012) | ~15% |
 
 **RULES** (from CLAUDE.md):
 - Max 4 tasks per session

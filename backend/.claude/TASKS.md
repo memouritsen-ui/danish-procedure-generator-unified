@@ -324,7 +324,7 @@ pytest tests/claims/ -v
 | P4-009 | Create GateEvaluator class | [x] 19 tests (1609 total) | `pytest tests/evals/test_gates.py` | Pass/fail logic |
 | P4-010 | Implement S0 gate (safety) | [x] 19 tests (implemented in P4-009) | `pytest tests/evals/test_gates.py` | S0=0 required |
 | P4-011 | Implement S1 gate (quality) | [x] 19 tests (implemented in P4-009) | `pytest tests/evals/test_gates.py` | S1=0 required |
-| P4-012 | Create IssueCollector class | [ ] | `pytest tests/evals/test_issues.py` | Aggregate issues |
+| P4-012 | Create IssueCollector class | [x] 15 tests (1624 total) | `pytest tests/evals/test_issue_collector.py` | Aggregate issues |
 
 **Phase 4 Verification**:
 ```bash
@@ -390,10 +390,10 @@ unzip -l release.zip
 | P1: Data Models | 12 | 12 | 0 |
 | P2: Pipeline Stages | 12 | 12 | 0 |
 | P3: Claim System | 12 | 12 | 0 |
-| P4: Eval Suite | 12 | 11 | 1 |
+| P4: Eval Suite | 12 | 12 | 0 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **54** | **13** |
+| **TOTAL** | **67** | **55** | **12** |
 
 ---
 
-**Next Task**: P4-012 - Create IssueCollector class
+**Next Task**: P5-001 - Create GET /api/runs/{id}/claims endpoint
