@@ -264,7 +264,7 @@ grep -r "str(claim\|str(chunk\|str(link\|str(issue\|str(gate" tests/
 | P2-003 | Create Stage 02: Retrieve | [x] | `pytest tests/stages/test_02_retrieve.py` | 12 tests pass |
 | P2-004 | Create Stage 03: Chunk | [x] | `pytest tests/stages/test_03_chunk.py` | 13 tests pass |
 | P2-005 | Create Stage 04: EvidenceNotes | [x] | `pytest tests/stages/test_04_evidencenotes.py` | 13 tests pass |
-| P2-006 | Create Stage 05: Draft | [ ] | `pytest tests/stages/test_05_draft.py` | Writer agent |
+| P2-006 | Create Stage 05: Draft | [x] | `pytest tests/stages/test_05_draft.py` | 13 tests pass |
 | P2-007 | Create Stage 06: ClaimExtract | [ ] | `pytest tests/stages/test_06_claimextract.py` | Parse claims |
 | P2-008 | Create Stage 07: Bind | [ ] | `pytest tests/stages/test_07_bind.py` | Link to evidence |
 | P2-009 | Create Stage 08: Evals | [ ] | `pytest tests/stages/test_08_evals.py` | Run lints |
