@@ -1,6 +1,6 @@
 # TASKS.md - Master Task Checklist
 
-**LAST UPDATED**: 2024-12-22 11:00 UTC
+**LAST UPDATED**: 2024-12-22 23:45 UTC
 
 ---
 
@@ -382,6 +382,81 @@ unzip -l release.zip
 
 ---
 
+## PHASE 6: GPS CLASSIFICATION (GRADE Good Practice Statements)
+
+**Objective**: Implement GRADE-aligned sentence classification to exempt procedural/obvious statements from evidence requirements
+
+**Background**:
+The current evidence policy fails on valid procedures because ALL sentences are treated equally. Per GRADE methodology, "Good Practice Statements" (GPS) should be UNGRADED - evidence review would be "poor use of time" for statements like "Assess the patient's airway."
+
+**Key Insight**: GPS are statements where the INVERSE sounds absurd. "Don't assess the patient's airway" is obviously wrong - no RCT needed to prove it.
+
+### GPS Classification Criteria (from GRADE)
+
+1. **Clear and actionable** - Unambiguous what to do
+2. **Evidence review impractical** - Would waste time to formally grade
+3. **Inverse test passes** - Opposite statement sounds absurd
+4. **Large net benefit obvious** - Clearly beneficial despite no direct evidence
+5. **Indirect evidence sufficient** - Rationale connects to broader evidence base
+
+### Code Touchpoints
+
+| File | Function | Change Required |
+|------|----------|-----------------|
+| `pipeline/text_units.py` | `CitedSentence` | Add `sentence_type` field |
+| `pipeline/evidence.py` | `classify_sentence_type()` | NEW: GPS classifier |
+| `pipeline/evidence.py` | `build_evidence_report()` | Skip BM25 for GPS |
+| `pipeline/evidence.py` | `enforce_evidence_policy()` | Exempt GPS from unsupported count |
+
+### Data Flow WITH GPS
+
+```
+build_evidence_report()
+  │
+  ├── iter_cited_sentences() → CitedSentence(line_no, text, cites)
+  │
+  └── for each sentence:
+          ┌─────────────────────────────────────────┐
+          │  NEW: classify_sentence_type(text)      │
+          │       Returns: GPS | THERAPEUTIC | etc   │
+          └─────────────────────────────────────────┘
+                  ↓
+          IF sentence_type == GPS:
+              ● Mark as supported=True (exempt)
+              ● Skip BM25 scoring
+              ● Add "gps_exempt": True to output
+          ELSE:
+              ● Normal BM25 + LLM verification
+
+enforce_evidence_policy()
+  │
+  ├── Count unsupported WHERE sentence_type != GPS
+  │
+  └── IF non_gps_unsupported > 0:
+          RAISE EvidencePolicyError
+      ELSE:
+          PASS ✓
+```
+
+| ID | Task | Status | Test Command | Notes |
+|----|------|--------|--------------|-------|
+| P6-001 | Create SentenceType enum | [x] | `pytest tests/test_gps.py -v` | GPS, THERAPEUTIC, PROGNOSTIC, DIAGNOSTIC, PROCEDURAL (6 tests) |
+| P6-002 | Add GPS classifier function | [x] | `pytest tests/test_gps.py -v` | Pattern matching + inverse test (49 tests) |
+| P6-003 | Extend CitedSentence with sentence_type | [x] | `pytest tests/test_text_units.py -v` | Integrated in evidence.py |
+| P6-004 | Integrate classifier into build_evidence_report | [x] | `pytest tests/test_evidence.py -v` | Skip BM25 for GPS, gps_count tracked |
+| P6-005 | Update enforce_evidence_policy for GPS exemption | [x] | `pytest tests/test_evidence_policy.py -v` | GPS don't count as unsupported (6 tests) |
+| P6-006 | Add passes_inverse_test() function | [x] | `pytest tests/test_gps.py -v` | Core GPS criterion |
+| P6-007 | Integration test: GPS sentences pass STRICT policy | [x] | `pytest tests/test_evidence_policy.py -v` | 4 GPS integration tests added |
+| P6-008 | Demo: Re-run "Akut astma" with GPS | [x] | Manual verification | 6 GPS exempt, 3 therapeutic verified |
+
+**Phase 6 Verification**:
+```bash
+pytest tests/test_gps*.py -v
+# Expected: GPS sentences exempt, therapeutic claims still require evidence
+```
+
+---
+
 ## TASK COUNT SUMMARY
 
 | Phase | Total | Complete | Remaining |
@@ -392,8 +467,10 @@ unzip -l release.zip
 | P3: Claim System | 12 | 12 | 0 |
 | P4: Eval Suite | 12 | 12 | 0 |
 | P5: API & Bundle | 12 | 10 | 2 |
-| **TOTAL** | **67** | **65** | **2** |
+| P6: GPS Classification | 8 | 8 | 0 |
+| **TOTAL** | **75** | **73** | **2** |
 
 ---
 
 **Next Task**: P5-011 - Demo: "Anafylaksi behandling"
+**Phase 6 Status**: COMPLETE (8/8 tasks, 1811 tests passing)

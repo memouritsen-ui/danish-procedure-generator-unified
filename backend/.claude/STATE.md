@@ -1,7 +1,7 @@
 # STATE.md - Current Project State
 
-**LAST UPDATED**: 2024-12-22 16:30 UTC
-**UPDATED BY**: Claude (FIXED: GPT-5.2 reasoning tokens issue - max_tokens increased)
+**LAST UPDATED**: 2024-12-22 23:45 UTC
+**UPDATED BY**: Claude (Completed Phase 6: GPS Classification - 1811 tests passing)
 
 ---
 
@@ -16,11 +16,13 @@
 ║  PHASE 3: CLAIM SYSTEM                       ✅ COMPLETE   ║
 ║  PHASE 4: EVAL SUITE                         ✅ COMPLETE   ║
 ║  PHASE 5: API & BUNDLE                       ⏳ PENDING    ║
+║  PHASE 6: GPS CLASSIFICATION                 ✅ COMPLETE   ║
 ╚════════════════════════════════════════════════════════════╝
 ```
 
-**✅ COMPLETE**: Phase 4 - Eval Suite (12/12 tasks).
-8 Linters, GateEvaluator, IssueCollector. All gates and evaluation rules implemented.
+**✅ COMPLETE**: Phase 6 - GPS Classification (8/8 tasks).
+GRADE-aligned Good Practice Statement exemption. GPS sentences exempt from evidence requirements.
+Inverse test criterion: if negation sounds absurd, it's GPS. 1811 tests passing.
 
 ---
 
@@ -131,6 +133,7 @@ VERIFICATION:
 
 | Date | Issue | Severity | Status |
 |------|-------|----------|--------|
+| 2024-12-22 | Evidence policy fails on valid procedures - GPS not classified | HIGH | 📋 PLANNED (P6) |
 | 2024-12-22 | GPT-5.2 reasoning tokens consume all max_tokens | HIGH | ✅ FIXED |
 | 2024-12-22 | Pipeline section injection fails - "Evidens og Meta-analyse" missing | HIGH | ✅ FIXED (root cause was reasoning tokens) |
 | 2024-12-22 | Quality agent gets empty LLM responses | HIGH | ✅ FIXED (root cause was reasoning tokens) |
@@ -138,6 +141,20 @@ VERIFICATION:
 | 2024-12-22 | No model-to-DB conversion layer | HIGH | ✅ FIXED (P1-HF1-HF6) |
 | 2024-12-22 | Tests retrofitted to match impl (backwards TDD) | MEDIUM | Documented |
 | 2024-12-22 | Skills not used (systematic-debugging skipped) | MEDIUM | Documented |
+
+### GPS Issue Details (Phase 6)
+
+**Root Cause Analysis**:
+The evidence policy treats ALL sentences equally. Per GRADE methodology, "Good Practice Statements" (GPS) should be UNGRADED. Statements like "Vurder patientens luftveje" fail BM25 text matching even though they're obviously correct (the inverse "Don't assess airways" is absurd).
+
+**Solution**: Phase 6 implements GPS classification using GRADE's 5 criteria:
+1. Clear and actionable
+2. Evidence review impractical
+3. Inverse test passes (opposite sounds absurd)
+4. Large net benefit obvious
+5. Indirect evidence sufficient
+
+See TASKS.md P6-001 through P6-008 for implementation plan.
 
 ---
 
