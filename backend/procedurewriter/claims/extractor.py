@@ -4,6 +4,7 @@ This extractor uses regex patterns to identify verifiable medical claims:
 - DOSE: Drug dosages (e.g., "amoxicillin 50 mg/kg/d")
 - THRESHOLD: Clinical thresholds (e.g., "CURB-65 >= 3", "SpO2 < 92%")
 - RECOMMENDATION: Clinical recommendations (e.g., "bør indlægges", "skal behandles")
+- CONTRAINDICATION: When NOT to do something (e.g., "må ikke gives", "kontraindiceret")
 
 The patterns are derived from Phase 0 validation work on Danish medical procedures.
 """
@@ -116,6 +117,50 @@ RECOMMENDATION_PATTERNS: list[re.Pattern[str]] = [
     ),
 ]
 
+# Regex patterns for contraindication extraction
+# Danish patterns: "må ikke" (must not), "kontraindiceret" (contraindicated), "aldrig" (never)
+CONTRAINDICATION_PATTERNS: list[re.Pattern[str]] = [
+    # "må ikke" + verb: må ikke gives, må ikke anvendes, etc.
+    re.compile(
+        r"(må\s+(?:ikke|aldrig)\s+(?:\w+\s+){0,2}(?:gives|anvendes|ordineres|"
+        r"kombineres|administreres|bruges|benyttes|tages|indtages))",
+        re.IGNORECASE,
+    ),
+    # "er kontraindiceret" patterns with optional modifiers
+    re.compile(
+        r"((?:er\s+)?(?:absolut|relativt)?\s*kontraindiceret(?:\s+(?:ved|hos|i))?)",
+        re.IGNORECASE,
+    ),
+    # "kontraindikation" noun patterns
+    re.compile(
+        r"((?:absolut|relativ)?\s*kontraindikation(?:er)?(?:\s+(?:er|inkluderer|omfatter))?)",
+        re.IGNORECASE,
+    ),
+    # "bør ikke" + verb patterns
+    re.compile(
+        r"(bør\s+ikke\s+(?:\w+\s+){0,2}(?:gives|anvendes|ordineres|"
+        r"kombineres|administreres|bruges|benyttes|tages))",
+        re.IGNORECASE,
+    ),
+    # "skal ikke" + verb patterns
+    re.compile(
+        r"(skal\s+ikke\s+(?:\w+\s+){0,2}(?:gives|anvendes|ordineres|"
+        r"kombineres|administreres|bruges|benyttes|tages))",
+        re.IGNORECASE,
+    ),
+    # "aldrig" patterns: aldrig give, giv aldrig, aldrig anvend
+    re.compile(
+        r"((?:aldrig\s+(?:give|anvend|brug|administrer|ordiner))|"
+        r"(?:giv\s+aldrig))",
+        re.IGNORECASE,
+    ),
+    # "undgå" imperative patterns
+    re.compile(
+        r"(undgå\s+(?:brug\s+af|anvendelse\s+af|at\s+give)?)",
+        re.IGNORECASE,
+    ),
+]
+
 # Pattern for source references [SRC001] or [S:SRC001]
 SOURCE_REF_PATTERN = re.compile(r"\[S?:?SRC(\d+)\]", re.IGNORECASE)
 
@@ -172,6 +217,9 @@ class ClaimExtractor:
 
             # Extract recommendations
             claims.extend(self._extract_recommendations(line, line_num, source_refs))
+
+            # Extract contraindications
+            claims.extend(self._extract_contraindications(line, line_num, source_refs))
 
         return claims
 
@@ -340,6 +388,47 @@ class ClaimExtractor:
                 claim = Claim(
                     run_id=self.run_id,
                     claim_type=ClaimType.RECOMMENDATION,
+                    text=full_text,
+                    normalized_value=full_text.strip(),
+                    unit=None,
+                    source_refs=source_refs.copy(),
+                    line_number=line_num,
+                    confidence=confidence,
+                )
+                claims.append(claim)
+
+        return claims
+
+    def _extract_contraindications(
+        self,
+        line: str,
+        line_num: int,
+        source_refs: list[str],
+    ) -> list[Claim]:
+        """Extract contraindication claims from a line of text.
+
+        Identifies Danish contraindication patterns: må ikke (must not),
+        kontraindiceret (contraindicated), aldrig (never), undgå (avoid).
+
+        Args:
+            line: Line of text to search.
+            line_num: Line number (1-based).
+            source_refs: Source references found on this line.
+
+        Returns:
+            List of contraindication claims found.
+        """
+        claims: list[Claim] = []
+
+        for pattern in CONTRAINDICATION_PATTERNS:
+            for match in pattern.finditer(line):
+                full_text = match.group(0)
+                # Confidence is higher if we have source references
+                confidence = 0.9 if source_refs else 0.7
+
+                claim = Claim(
+                    run_id=self.run_id,
+                    claim_type=ClaimType.CONTRAINDICATION,
                     text=full_text,
                     normalized_value=full_text.strip(),
                     unit=None,
