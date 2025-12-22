@@ -297,7 +297,7 @@ pytest tests/stages/ -v && pytest tests/test_pipeline.py -v
 | P3-009 | Create EvidenceBinder class | [x] | `pytest tests/claims/test_binder.py` | 29 tests pass |
 | P3-010 | Implement keyword binding | [x] | `pytest tests/claims/test_binder.py` | 29 tests pass (done in P3-009) |
 | P3-011 | Implement semantic binding | [x] | `pytest tests/claims/test_binder.py` | 37 tests pass (8 new semantic) |
-| P3-012 | Integration: extract + bind workflow | [ ] | `pytest tests/claims/test_integration.py` | End-to-end |
+| P3-012 | Integration: extract + bind workflow | [x] | `pytest tests/claims/test_integration.py` | 16 tests pass (PHASE 3 COMPLETE) |
 
 **Phase 3 Verification**:
 ```bash
@@ -389,11 +389,11 @@ unzip -l release.zip
 | P0: Validation | 7 | 7 | 0 |
 | P1: Data Models | 12 | 12 | 0 |
 | P2: Pipeline Stages | 12 | 12 | 0 |
-| P3: Claim System | 12 | 11 | 1 |
+| P3: Claim System | 12 | 12 | 0 |
 | P4: Eval Suite | 12 | 0 | 12 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **42** | **25** |
+| **TOTAL** | **67** | **43** | **24** |
 
 ---
 
-**Next Task**: P3-012 - Integration: extract + bind workflow (end-to-end)
+**Next Task**: P4-001 - Create Linter base class (PHASE 4 START)
