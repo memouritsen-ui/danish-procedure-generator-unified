@@ -348,7 +348,7 @@ pytest tests/evals/ -v
 | P5-006 | Create GET /api/runs/{id}/evidence-notes | [x] 9 tests (1680 total) | `pytest tests/api/test_notes_endpoint.py` | LLM summaries |
 | P5-007 | Create GET /api/runs/{id}/chunks | [x] 9 tests (1689 total) | `pytest tests/api/test_chunks_endpoint.py` | Evidence chunks |
 | P5-008 | Implement ZipBuilder class | [x] 22 tests (1711 total) | `pytest tests/bundle/test_builder.py` | Create ZIP |
-| P5-009 | Implement ManifestBuilder class | [ ] | `pytest tests/bundle/test_manifest.py` | Checksums, versions |
+| P5-009 | Implement ManifestBuilder class | [x] 30 tests (1741 total) | `pytest tests/bundle/test_manifest.py` | Checksums, versions |
 | P5-010 | Integration test: full bundle | [ ] | `pytest tests/integration/test_bundle.py` | End-to-end |
 | P5-011 | Demo: "Anafylaksi behandling" | [ ] | Manual verification | Produces valid ZIP |
 | P5-012 | Documentation: Danish audit guide | [ ] | File exists check | README.md |
@@ -391,9 +391,9 @@ unzip -l release.zip
 | P2: Pipeline Stages | 12 | 12 | 0 |
 | P3: Claim System | 12 | 12 | 0 |
 | P4: Eval Suite | 12 | 12 | 0 |
-| P5: API & Bundle | 12 | 8 | 4 |
-| **TOTAL** | **67** | **63** | **4** |
+| P5: API & Bundle | 12 | 9 | 3 |
+| **TOTAL** | **67** | **64** | **3** |
 
 ---
 
-**Next Task**: P5-009 - Implement ManifestBuilder class
+**Next Task**: P5-010 - Integration test: full bundle

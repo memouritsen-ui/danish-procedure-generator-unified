@@ -1,7 +1,7 @@
 # STATE.md - Current Project State
 
-**LAST UPDATED**: 2024-12-22 12:40 UTC
-**UPDATED BY**: Claude (P5-008 complete - ZipBuilder class, 22 tests, 1711 total)
+**LAST UPDATED**: 2024-12-22 12:44 UTC
+**UPDATED BY**: Claude (P5-009 complete - ManifestBuilder class, 30 tests, 1741 total)
 
 ---
 
@@ -51,11 +51,12 @@
 ## CURRENT TASK
 
 ```
-TASK: P5-009 - Implement ManifestBuilder class
+TASK: P5-010 - Integration test: full bundle
 STATUS: PENDING
 BLOCKED BY: None
 NEXT ACTION: Continue Phase 5 - API & Bundle
 
+✅ P5-009 complete - ManifestBuilder class with 30 tests (1741 total)
 ✅ P5-008 complete - ZipBuilder class with 22 tests (1711 total)
 ✅ P5-007 complete - Chunks endpoint with 9 tests (1689 total)
 ✅ P5-006 complete - Evidence-notes endpoint with 9 tests (1680 total)
@@ -119,6 +120,7 @@ NEXT ACTION: Continue Phase 5 - API & Bundle
 
 | Date | Task | Verification |
 |------|------|--------------|
+| 2024-12-22 | **P5-009: ManifestBuilder class** | 30 tests pass (1741 total) |
 | 2024-12-22 | **P5-008: ZipBuilder class** | 22 tests pass (1711 total) |
 | 2024-12-22 | **P5-007: Chunks endpoint** | 9 tests pass (1689 total) |
 | 2024-12-22 | **P5-006: Evidence-notes endpoint** | 9 tests pass (1680 total) |
@@ -222,8 +224,8 @@ None currently blocked.
 
 ## TEST STATUS
 
-**Last Run**: 2024-12-22 (P5-008 complete)
-**Result**: 1711 tests passed, 1 skipped
+**Last Run**: 2024-12-22 (P5-009 complete)
+**Result**: 1741 tests passed, 1 skipped
 
 **Verification**:
 ```bash
@@ -321,7 +323,7 @@ When starting a new session:
 
 | Session | Started At | Ended At | Tasks Completed | Context % |
 |---------|------------|----------|-----------------|-----------|
-| (current) | 2024-12-22 | - | 1 (P5-008) | ~10% |
+| (current) | 2024-12-22 | - | 1 (P5-009) | ~20% |
 
 **RULES** (from CLAUDE.md):
 - Max 4 tasks per session
