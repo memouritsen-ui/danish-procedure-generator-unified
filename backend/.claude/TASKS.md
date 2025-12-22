@@ -321,7 +321,7 @@ pytest tests/claims/ -v
 | P4-006 | Implement overconfidence lint | [x] 21 tests (1555 total) | `pytest tests/evals/test_overconfidence.py` | Strong language check |
 | P4-007 | Implement conflict_detection lint | [x] 18 tests (1573 total) | `pytest tests/evals/test_conflict.py` | Same topic conflicts |
 | P4-008 | Implement recency_check lint | [x] 17 tests (1590 total) | `pytest tests/evals/test_recency.py` | >5 years flagged |
-| P4-009 | Create GateEvaluator class | [ ] | `pytest tests/evals/test_gates.py` | Pass/fail logic |
+| P4-009 | Create GateEvaluator class | [x] 19 tests (1609 total) | `pytest tests/evals/test_gates.py` | Pass/fail logic |
 | P4-010 | Implement S0 gate (safety) | [ ] | `pytest tests/evals/test_gates.py` | S0=0 required |
 | P4-011 | Implement S1 gate (quality) | [ ] | `pytest tests/evals/test_gates.py` | S1=0 required |
 | P4-012 | Create IssueCollector class | [ ] | `pytest tests/evals/test_issues.py` | Aggregate issues |
@@ -390,10 +390,10 @@ unzip -l release.zip
 | P1: Data Models | 12 | 12 | 0 |
 | P2: Pipeline Stages | 12 | 12 | 0 |
 | P3: Claim System | 12 | 12 | 0 |
-| P4: Eval Suite | 12 | 8 | 4 |
+| P4: Eval Suite | 12 | 9 | 3 |
 | P5: API & Bundle | 12 | 0 | 12 |
-| **TOTAL** | **67** | **51** | **16** |
+| **TOTAL** | **67** | **52** | **15** |
 
 ---
 
-**Next Task**: P4-009 - Create GateEvaluator class
+**Next Task**: P4-010 - Implement S0 gate (safety)
