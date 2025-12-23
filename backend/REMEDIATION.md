@@ -1267,7 +1267,7 @@ cd backend && pytest tests/api/test_upload.py -v
 | R3-006 | `models/evidence.py:52` | chunk_text unbounded | `Field(max_length=50000)` | ✅ DONE |
 | R3-007 | `models/issues.py:21,34,125` | severity enum not validated | `IssueSeverity(str, Enum)` | ✅ DONE |
 | R3-008 | `routers/runs.py:236+` | run_id not validated as UUID | `pattern=r"^[a-f0-9]{32}$"` | ✅ DONE |
-| R3-009 | N/A | page_size unbounded | N/A | ⚠️ NOT IMPLEMENTED - `routers/protocols.py` does not exist; protocols in `main.py` have no pagination |
+| R3-009 | N/A | page_size unbounded | N/A | ✅ DONE - pagination added in `procedurewriter/main.py` |
 | R3-010 | `routers/templates.py:30,36` | template_name allows special chars | `Field(pattern=r"^[\w\s\-æøåÆØÅ]+$")` | ✅ DONE |
 | R3-011 | `routers/templates.py:34-41,49-58` | config dict unbounded | `@field_validator` for key length ≤100 | ✅ DONE |
 | R3-012 | `db.py:17-27,722` | heartbeat_at_utc not validated | `validate_iso8601()` helper | ✅ DONE |

@@ -569,9 +569,18 @@ def api_library_search(q: str, limit: int = 20) -> dict[str, Any]:
 
 
 @app.get("/api/protocols")
-def api_list_protocols(status: str = "active") -> dict[str, Any]:
-    """List all protocols, optionally filtered by status."""
+def api_list_protocols(
+    status: str = "active",
+    skip: int = 0,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List protocols with pagination, optionally filtered by status."""
+    # R3-009: Bound pagination to prevent unbounded responses.
+    limit = min(max(limit, 1), 1000)
+    skip = max(skip, 0)
+
     protocols = list_protocols(settings.db_path, status if status != "all" else None)
+    paginated = protocols[skip : skip + limit]
     return {
         "protocols": [
             {
@@ -583,7 +592,7 @@ def api_list_protocols(status: str = "active") -> dict[str, Any]:
                 "approved_by": p.approved_by,
                 "created_at_utc": p.created_at_utc,
             }
-            for p in protocols
+            for p in paginated
         ]
     }
 
