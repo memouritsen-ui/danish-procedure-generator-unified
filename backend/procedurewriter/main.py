@@ -87,6 +87,14 @@ _OPENAI_SECRET_NAME = "openai_api_key"
 _ANTHROPIC_SECRET_NAME = "anthropic_api_key"
 _NCBI_SECRET_NAME = "ncbi_api_key"
 
+# File upload limits
+MAX_UPLOAD_SIZE_MB = 50
+MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024  # 50MB
+ALLOWED_UPLOAD_TYPES = {
+    "application/pdf": b"%PDF",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": b"PK",
+}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -242,9 +250,24 @@ def api_costs() -> CostSummaryResponse:
 async def api_ingest_pdf(file: UploadFile) -> IngestResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
+
+    # Read file content with size check
+    raw_bytes = await file.read()
+    if len(raw_bytes) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size: {MAX_UPLOAD_SIZE_MB}MB",
+        )
+
+    # Validate magic bytes (PDF must start with %PDF)
+    if not raw_bytes.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid PDF file: content does not match PDF format",
+        )
+
     source_id = f"LIB_{uuid.uuid4().hex}"
     raw_path = settings.uploads_dir / f"{source_id}.pdf"
-    raw_bytes = await file.read()
     write_bytes(raw_path, raw_bytes)
 
     pages = await run_in_threadpool(extract_pdf_pages, raw_path)
@@ -279,9 +302,24 @@ async def api_ingest_pdf(file: UploadFile) -> IngestResponse:
 async def api_ingest_docx(file: UploadFile) -> IngestResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
+
+    # Read file content with size check
+    raw_bytes = await file.read()
+    if len(raw_bytes) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size: {MAX_UPLOAD_SIZE_MB}MB",
+        )
+
+    # Validate magic bytes (DOCX/ZIP must start with PK)
+    if not raw_bytes.startswith(b"PK"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid DOCX file: content does not match DOCX format",
+        )
+
     source_id = f"LIB_{uuid.uuid4().hex}"
     raw_path = settings.uploads_dir / f"{source_id}.docx"
-    raw_bytes = await file.read()
     write_bytes(raw_path, raw_bytes)
 
     blocks = await run_in_threadpool(extract_docx_blocks, raw_path)

@@ -19,10 +19,10 @@ class RunSummary(BaseModel):
     run_id: str
     created_at_utc: str
     updated_at_utc: str
-    procedure: str
+    procedure: str = Field(max_length=500)
     status: str
     ack_required: bool = False
-    quality_score: int | None = None
+    quality_score: int | None = Field(default=None, ge=0, le=10)
     iterations_used: int | None = None
     total_cost_usd: float | None = None
 
@@ -31,7 +31,7 @@ class RunDetail(BaseModel):
     run_id: str
     created_at_utc: str
     updated_at_utc: str
-    procedure: str
+    procedure: str = Field(max_length=500)
     context: str | None
     status: str
     error: str | None
@@ -42,7 +42,7 @@ class RunDetail(BaseModel):
     procedure_md: str | None
     source_count: int | None = None
     warnings: list[str] | None = None
-    quality_score: int | None = None
+    quality_score: int | None = Field(default=None, ge=0, le=10)
     iterations_used: int | None = None
     total_cost_usd: float | None = None
     total_input_tokens: int | None = None
@@ -56,7 +56,7 @@ class SourceRecord(BaseModel):
     kind: str
     title: str | None = None
     year: int | None = None
-    url: str | None = None
+    url: str | None = Field(default=None, max_length=2000)
     doi: str | None = None
     pmid: str | None = None
     raw_path: str

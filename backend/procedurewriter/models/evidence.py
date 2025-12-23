@@ -49,7 +49,7 @@ class EvidenceChunk(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     run_id: str = Field(..., description="The procedure run this chunk belongs to")
     source_id: str = Field(..., description="Reference to source document")
-    text: Annotated[str, Field(min_length=1, description="Chunk text content")]
+    text: Annotated[str, Field(min_length=1, max_length=50000, description="Chunk text content")]
     chunk_index: int = Field(..., ge=0, description="Index within source (0-based)")
     start_char: int | None = Field(
         default=None, ge=0, description="Start position in source"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from procedurewriter.settings import settings
 from procedurewriter.templates import (
@@ -26,14 +26,14 @@ router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 
 class CreateTemplateRequest(BaseModel):
-    name: str
-    description: str | None = None
+    name: str = Field(min_length=1, max_length=100, pattern=r"^[\w\s\-æøåÆØÅ]+$")
+    description: str | None = Field(default=None, max_length=500)
     config: dict[str, Any]
 
 
 class UpdateTemplateRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[\w\s\-æøåÆØÅ]+$")
+    description: str | None = Field(default=None, max_length=500)
     config: dict[str, Any] | None = None
 
 

@@ -56,7 +56,7 @@ class Claim(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     run_id: str = Field(..., description="The procedure run this claim belongs to")
     claim_type: ClaimType = Field(..., description="Type of medical claim")
-    text: Annotated[str, Field(min_length=1, description="Original claim text")]
+    text: Annotated[str, Field(min_length=1, max_length=10000, description="Original claim text")]
     normalized_value: str | None = Field(
         default=None, description="Standardized representation"
     )
