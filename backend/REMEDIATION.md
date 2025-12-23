@@ -1990,6 +1990,7 @@ class TestChunkStage:
 | R6-012 | Multiple | @parametrize in test_evidence.py, test_claims.py | ✅ FIXED |
 
 **Summary**: 12 FIXED, 0 PARTIAL, 0 NOT FIXED (R6-006/007/008 fixed 2024-12-23)
+**Verification**: R6-009 to R6-012 verified with pytest in .venv. All 56 tests passed.
 
 ---
 
