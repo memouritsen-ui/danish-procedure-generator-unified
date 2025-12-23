@@ -192,8 +192,28 @@ def _find_source(run_dir: Path, source_id: str) -> SourceRecord | None:
 
 
 @router.get("", response_model=list[RunSummary])
-def api_runs() -> list[RunSummary]:
-    """List all procedure runs."""
+def api_runs(
+    skip: int = 0,
+    limit: int = 100,
+) -> list[RunSummary]:
+    """List procedure runs with pagination.
+
+    R5-005: Added skip/limit params for pagination to prevent large response payloads.
+
+    Args:
+        skip: Number of runs to skip (offset). Default 0.
+        limit: Maximum runs to return. Default 100, max 1000.
+
+    Returns:
+        Paginated list of run summaries.
+    """
+    # R5-005: Enforce reasonable limits
+    limit = min(limit, 1000)
+    skip = max(skip, 0)
+
+    all_runs = list_runs(settings.db_path)
+    paginated = all_runs[skip : skip + limit]
+
     return [
         RunSummary(
             run_id=r.run_id,
@@ -206,7 +226,7 @@ def api_runs() -> list[RunSummary]:
             iterations_used=r.iterations_used,
             total_cost_usd=r.total_cost_usd,
         )
-        for r in list_runs(settings.db_path)
+        for r in paginated
     ]
 
 

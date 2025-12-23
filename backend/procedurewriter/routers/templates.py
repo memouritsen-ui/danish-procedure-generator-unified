@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from procedurewriter.settings import settings
 from procedurewriter.templates import (
+    DuplicateTemplateNameError,
     SectionConfig,
     TemplateConfig,
     create_template,
@@ -102,12 +103,16 @@ def api_create_template(request: CreateTemplateRequest) -> dict[str, Any]:
     if not config.sections:
         raise HTTPException(status_code=400, detail="Template must have at least one section")
 
-    template_id = create_template(
-        settings.db_path,
-        name=request.name,
-        description=request.description,
-        config=config,
-    )
+    try:
+        template_id = create_template(
+            settings.db_path,
+            name=request.name,
+            description=request.description,
+            config=config,
+        )
+    except DuplicateTemplateNameError as e:
+        # R5-008: Return 409 Conflict for duplicate names
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
     return {"template_id": template_id}
 

@@ -11,6 +11,29 @@ from procedurewriter.settings import settings
 
 router = APIRouter(prefix="/api/keys", tags=["keys"])
 
+
+def _sanitize_error_message(error: str, api_key: str | None) -> str:
+    """R5-011: Sanitize error messages to prevent API key leakage.
+
+    Removes any occurrence of the API key from error messages.
+    """
+    if not api_key or not error:
+        return error
+
+    # Replace full key
+    sanitized = error.replace(api_key, "[REDACTED]")
+
+    # Also replace partial key (first/last 8 chars if key is long enough)
+    if len(api_key) > 16:
+        # Check for partial matches that might leak key
+        if api_key[:8] in sanitized:
+            sanitized = sanitized.replace(api_key[:8], "[REDACTED]")
+        if api_key[-8:] in sanitized:
+            sanitized = sanitized.replace(api_key[-8:], "[REDACTED]")
+
+    return sanitized
+
+
 # Secret names
 _OPENAI_SECRET_NAME = "openai_api_key"
 _ANTHROPIC_SECRET_NAME = "anthropic_api_key"
@@ -80,7 +103,8 @@ def api_openai_status() -> ApiKeyStatus:
         _ = client.models.list()
         return ApiKeyStatus(present=True, ok=True, message="OK")
     except Exception as e:  # noqa: BLE001
-        return ApiKeyStatus(present=True, ok=False, message=str(e))
+        # R5-011: Sanitize error message to prevent key leakage
+        return ApiKeyStatus(present=True, ok=False, message=_sanitize_error_message(str(e), key))
 
 
 # NCBI key endpoints
@@ -117,9 +141,11 @@ def api_ncbi_status() -> ApiKeyStatus:
     http = CachedHttpClient(cache_dir=settings.cache_dir, timeout_s=10.0, max_retries=1, backoff_s=0.6)
     try:
         ok, message = check_ncbi_status(http=http, tool=settings.ncbi_tool, email=settings.ncbi_email, api_key=key)
-        return ApiKeyStatus(present=present, ok=ok, message=message)
+        # R5-011: Sanitize message in case it contains key
+        return ApiKeyStatus(present=present, ok=ok, message=_sanitize_error_message(message, key))
     except Exception as e:  # noqa: BLE001
-        return ApiKeyStatus(present=present, ok=False, message=str(e))
+        # R5-011: Sanitize error message to prevent key leakage
+        return ApiKeyStatus(present=present, ok=False, message=_sanitize_error_message(str(e), key))
     finally:
         http.close()
 
@@ -161,7 +187,8 @@ def api_anthropic_status() -> ApiKeyStatus:
     except ImportError:
         return ApiKeyStatus(present=True, ok=False, message="anthropic package not installed")
     except Exception as e:  # noqa: BLE001
-        return ApiKeyStatus(present=True, ok=False, message=str(e))
+        # R5-011: Sanitize error message to prevent key leakage
+        return ApiKeyStatus(present=True, ok=False, message=_sanitize_error_message(str(e), key))
 
 
 # SerpAPI key endpoints

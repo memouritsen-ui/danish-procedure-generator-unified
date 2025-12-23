@@ -145,6 +145,12 @@ def get_default_template(db_path: Path) -> Template | None:
     return _row_to_template(row)
 
 
+class DuplicateTemplateNameError(ValueError):
+    """R5-008: Raised when attempting to create a template with a duplicate name."""
+
+    pass
+
+
 def create_template(
     db_path: Path,
     name: str,
@@ -161,11 +167,24 @@ def create_template(
 
     Returns:
         The generated template_id.
+
+    Raises:
+        DuplicateTemplateNameError: If a template with this name already exists (R5-008).
     """
     template_id = str(uuid.uuid4())[:8]
     now = datetime.utcnow().isoformat() + "Z"
 
     with _connect(db_path) as conn:
+        # R5-008: Check for duplicate name
+        existing = conn.execute(
+            "SELECT template_id FROM templates WHERE LOWER(name) = LOWER(?)",
+            (name,),
+        ).fetchone()
+        if existing:
+            raise DuplicateTemplateNameError(
+                f"A template with name '{name}' already exists (id: {existing['template_id']})"
+            )
+
         conn.execute(
             """
             INSERT INTO templates
