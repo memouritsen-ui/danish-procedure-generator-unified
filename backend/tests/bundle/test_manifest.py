@@ -53,7 +53,7 @@ class TestManifestBuilderSetters:
         """Should set run_id in manifest."""
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         builder = ManifestBuilder(run_dir)
         result = builder.set_run_id(run_id)
@@ -103,7 +103,7 @@ class TestManifestBuilderSetters:
         """Should support method chaining for all setters."""
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         builder = (
             ManifestBuilder(run_dir)
@@ -361,7 +361,7 @@ class TestManifestBuilderBuild:
         run_dir.mkdir()
         (run_dir / "test.txt").write_text("test", encoding="utf-8")
         output_path = run_dir / "manifest.json"
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         builder = (
             ManifestBuilder(run_dir)

@@ -65,7 +65,7 @@ class TestGetEvidenceNotes:
     def test_get_evidence_notes_returns_json(self, test_client):
         """Should return evidence notes as JSON object."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -98,7 +98,7 @@ class TestGetEvidenceNotes:
     def test_get_evidence_notes_run_not_found(self, test_client):
         """Should return 404 when run does not exist."""
         client, _, _ = test_client
-        fake_run_id = str(uuid4())
+        fake_run_id = uuid4().hex
 
         response = client.get(f"/api/runs/{fake_run_id}/evidence-notes")
         assert response.status_code == 404
@@ -107,7 +107,7 @@ class TestGetEvidenceNotes:
     def test_get_evidence_notes_file_not_found(self, test_client):
         """Should return 404 when evidence notes file does not exist."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -120,7 +120,7 @@ class TestGetEvidenceNotes:
     def test_get_evidence_notes_multiple_notes(self, test_client):
         """Should return all notes from the file."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -166,7 +166,7 @@ class TestGetEvidenceNotes:
     def test_get_evidence_notes_with_metadata(self, test_client):
         """Should include metadata fields in notes."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -201,7 +201,7 @@ class TestGetEvidenceNotes:
     def test_get_evidence_notes_handles_unicode(self, test_client):
         """Should handle Danish characters in notes."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -232,7 +232,7 @@ class TestGetEvidenceNotes:
     def test_get_evidence_notes_empty_notes_list(self, test_client):
         """Should handle empty notes list."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -255,7 +255,7 @@ class TestGetEvidenceNotes:
     def test_get_evidence_notes_preserves_structure(self, test_client):
         """Should preserve complete note structure."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         note_id = str(uuid4())
         chunk_id = str(uuid4())
 
@@ -297,7 +297,7 @@ class TestGetEvidenceNotes:
     def test_get_evidence_notes_different_source_types(self, test_client):
         """Should return notes with various source types."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)

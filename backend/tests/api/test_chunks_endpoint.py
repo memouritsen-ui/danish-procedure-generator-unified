@@ -87,7 +87,7 @@ class TestGetEvidenceChunks:
     def test_get_chunks_returns_json_list(self, test_client):
         """Should return evidence chunks as JSON array."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -109,7 +109,7 @@ class TestGetEvidenceChunks:
     def test_get_chunks_run_not_found(self, test_client):
         """Should return 404 when run does not exist."""
         client, _, _ = test_client
-        fake_run_id = str(uuid4())
+        fake_run_id = uuid4().hex
 
         response = client.get(f"/api/runs/{fake_run_id}/chunks")
         assert response.status_code == 404
@@ -118,7 +118,7 @@ class TestGetEvidenceChunks:
     def test_get_chunks_empty_list(self, test_client):
         """Should return empty list when no chunks exist."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -133,7 +133,7 @@ class TestGetEvidenceChunks:
     def test_get_chunks_multiple_chunks(self, test_client):
         """Should return all chunks for the run."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -151,7 +151,7 @@ class TestGetEvidenceChunks:
     def test_get_chunks_filter_by_source_id(self, test_client):
         """Should filter chunks by source_id when provided."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -170,7 +170,7 @@ class TestGetEvidenceChunks:
     def test_get_chunks_filter_returns_empty_for_nonexistent_source(self, test_client):
         """Should return empty list when filtering by non-existent source_id."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -186,7 +186,7 @@ class TestGetEvidenceChunks:
     def test_get_chunks_includes_metadata(self, test_client):
         """Should include metadata in chunk response."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -223,7 +223,7 @@ class TestGetEvidenceChunks:
     def test_get_chunks_ordered_by_chunk_index(self, test_client):
         """Should return chunks ordered by source_id then chunk_index."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -246,7 +246,7 @@ class TestGetEvidenceChunks:
     def test_get_chunks_handles_unicode(self, test_client):
         """Should handle Danish characters in chunk text."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         danish_text = "Patienten bør gives væske intravenøst. Obs. på allergi."
 

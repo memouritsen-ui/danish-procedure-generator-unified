@@ -65,7 +65,7 @@ class TestGetManifest:
     def test_get_manifest_returns_json(self, test_client):
         """Should return manifest as JSON object."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -95,7 +95,7 @@ class TestGetManifest:
     def test_get_manifest_run_not_found(self, test_client):
         """Should return 404 when run does not exist."""
         client, _, _ = test_client
-        fake_run_id = str(uuid4())
+        fake_run_id = uuid4().hex
 
         response = client.get(f"/api/runs/{fake_run_id}/manifest")
         assert response.status_code == 404
@@ -104,7 +104,7 @@ class TestGetManifest:
     def test_get_manifest_file_not_found(self, test_client):
         """Should return 404 when manifest file does not exist."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -117,7 +117,7 @@ class TestGetManifest:
     def test_get_manifest_includes_runtime_info(self, test_client):
         """Should include runtime information in manifest."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -150,7 +150,7 @@ class TestGetManifest:
     def test_get_manifest_includes_sources_info(self, test_client):
         """Should include source information in manifest."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -180,7 +180,7 @@ class TestGetManifest:
     def test_get_manifest_includes_quality_info(self, test_client):
         """Should include quality metrics in manifest."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -208,7 +208,7 @@ class TestGetManifest:
     def test_get_manifest_preserves_nested_structure(self, test_client):
         """Should preserve nested JSON structure from manifest file."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -238,7 +238,7 @@ class TestGetManifest:
     def test_get_manifest_handles_unicode(self, test_client):
         """Should handle Danish characters in manifest."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -262,7 +262,7 @@ class TestGetManifest:
     def test_get_manifest_includes_checksums(self, test_client):
         """Should include file checksums in manifest if present."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -290,7 +290,7 @@ class TestGetManifest:
     def test_get_manifest_includes_llm_config(self, test_client):
         """Should include LLM configuration in manifest if present."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)

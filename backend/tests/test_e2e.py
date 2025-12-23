@@ -105,7 +105,7 @@ class TestRunsEndpoints:
     def test_ack_endpoint_requeues_run(self, client: TestClient) -> None:
         from procedurewriter.db import create_run, set_run_needs_ack, get_run
 
-        run_id = "ack-run-1"
+        run_id = "aaaabbbbccccdddd1111222233334444"  # 32-char hex
         run_dir = settings.runs_dir / run_id
         create_run(
             settings.db_path,
@@ -132,7 +132,7 @@ class TestRunsEndpoints:
         assert run.ack_note == "Proceed anyway"
 
     def test_get_run_not_found(self, client: TestClient) -> None:
-        response = client.get("/api/runs/nonexistent123")
+        response = client.get("/api/runs/00000000000000000000000000000000")  # Valid format, non-existent
         assert response.status_code == 404
 
     def test_costs_endpoint(self, client: TestClient) -> None:
@@ -252,23 +252,23 @@ class TestRunArtifacts:
     """Tests for run artifact endpoints (docx, manifest, evidence, etc.)."""
 
     def test_docx_not_found_for_nonexistent_run(self, client: TestClient) -> None:
-        response = client.get("/api/runs/nonexistent/docx")
+        response = client.get("/api/runs/00000000000000000000000000000000/docx")
         assert response.status_code == 404
 
     def test_manifest_not_found_for_nonexistent_run(self, client: TestClient) -> None:
-        response = client.get("/api/runs/nonexistent/manifest")
+        response = client.get("/api/runs/00000000000000000000000000000000/manifest")
         assert response.status_code == 404
 
     def test_evidence_not_found_for_nonexistent_run(self, client: TestClient) -> None:
-        response = client.get("/api/runs/nonexistent/evidence")
+        response = client.get("/api/runs/00000000000000000000000000000000/evidence")
         assert response.status_code == 404
 
     def test_bundle_not_found_for_nonexistent_run(self, client: TestClient) -> None:
-        response = client.get("/api/runs/nonexistent/bundle")
+        response = client.get("/api/runs/00000000000000000000000000000000/bundle")
         assert response.status_code == 404
 
     def test_sources_not_found_for_nonexistent_run(self, client: TestClient) -> None:
-        response = client.get("/api/runs/nonexistent/sources")
+        response = client.get("/api/runs/00000000000000000000000000000000/sources")
         assert response.status_code == 404
 
 

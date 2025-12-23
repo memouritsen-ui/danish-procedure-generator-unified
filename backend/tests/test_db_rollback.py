@@ -213,7 +213,7 @@ class TestRollbackWithData:
         from procedurewriter.db import rollback_claim_system
         from uuid import uuid4
 
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         # Insert test data
         with _connect(test_db) as conn:
             _create_test_run(conn, run_id)

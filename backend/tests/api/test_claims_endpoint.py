@@ -66,7 +66,7 @@ class TestGetClaims:
     def test_get_claims_empty(self, test_client):
         """Should return empty list when run has no claims."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -78,7 +78,7 @@ class TestGetClaims:
     def test_get_claims_returns_all_claims_for_run(self, test_client):
         """Should return all claims for the specified run."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -128,7 +128,7 @@ class TestGetClaims:
     def test_get_claims_run_not_found(self, test_client):
         """Should return 404 when run does not exist."""
         client, _, _ = test_client
-        fake_run_id = str(uuid4())
+        fake_run_id = uuid4().hex
 
         response = client.get(f"/api/runs/{fake_run_id}/claims")
         assert response.status_code == 404
@@ -137,7 +137,7 @@ class TestGetClaims:
     def test_get_claims_different_types(self, test_client):
         """Should return claims of different types."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -175,8 +175,8 @@ class TestGetClaims:
     def test_get_claims_does_not_return_other_runs_claims(self, test_client):
         """Should only return claims for the specified run, not others."""
         client, db_path, runs_dir = test_client
-        run_id_1 = str(uuid4())
-        run_id_2 = str(uuid4())
+        run_id_1 = uuid4().hex
+        run_id_2 = uuid4().hex
 
         with _connect(db_path) as conn:
             # Create two runs
@@ -238,7 +238,7 @@ class TestGetClaims:
     def test_get_claims_filter_by_type(self, test_client):
         """Should filter claims by type when type query param is provided."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -279,7 +279,7 @@ class TestGetClaims:
     def test_get_claims_invalid_type_filter(self, test_client):
         """Should return 400 for invalid claim type filter."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -291,7 +291,7 @@ class TestGetClaims:
     def test_get_claims_source_refs_deserialized(self, test_client):
         """Should deserialize source_refs from JSON to list."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)

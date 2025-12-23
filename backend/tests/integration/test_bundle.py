@@ -44,7 +44,7 @@ class TestBundleCreationWorkflow:
         )
 
         # Build manifest with checksums
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         manifest_builder = (
             ManifestBuilder(run_dir)
             .set_run_id(run_id)
@@ -151,7 +151,7 @@ class TestBundleCreationWorkflow:
         run_dir.mkdir()
         (run_dir / "test.txt").write_text("content", encoding="utf-8")
 
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         builder = (
             ManifestBuilder(run_dir)
@@ -331,7 +331,7 @@ class TestBundleEndpointIntegration:
     def test_bundle_endpoint_returns_valid_zip_with_all_files(self, test_client):
         """GET /api/runs/{id}/bundle should return ZIP with all run files."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             self._create_complete_run(conn, run_id, runs_dir, "Akut Astma")
@@ -351,7 +351,7 @@ class TestBundleEndpointIntegration:
     def test_bundle_endpoint_preserves_file_contents(self, test_client):
         """Bundle should preserve exact file contents."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = self._create_complete_run(conn, run_id, runs_dir, "Test")
@@ -369,7 +369,7 @@ class TestBundleEndpointIntegration:
     def test_bundle_from_large_run_directory(self, test_client):
         """Bundle should handle runs with many files efficiently."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = self._create_complete_run(conn, run_id, runs_dir)

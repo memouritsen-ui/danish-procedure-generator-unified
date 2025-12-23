@@ -88,7 +88,7 @@ class TestClaimsTable:
     def test_insert_claim(self, test_db):
         """Should be able to insert a claim."""
         claim_id = str(uuid4())
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(test_db) as conn:
             _create_test_run(conn, run_id)
@@ -124,7 +124,7 @@ class TestClaimsTable:
 
     def test_query_claims_by_run(self, test_db):
         """Should be able to query claims by run_id."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(test_db) as conn:
             _create_test_run(conn, run_id)
@@ -187,7 +187,7 @@ class TestEvidenceChunksTable:
     def test_insert_evidence_chunk(self, test_db):
         """Should be able to insert an evidence chunk."""
         chunk_id = str(uuid4())
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(test_db) as conn:
             _create_test_run(conn, run_id)
@@ -246,7 +246,7 @@ class TestClaimEvidenceLinksTable:
     def test_insert_link(self, test_db):
         """Should be able to insert a claim-evidence link."""
         link_id = str(uuid4())
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         claim_id = str(uuid4())
         chunk_id = str(uuid4())
 
@@ -341,7 +341,7 @@ class TestIssuesTable:
     def test_insert_issue(self, test_db):
         """Should be able to insert an issue."""
         issue_id = str(uuid4())
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(test_db) as conn:
             _create_test_run(conn, run_id)
@@ -375,7 +375,7 @@ class TestIssuesTable:
 
     def test_query_unresolved_issues(self, test_db):
         """Should be able to query unresolved issues."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(test_db) as conn:
             _create_test_run(conn, run_id)
@@ -450,7 +450,7 @@ class TestGatesTable:
     def test_insert_gate(self, test_db):
         """Should be able to insert a gate."""
         gate_id = str(uuid4())
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(test_db) as conn:
             _create_test_run(conn, run_id)
@@ -485,7 +485,7 @@ class TestGatesTable:
 
     def test_query_gates_by_run(self, test_db):
         """Should be able to query all gates for a run."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(test_db) as conn:
             _create_test_run(conn, run_id)

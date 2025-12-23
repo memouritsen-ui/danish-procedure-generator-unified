@@ -65,7 +65,7 @@ class TestGetGates:
     def test_get_gates_empty(self, test_client):
         """Should return empty list when run has no gates."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -77,7 +77,7 @@ class TestGetGates:
     def test_get_gates_returns_all_gates_for_run(self, test_client):
         """Should return all gates for the specified run."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -124,7 +124,7 @@ class TestGetGates:
     def test_get_gates_run_not_found(self, test_client):
         """Should return 404 when run does not exist."""
         client, _, _ = test_client
-        fake_run_id = str(uuid4())
+        fake_run_id = uuid4().hex
 
         response = client.get(f"/api/runs/{fake_run_id}/gates")
         assert response.status_code == 404
@@ -133,7 +133,7 @@ class TestGetGates:
     def test_get_gates_different_statuses(self, test_client):
         """Should return gates with different statuses."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -175,8 +175,8 @@ class TestGetGates:
     def test_get_gates_does_not_return_other_runs_gates(self, test_client):
         """Should only return gates for the specified run, not others."""
         client, db_path, runs_dir = test_client
-        run_id_1 = str(uuid4())
-        run_id_2 = str(uuid4())
+        run_id_1 = uuid4().hex
+        run_id_2 = uuid4().hex
 
         with _connect(db_path) as conn:
             # Create two runs
@@ -238,7 +238,7 @@ class TestGetGates:
     def test_get_gates_filter_by_status(self, test_client):
         """Should filter gates by status when status query param is provided."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -284,7 +284,7 @@ class TestGetGates:
     def test_get_gates_invalid_status_filter(self, test_client):
         """Should return 400 for invalid status filter."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -296,7 +296,7 @@ class TestGetGates:
     def test_get_gates_with_issues_counts(self, test_client):
         """Should correctly return gates with issue counts."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -331,7 +331,7 @@ class TestGetGates:
     def test_get_gates_by_type(self, test_client):
         """Should filter gates by type when type query param is provided."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -372,7 +372,7 @@ class TestGetGates:
     def test_get_gates_invalid_type_filter(self, test_client):
         """Should return 400 for invalid type filter."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)

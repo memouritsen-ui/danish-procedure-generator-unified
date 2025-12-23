@@ -65,7 +65,7 @@ class TestGetIssues:
     def test_get_issues_empty(self, test_client):
         """Should return empty list when run has no issues."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -77,7 +77,7 @@ class TestGetIssues:
     def test_get_issues_returns_all_issues_for_run(self, test_client):
         """Should return all issues for the specified run."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -123,7 +123,7 @@ class TestGetIssues:
     def test_get_issues_run_not_found(self, test_client):
         """Should return 404 when run does not exist."""
         client, _, _ = test_client
-        fake_run_id = str(uuid4())
+        fake_run_id = uuid4().hex
 
         response = client.get(f"/api/runs/{fake_run_id}/issues")
         assert response.status_code == 404
@@ -132,7 +132,7 @@ class TestGetIssues:
     def test_get_issues_different_severities(self, test_client):
         """Should return issues of different severities."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -174,8 +174,8 @@ class TestGetIssues:
     def test_get_issues_does_not_return_other_runs_issues(self, test_client):
         """Should only return issues for the specified run, not others."""
         client, db_path, runs_dir = test_client
-        run_id_1 = str(uuid4())
-        run_id_2 = str(uuid4())
+        run_id_1 = uuid4().hex
+        run_id_2 = uuid4().hex
 
         with _connect(db_path) as conn:
             # Create two runs
@@ -237,7 +237,7 @@ class TestGetIssues:
     def test_get_issues_filter_by_severity(self, test_client):
         """Should filter issues by severity when severity query param is provided."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -283,7 +283,7 @@ class TestGetIssues:
     def test_get_issues_invalid_severity_filter(self, test_client):
         """Should return 400 for invalid severity filter."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -295,7 +295,7 @@ class TestGetIssues:
     def test_get_issues_with_claim_id(self, test_client):
         """Should correctly return issues with associated claim IDs."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         claim_id = uuid4()
 
         with _connect(db_path) as conn:
@@ -345,7 +345,7 @@ class TestGetIssues:
     def test_get_issues_resolved_status(self, test_client):
         """Should correctly return resolved status and resolution details."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)

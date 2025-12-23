@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 import anyio
 from anthropic import AsyncAnthropic
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path as FastAPIPath
 from fastapi.responses import FileResponse, StreamingResponse
 
 logger = logging.getLogger(__name__)
@@ -211,7 +211,9 @@ def api_runs() -> list[RunSummary]:
 
 
 @router.get("/{run_id}", response_model=RunDetail)
-def api_run(run_id: str) -> RunDetail:
+def api_run(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> RunDetail:
     """Get details for a specific run."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -268,7 +270,10 @@ def api_run(run_id: str) -> RunDetail:
 
 
 @router.post("/{run_id}/ack", response_model=RunDetail)
-def api_ack_run(run_id: str, req: RunAckRequest) -> RunDetail:
+def api_ack_run(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+    req: RunAckRequest = ...,
+) -> RunDetail:
     """Acknowledge evidence gaps and re-queue the run."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -280,7 +285,9 @@ def api_ack_run(run_id: str, req: RunAckRequest) -> RunDetail:
 
 
 @router.get("/{run_id}/docx")
-def api_docx(run_id: str) -> FileResponse:
+def api_docx(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> FileResponse:
     """Download the main procedure document as DOCX."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -302,7 +309,9 @@ def api_docx(run_id: str) -> FileResponse:
 
 
 @router.get("/{run_id}/docx/meta-analysis")
-def api_meta_analysis_docx(run_id: str) -> FileResponse:
+def api_meta_analysis_docx(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> FileResponse:
     """Download the meta-analysis report document."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -324,7 +333,9 @@ def api_meta_analysis_docx(run_id: str) -> FileResponse:
 
 
 @router.get("/{run_id}/docx/source-analysis")
-def api_source_analysis_docx(run_id: str) -> FileResponse:
+def api_source_analysis_docx(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> FileResponse:
     """Download the source analysis documentation."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -345,7 +356,9 @@ def api_source_analysis_docx(run_id: str) -> FileResponse:
 
 
 @router.get("/{run_id}/docx/evidence-review")
-def api_evidence_review_docx(run_id: str) -> FileResponse:
+def api_evidence_review_docx(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> FileResponse:
     """Download the evidence review documentation."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -366,7 +379,9 @@ def api_evidence_review_docx(run_id: str) -> FileResponse:
 
 
 @router.get("/{run_id}/manifest")
-def api_manifest(run_id: str) -> dict[str, Any]:
+def api_manifest(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> dict[str, Any]:
     """Get the run manifest with metadata and execution details."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -379,7 +394,9 @@ def api_manifest(run_id: str) -> dict[str, Any]:
 
 
 @router.get("/{run_id}/evidence")
-def api_evidence(run_id: str) -> dict[str, Any]:
+def api_evidence(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> dict[str, Any]:
     """Get the evidence report for a run."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -390,7 +407,9 @@ def api_evidence(run_id: str) -> dict[str, Any]:
 
 
 @router.get("/{run_id}/evidence-notes")
-def api_evidence_notes(run_id: str) -> dict[str, Any]:
+def api_evidence_notes(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> dict[str, Any]:
     """Get LLM-generated clinical notes from evidence chunks.
 
     Returns structured summaries of evidence used in the procedure.
@@ -411,7 +430,9 @@ def api_evidence_notes(run_id: str) -> dict[str, Any]:
 
 
 @router.post("/{run_id}/verify-evidence")
-async def api_verify_evidence(run_id: str) -> dict[str, Any]:
+async def api_verify_evidence(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> dict[str, Any]:
     """
     Verify citations in a run's procedure using LLM.
 
@@ -493,7 +514,9 @@ async def api_verify_evidence(run_id: str) -> dict[str, Any]:
 
 
 @router.get("/{run_id}/verify-evidence")
-def api_get_evidence_verification(run_id: str) -> dict[str, Any]:
+def api_get_evidence_verification(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> dict[str, Any]:
     """
     Get cached evidence verification results for a run.
 
@@ -517,7 +540,9 @@ def api_get_evidence_verification(run_id: str) -> dict[str, Any]:
 
 
 @router.get("/{run_id}/bundle")
-def api_bundle(run_id: str) -> FileResponse:
+def api_bundle(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> FileResponse:
     """Download a complete bundle of all run artifacts as a ZIP file."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -531,7 +556,9 @@ def api_bundle(run_id: str) -> FileResponse:
 
 
 @router.get("/{run_id}/sources", response_model=SourcesResponse)
-def api_sources(run_id: str) -> SourcesResponse:
+def api_sources(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> SourcesResponse:
     """Get all sources used in a run."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -544,7 +571,9 @@ def api_sources(run_id: str) -> SourcesResponse:
 
 
 @router.get("/{run_id}/sources/scores")
-def api_source_scores(run_id: str) -> dict[str, Any]:
+def api_source_scores(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> dict[str, Any]:
     """
     Get composite trust scores for all sources in a run.
 
@@ -580,7 +609,9 @@ def api_source_scores(run_id: str) -> dict[str, Any]:
 
 
 @router.get("/{run_id}/events")
-async def api_events(run_id: str) -> StreamingResponse:
+async def api_events(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> StreamingResponse:
     """
     Server-Sent Events stream for pipeline progress.
 
@@ -642,7 +673,10 @@ async def api_events(run_id: str) -> StreamingResponse:
 
 
 @router.get("/{run_id}/sources/{source_id}/normalized")
-def api_source_normalized(run_id: str, source_id: str) -> FileResponse:
+def api_source_normalized(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+    source_id: str = FastAPIPath(..., description="Source ID"),
+) -> FileResponse:
     """Download normalized text content for a specific source."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -661,7 +695,10 @@ def api_source_normalized(run_id: str, source_id: str) -> FileResponse:
 
 
 @router.get("/{run_id}/sources/{source_id}/raw")
-def api_source_raw(run_id: str, source_id: str) -> FileResponse:
+def api_source_raw(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+    source_id: str = FastAPIPath(..., description="Source ID"),
+) -> FileResponse:
     """Download raw original file for a specific source."""
     run = get_run(settings.db_path, run_id)
     if run is None:
@@ -680,7 +717,11 @@ def api_source_raw(run_id: str, source_id: str) -> FileResponse:
 
 
 @router.post("/{run_id}/validate")
-async def api_validate_run(run_id: str, protocol_id: str | None = None, use_llm: bool = True) -> dict[str, Any]:
+async def api_validate_run(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+    protocol_id: str | None = None,
+    use_llm: bool = True,
+) -> dict[str, Any]:
     """
     Validate a run against protocols using LLM semantic comparison.
 
@@ -786,7 +827,9 @@ async def api_validate_run(run_id: str, protocol_id: str | None = None, use_llm:
 
 
 @router.get("/{run_id}/validations")
-def api_get_validations(run_id: str) -> dict[str, Any]:
+def api_get_validations(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> dict[str, Any]:
     """Get validation results for a run."""
     run = get_run(settings.db_path, run_id)
     if not run:
@@ -797,7 +840,9 @@ def api_get_validations(run_id: str) -> dict[str, Any]:
 
 
 @router.get("/{run_id}/version-chain")
-def api_version_chain(run_id: str) -> dict[str, Any]:
+def api_version_chain(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> dict[str, Any]:
     """Get the complete version chain for a run."""
     chain = get_version_chain(settings.db_path, run_id)
     if not chain:
@@ -820,7 +865,10 @@ def api_version_chain(run_id: str) -> dict[str, Any]:
 
 
 @router.get("/{run_id}/diff/{other_run_id}")
-def api_diff_runs(run_id: str, other_run_id: str) -> dict[str, Any]:
+def api_diff_runs(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+    other_run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+) -> dict[str, Any]:
     """Generate a diff between two runs.
 
     Compares `other_run_id` (older) to `run_id` (newer).
@@ -866,7 +914,10 @@ def api_diff_runs(run_id: str, other_run_id: str) -> dict[str, Any]:
 
 
 @router.get("/{run_id}/claims", response_model=list[Claim])
-def api_get_claims(run_id: str, type: str | None = None) -> list[Claim]:
+def api_get_claims(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+    type: str | None = None,
+) -> list[Claim]:
     """Get all claims for a specific run.
 
     Args:
@@ -924,7 +975,10 @@ def api_get_claims(run_id: str, type: str | None = None) -> list[Claim]:
 
 
 @router.get("/{run_id}/issues", response_model=list[Issue])
-def api_get_issues(run_id: str, severity: str | None = None) -> list[Issue]:
+def api_get_issues(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+    severity: str | None = None,
+) -> list[Issue]:
     """Get all issues for a specific run.
 
     Args:
@@ -983,7 +1037,9 @@ def api_get_issues(run_id: str, severity: str | None = None) -> list[Issue]:
 
 @router.get("/{run_id}/gates", response_model=list[Gate])
 def api_get_gates(
-    run_id: str, status: str | None = None, type: str | None = None
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+    status: str | None = None,
+    type: str | None = None,
 ) -> list[Gate]:
     """Get all gates for a specific run.
 
@@ -1048,7 +1104,10 @@ def api_get_gates(
 
 
 @router.get("/{run_id}/chunks", response_model=list[EvidenceChunk])
-def api_get_chunks(run_id: str, source_id: str | None = None) -> list[EvidenceChunk]:
+def api_get_chunks(
+    run_id: str = FastAPIPath(..., pattern=r"^[a-f0-9]{32}$", description="32-char hex ID"),
+    source_id: str | None = None,
+) -> list[EvidenceChunk]:
     """Get all evidence chunks for a specific run.
 
     Args:

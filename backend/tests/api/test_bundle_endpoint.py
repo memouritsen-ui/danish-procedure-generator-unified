@@ -66,7 +66,7 @@ class TestGetBundle:
     def test_get_bundle_returns_zip_file(self, test_client):
         """Should return a valid ZIP file for a run."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -88,7 +88,7 @@ class TestGetBundle:
     def test_get_bundle_run_not_found(self, test_client):
         """Should return 404 when run does not exist."""
         client, _, _ = test_client
-        fake_run_id = str(uuid4())
+        fake_run_id = uuid4().hex
 
         response = client.get(f"/api/runs/{fake_run_id}/bundle")
         assert response.status_code == 404
@@ -97,7 +97,7 @@ class TestGetBundle:
     def test_get_bundle_run_dir_not_found(self, test_client):
         """Should return 404 when run_dir does not exist."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         # Create run in DB but don't create the run_dir on disk
         with _connect(db_path) as conn:
@@ -117,7 +117,7 @@ class TestGetBundle:
     def test_get_bundle_has_correct_filename(self, test_client):
         """Should set correct filename in Content-Disposition header."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -134,7 +134,7 @@ class TestGetBundle:
     def test_get_bundle_includes_all_files(self, test_client):
         """Should include all files from the run directory."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -158,7 +158,7 @@ class TestGetBundle:
     def test_get_bundle_includes_subdirectory_files(self, test_client):
         """Should include files from subdirectories."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -181,7 +181,7 @@ class TestGetBundle:
     def test_get_bundle_empty_run_dir(self, test_client):
         """Should return valid but empty ZIP for empty run directory."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
@@ -197,7 +197,7 @@ class TestGetBundle:
     def test_get_bundle_does_not_include_itself(self, test_client):
         """Should not include the bundle ZIP file itself in the bundle."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -216,7 +216,7 @@ class TestGetBundle:
     def test_get_bundle_preserves_file_content(self, test_client):
         """Should preserve exact file content in the bundle."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)
@@ -235,7 +235,7 @@ class TestGetBundle:
     def test_get_bundle_multiple_calls_return_fresh_bundle(self, test_client):
         """Should generate fresh bundle on each call."""
         client, db_path, runs_dir = test_client
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         with _connect(db_path) as conn:
             run_dir = _create_run(conn, run_id, runs_dir)

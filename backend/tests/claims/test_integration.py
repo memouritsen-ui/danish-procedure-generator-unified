@@ -86,7 +86,7 @@ class TestExtractAndBindWorkflow:
 
     def test_extract_claims_from_procedure(self) -> None:
         """ClaimExtractor extracts claims from procedure text."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(SAMPLE_PROCEDURE_TEXT)
 
@@ -100,7 +100,7 @@ class TestExtractAndBindWorkflow:
 
     def test_bind_extracted_claims(self) -> None:
         """Extracted claims can be bound to evidence chunks."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         # Step 1: Extract claims
         extractor = ClaimExtractor(run_id=run_id)
@@ -120,7 +120,7 @@ class TestExtractAndBindWorkflow:
 
     def test_dose_claims_bind_to_dosing_evidence(self) -> None:
         """DOSE claims bind to evidence about dosing."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(SAMPLE_PROCEDURE_TEXT)
 
@@ -146,7 +146,7 @@ class TestExtractAndBindWorkflow:
 
     def test_threshold_claims_bind_to_threshold_evidence(self) -> None:
         """THRESHOLD claims bind to evidence about thresholds."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(SAMPLE_PROCEDURE_TEXT)
 
@@ -163,7 +163,7 @@ class TestExtractAndBindWorkflow:
 
     def test_source_ref_matching(self) -> None:
         """Claims with source refs prefer evidence from those sources."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(SAMPLE_PROCEDURE_TEXT)
 
@@ -193,7 +193,7 @@ class TestExtractAndBindWorkflow:
 
     def test_binding_result_statistics(self) -> None:
         """Binding result includes useful statistics."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(SAMPLE_PROCEDURE_TEXT)
         chunks = make_chunks(run_id)
@@ -215,7 +215,7 @@ class TestExtractAndBindWorkflow:
 
     def test_unbound_claims_tracked(self) -> None:
         """Claims that don't bind are tracked separately."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(SAMPLE_PROCEDURE_TEXT)
 
@@ -233,7 +233,7 @@ class TestExtractAndBindWorkflow:
 
     def test_multiple_extraction_runs(self) -> None:
         """Multiple extraction runs produce consistent results."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
 
         claims1 = extractor.extract(SAMPLE_PROCEDURE_TEXT)
@@ -254,7 +254,7 @@ class TestRealWorldScenarios:
 
     def test_pneumonia_full_workflow(self) -> None:
         """Full workflow for pneumonia procedure."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(SAMPLE_PROCEDURE_TEXT)
         chunks = make_chunks(run_id)
@@ -288,7 +288,7 @@ class TestRealWorldScenarios:
         - meropenem 1 g x 3 i.v. ved penicillinallergi [SRC011]
         """
 
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(sepsis_text)
 
@@ -316,7 +316,7 @@ class TestRealWorldScenarios:
         Penicillin må ikke gives ved kendt penicillinallergi.
         """
 
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(anaphylaxis_text)
 
@@ -329,7 +329,7 @@ class TestRealWorldScenarios:
 
     def test_empty_procedure(self) -> None:
         """Empty procedure produces no claims."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract("")
 
@@ -343,7 +343,7 @@ class TestRealWorldScenarios:
         ## Section 2
         """
 
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(headers_only)
 
@@ -356,7 +356,7 @@ class TestEdgeCases:
 
     def test_no_matching_evidence(self) -> None:
         """All claims unbound when no evidence matches."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(SAMPLE_PROCEDURE_TEXT)
 
@@ -378,7 +378,7 @@ class TestEdgeCases:
 
     def test_high_threshold_fewer_bindings(self) -> None:
         """Higher binding threshold produces fewer bindings."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
         extractor = ClaimExtractor(run_id=run_id)
         claims = extractor.extract(SAMPLE_PROCEDURE_TEXT)
         chunks = make_chunks(run_id)
@@ -396,7 +396,7 @@ class TestEdgeCases:
 
     def test_single_claim_single_chunk(self) -> None:
         """Minimal case: one claim, one chunk."""
-        run_id = str(uuid4())
+        run_id = uuid4().hex
 
         claim = Claim(
             run_id=run_id,
