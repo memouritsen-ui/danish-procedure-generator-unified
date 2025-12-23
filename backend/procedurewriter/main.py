@@ -11,11 +11,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from procedurewriter import config_store
 from procedurewriter.db import (
@@ -87,6 +91,28 @@ from procedurewriter.worker import run_worker
 
 logger = logging.getLogger(__name__)
 
+# R5-001: Rate limiting setup
+limiter = Limiter(key_func=get_remote_address)
+
+# R5-002: Request timeout (seconds)
+REQUEST_TIMEOUT_SECONDS = 300  # 5 minutes for LLM operations
+
+
+class TimeoutMiddleware(BaseHTTPMiddleware):
+    """R5-002: Middleware to enforce request timeout."""
+
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await asyncio.wait_for(
+                call_next(request),
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            return JSONResponse(
+                status_code=504,
+                content={"detail": f"Request timed out after {REQUEST_TIMEOUT_SECONDS} seconds"}
+            )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -146,6 +172,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Akut procedure writer", version="0.1.0", lifespan=lifespan)
 
+# R5-001: Attach rate limiter to app state
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """R5-001: Handle rate limit exceeded errors."""
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Try again later."}
+    )
+
+
 _OPENAI_SECRET_NAME = "openai_api_key"
 _ANTHROPIC_SECRET_NAME = "anthropic_api_key"
 _NCBI_SECRET_NAME = "ncbi_api_key"
@@ -165,6 +204,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# R5-002: Add timeout middleware
+app.add_middleware(TimeoutMiddleware)
 
 # Include routers
 from procedurewriter.api.meta_analysis import router as meta_analysis_router
@@ -188,19 +230,39 @@ app.include_router(templates_router.router)
 
 
 @app.get("/health")
-def health_check() -> dict:
-    """Simple health check endpoint for load balancers and monitoring.
+@limiter.limit("60/minute")
+def health_check(request: Request) -> dict:
+    """Health check endpoint for load balancers and monitoring.
 
-    Returns 200 if the service is running. For detailed status, use /api/status.
+    R5-013: Includes DB connectivity check. Returns 200 if healthy, 503 if degraded.
+    For detailed status, use /api/status.
     """
-    return {"status": "healthy"}
+    from procedurewriter.db import _connect
+
+    db_ok = False
+    try:
+        with _connect(settings.db_path) as conn:
+            conn.execute("SELECT 1").fetchone()
+            db_ok = True
+    except Exception:
+        pass
+
+    if not db_ok:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "db": "unavailable"}
+        )
+
+    return {"status": "healthy", "db": "ok"}
 
 
 # Startup/shutdown now handled by lifespan context manager (R5-014, R5-015)
 
 
 @app.get("/api/status", response_model=AppStatus)
-def api_status() -> AppStatus:
+@limiter.limit("60/minute")
+def api_status(request: Request) -> AppStatus:
     key_db = get_secret(settings.db_path, name=_OPENAI_SECRET_NAME)
     key_env = os.getenv("OPENAI_API_KEY")
     if key_db:
@@ -251,7 +313,8 @@ def api_status() -> AppStatus:
 
 
 @app.post("/api/write", response_model=WriteResponse)
-async def api_write(req: WriteRequest) -> WriteResponse:
+@limiter.limit("5/minute")
+async def api_write(request: Request, req: WriteRequest) -> WriteResponse:
     run_id = uuid.uuid4().hex
     run_dir = settings.runs_dir / run_id
     create_run(
@@ -292,7 +355,8 @@ def api_costs() -> CostSummaryResponse:
         avg_cost_per_run=round(avg_cost, 6) if avg_cost is not None else None,
     )
 @app.post("/api/ingest/pdf", response_model=IngestResponse)
-async def api_ingest_pdf(file: UploadFile) -> IngestResponse:
+@limiter.limit("5/minute")
+async def api_ingest_pdf(request: Request, file: UploadFile) -> IngestResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
 
@@ -344,7 +408,8 @@ async def api_ingest_pdf(file: UploadFile) -> IngestResponse:
 
 
 @app.post("/api/ingest/docx", response_model=IngestResponse)
-async def api_ingest_docx(file: UploadFile) -> IngestResponse:
+@limiter.limit("5/minute")
+async def api_ingest_docx(request: Request, file: UploadFile) -> IngestResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
 
@@ -406,7 +471,8 @@ def _fetch_url_sync(url: str, cache_dir: Path) -> Any:
 
 
 @app.post("/api/ingest/url", response_model=IngestResponse)
-async def api_ingest_url(req: IngestUrlRequest) -> IngestResponse:
+@limiter.limit("5/minute")
+async def api_ingest_url(request: Request, req: IngestUrlRequest) -> IngestResponse:
     allowlist = config_store.load_yaml(settings.allowlist_path)
     prefixes = allowlist.get("allowed_url_prefixes", []) if isinstance(allowlist, dict) else []
     if not any(req.url.startswith(str(p)) for p in prefixes):
@@ -558,7 +624,9 @@ def api_get_protocol(protocol_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/protocols/upload")
+@limiter.limit("5/minute")
 async def api_upload_protocol(
+    request: Request,
     file: UploadFile,
     name: str = Form(...),
     description: str = Form(None),
@@ -624,14 +692,17 @@ def api_update_protocol(protocol_id: str, request: UpdateProtocolRequest) -> dic
     return {"status": "updated"}
 
 
-@app.delete("/api/protocols/{protocol_id}")
-def api_delete_protocol(protocol_id: str) -> dict[str, Any]:
-    """Delete a protocol."""
+@app.delete("/api/protocols/{protocol_id}", status_code=204)
+def api_delete_protocol(protocol_id: str) -> None:
+    """Delete a protocol.
+
+    R5-007: Returns 204 No Content on success per REST conventions.
+    """
     success = delete_protocol(settings.db_path, protocol_id)
     if not success:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    return {"status": "deleted"}
+    return None
 @app.get("/api/procedures")
 def api_list_procedures() -> dict[str, Any]:
     """List all unique procedures with completed runs."""

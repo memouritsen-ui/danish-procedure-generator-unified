@@ -242,14 +242,16 @@ class LibrarySearchProvider:
     ) -> list[LibrarySearchResult]:
         """Fallback LIKE-based search when FTS5 query fails."""
         with self._connect() as conn:
+            # R5-006: Escape SQL wildcards to prevent injection
+            escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             sql = """
                 SELECT
                     doc_id, source_id, source_name, title, url,
                     local_path, publish_year, category, content_type
                 FROM documents
-                WHERE title LIKE ?
+                WHERE title LIKE ? ESCAPE '\\'
             """
-            params: list[Any] = [f"%{query}%"]
+            params: list[Any] = [f"%{escaped_query}%"]
 
             if source_filter:
                 placeholders = ",".join("?" * len(source_filter))

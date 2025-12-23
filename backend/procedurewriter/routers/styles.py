@@ -1,5 +1,6 @@
 """Style profile management router."""
 
+import html
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -18,6 +19,16 @@ from procedurewriter.models.style_profile import StyleProfile
 from procedurewriter.settings import settings
 
 router = APIRouter(prefix="/api/styles", tags=["styles"])
+
+
+def _escape_html(value: str | None) -> str | None:
+    """R5-012: Escape HTML entities in user-provided text to prevent stored XSS.
+
+    Escapes: < > & " '
+    """
+    if value is None:
+        return None
+    return html.escape(value)
 
 
 class CreateStyleRequest(BaseModel):
@@ -85,11 +96,21 @@ def api_get_style(style_id: str) -> dict[str, Any]:
 
 @router.post("")
 def api_create_style(request: CreateStyleRequest) -> dict[str, Any]:
-    """Create a new style profile."""
+    """Create a new style profile.
+
+    R5-012: User-provided text fields are HTML-escaped to prevent stored XSS.
+    """
+    # R5-012: Escape HTML entities in user-provided text fields
+    safe_name = _escape_html(request.name) or ""
+    safe_description = _escape_html(request.description)
+    safe_tone_description = _escape_html(request.tone_description) or ""
+    safe_target_audience = _escape_html(request.target_audience) or ""
+    safe_original_prompt = _escape_html(request.original_prompt)
+
     # Construct config dicts from flat fields
     tone_config = {
-        "tone_description": request.tone_description,
-        "target_audience": request.target_audience,
+        "tone_description": safe_tone_description,
+        "target_audience": safe_target_audience,
         "detail_level": request.detail_level,
     }
     structure_config = {
@@ -109,13 +130,13 @@ def api_create_style(request: CreateStyleRequest) -> dict[str, Any]:
 
     profile_id = create_style_profile(
         settings.db_path,
-        name=request.name,
-        description=request.description,
+        name=safe_name,
+        description=safe_description,
         tone_config=tone_config,
         structure_config=structure_config,
         formatting_config=formatting_config,
         visual_config=visual_config,
-        original_prompt=request.original_prompt,
+        original_prompt=safe_original_prompt,
     )
     profile = get_style_profile(settings.db_path, profile_id)
     return StyleProfile.from_db_dict(profile).to_db_dict()
@@ -123,7 +144,10 @@ def api_create_style(request: CreateStyleRequest) -> dict[str, Any]:
 
 @router.put("/{style_id}")
 def api_update_style(style_id: str, request: UpdateStyleRequest) -> dict[str, Any]:
-    """Update a style profile."""
+    """Update a style profile.
+
+    R5-012: User-provided text fields are HTML-escaped to prevent stored XSS.
+    """
     # Get existing profile
     existing = get_style_profile(settings.db_path, style_id)
     if existing is None:
@@ -132,20 +156,20 @@ def api_update_style(style_id: str, request: UpdateStyleRequest) -> dict[str, An
     # Build updates dict
     updates: dict[str, Any] = {}
 
-    # Direct fields
+    # R5-012: Direct fields with HTML escaping
     if request.name is not None:
-        updates["name"] = request.name
+        updates["name"] = _escape_html(request.name)
     if request.description is not None:
-        updates["description"] = request.description
+        updates["description"] = _escape_html(request.description)
     if request.original_prompt is not None:
-        updates["original_prompt"] = request.original_prompt
+        updates["original_prompt"] = _escape_html(request.original_prompt)
 
-    # Tone config updates
+    # R5-012: Tone config updates with HTML escaping
     tone_updates = {}
     if request.tone_description is not None:
-        tone_updates["tone_description"] = request.tone_description
+        tone_updates["tone_description"] = _escape_html(request.tone_description)
     if request.target_audience is not None:
-        tone_updates["target_audience"] = request.target_audience
+        tone_updates["target_audience"] = _escape_html(request.target_audience)
     if request.detail_level is not None:
         tone_updates["detail_level"] = request.detail_level
     if tone_updates:

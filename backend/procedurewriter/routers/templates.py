@@ -117,9 +117,12 @@ def api_create_template(request: CreateTemplateRequest) -> dict[str, Any]:
     return {"template_id": template_id}
 
 
-@router.put("/{template_id}")
+@router.patch("/{template_id}")
 def api_update_template(template_id: str, request: UpdateTemplateRequest) -> dict[str, Any]:
-    """Update a template."""
+    """Partially update a template.
+
+    R5-009: Uses PATCH for partial updates per REST conventions.
+    """
     config = None
     if request.config:
         config = TemplateConfig(
