@@ -1970,6 +1970,29 @@ class TestChunkStage:
 
 ---
 
+## R6 AUDIT FINDINGS (2024-12-23)
+
+**Audit performed by Claude Code. Mapping of REMEDIATION files to current codebase:**
+
+| R6 ID | REMEDIATION File | Current File(s) | Status |
+|-------|------------------|-----------------|--------|
+| R6-001 | `tests/stages/test_*.py` | 11 files exist, 147 tests | ✅ FIXED |
+| R6-002 | `test_agents.py` | `tests/test_agents.py` - 14 mock + 3 integration tests | ✅ FIXED |
+| R6-003 | `test_db.py` | Split to `test_db_*.py` - all use tmp_path | ✅ FIXED |
+| R6-004 | `test_pipeline.py` | `tests/test_pipeline.py` - has error path tests | ✅ FIXED |
+| R6-005 | `test_models.py` | Split to `tests/models/test_*.py` - has edge cases | ✅ FIXED |
+| R6-006 | `test_evidence.py` | `tests/test_evidence.py` - uses inline data, not factories | ❌ NOT FIXED |
+| R6-007 | `test_claims.py` | `tests/claims/` has Danish, `tests/models/test_claims.py` lacks it | ⚠️ PARTIAL |
+| R6-008 | `conftest.py` | `tests/conftest.py` - 10 lines, no shared fixtures | ❌ NOT FIXED |
+| R6-009 | Multiple | Some files have docstrings, some don't | ⚠️ PARTIAL |
+| R6-010 | Multiple | Magic numbers present (100, 1000 in mocks) | ❌ NOT FIXED |
+| R6-011 | Multiple | Most asserts lack error messages | ❌ NOT FIXED |
+| R6-012 | Multiple | Only 1/60+ files uses @pytest.mark.parametrize | ❌ NOT FIXED |
+
+**Summary**: 5 FIXED, 2 PARTIAL, 5 NOT FIXED (R6-002 fixed 2024-12-23)
+
+---
+
 # PHASE R6 COMPLETE
 
 **Commit**:

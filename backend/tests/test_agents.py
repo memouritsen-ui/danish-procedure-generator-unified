@@ -488,3 +488,153 @@ class TestAgentStats:
 
         agent.reset_stats()
         assert agent.get_stats().llm_calls == 0
+
+
+# R6-002: Integration tests with real LLM to catch bugs that mocking hides
+# Run with: pytest tests/test_agents.py -m integration --run-integration
+import os
+
+import pytest
+
+# Skip integration tests unless explicitly requested
+pytestmark_integration = pytest.mark.skipif(
+    not os.environ.get("RUN_INTEGRATION_TESTS"),
+    reason="Integration tests require RUN_INTEGRATION_TESTS=1 and valid API keys",
+)
+
+
+def _get_real_provider():
+    """Get a real LLM provider if API keys are available."""
+    from procedurewriter.llm.providers import get_llm_client
+
+    # Try to get a real provider - will raise if no API keys
+    try:
+        provider = get_llm_client()
+        if provider.is_available():
+            return provider
+    except Exception:
+        pass
+    return None
+
+
+@pytest.mark.integration
+class TestResearcherAgentIntegration:
+    """R6-002: Integration tests for ResearcherAgent with real LLM."""
+
+    @pytest.fixture
+    def real_provider(self):
+        """Get real LLM provider, skip if unavailable."""
+        provider = _get_real_provider()
+        if provider is None:
+            pytest.skip("No LLM provider available (missing API keys)")
+        return provider
+
+    def test_generate_search_terms_real_llm(self, real_provider):
+        """Test search term generation with real LLM - catches prompt/parsing bugs."""
+        agent = ResearcherAgent(real_provider)
+
+        result = agent.execute(
+            ResearcherInput(
+                procedure_title="Akut appendicitis behandling",
+                max_sources=3,
+            )
+        )
+
+        assert result.output.success, "Real LLM should return success"
+        assert len(result.output.search_terms_used) > 0, "Should generate search terms"
+        # Real LLM should return medically relevant terms
+        terms_text = " ".join(result.output.search_terms_used).lower()
+        assert any(
+            term in terms_text for term in ["appendic", "akut", "behandling", "kirurgi"]
+        ), f"Terms should be medically relevant: {result.output.search_terms_used}"
+
+
+@pytest.mark.integration
+class TestWriterAgentIntegration:
+    """R6-002: Integration tests for WriterAgent with real LLM."""
+
+    @pytest.fixture
+    def real_provider(self):
+        """Get real LLM provider, skip if unavailable."""
+        provider = _get_real_provider()
+        if provider is None:
+            pytest.skip("No LLM provider available (missing API keys)")
+        return provider
+
+    def test_generate_danish_content(self, real_provider):
+        """Test that real LLM generates proper Danish medical content."""
+        agent = WriterAgent(real_provider)
+
+        sources = [
+            SourceReference(
+                source_id="test_001",
+                title="Dansk Kirurgisk Selskab Guidelines",
+                relevance_score=0.95,
+            )
+        ]
+
+        result = agent.execute(
+            WriterInput(
+                procedure_title="Akut appendicitis",
+                sources=sources,
+            )
+        )
+
+        assert result.output.success, "Real LLM should return success"
+        content = result.output.content_markdown
+
+        # Verify Danish content quality
+        assert len(content) > 100, "Content should be substantial"
+        # Should contain Danish characters (æ, ø, å)
+        has_danish = any(c in content for c in "æøåÆØÅ")
+        assert has_danish, "Content should be in Danish with æ/ø/å characters"
+        # Should have proper section structure
+        assert "##" in content, "Content should have markdown sections"
+
+
+@pytest.mark.integration
+class TestQualityAgentIntegration:
+    """R6-002: Integration tests for QualityAgent with real LLM."""
+
+    @pytest.fixture
+    def real_provider(self):
+        """Get real LLM provider, skip if unavailable."""
+        provider = _get_real_provider()
+        if provider is None:
+            pytest.skip("No LLM provider available (missing API keys)")
+        return provider
+
+    def test_quality_scoring_real_content(self, real_provider):
+        """Test quality scoring with real LLM catches JSON parsing issues."""
+        agent = QualityAgent(real_provider)
+
+        # Provide realistic Danish medical content
+        content = """# Akut Appendicitis
+
+## Indikationer
+Patienter med klinisk mistanke om akut appendicitis [S:test_001].
+
+## Behandling
+Laparoskopisk appendektomi er førstevalg [S:test_001].
+"""
+
+        result = agent.execute(
+            QualityInput(
+                procedure_title="Akut Appendicitis",
+                content_markdown=content,
+                sources=[
+                    SourceReference(
+                        source_id="test_001",
+                        title="Guidelines",
+                        relevance_score=0.9,
+                    )
+                ],
+                citations_used=["test_001"],
+            )
+        )
+
+        assert result.output.success, "Real LLM should return valid JSON"
+        assert 1 <= result.output.overall_score <= 10, "Score should be 1-10"
+        assert isinstance(
+            result.output.passes_threshold, bool
+        ), "passes_threshold should be boolean"
