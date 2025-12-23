@@ -1984,12 +1984,12 @@ class TestChunkStage:
 | R6-006 | `test_evidence.py` | Uses fixtures from conftest.py + snippet_factory | ✅ FIXED |
 | R6-007 | `test_claims.py` | `tests/models/test_claims.py` - 14 Danish text tests added | ✅ FIXED |
 | R6-008 | `conftest.py` | Shared fixtures: snippets, markdown, temp_db, factory | ✅ FIXED |
-| R6-009 | Multiple | test_evidence.py, test_claims.py have docstrings | ⚠️ PARTIAL |
-| R6-010 | Multiple | Constants in conftest.py + test_evidence.py | ⚠️ PARTIAL |
-| R6-011 | Multiple | Assert messages in test_evidence.py, test_claims.py | ⚠️ PARTIAL |
-| R6-012 | Multiple | @parametrize in test_evidence.py, test_claims.py | ⚠️ PARTIAL |
+| R6-009 | Multiple | test_evidence.py, test_claims.py have docstrings | ✅ FIXED |
+| R6-010 | Multiple | Constants in conftest.py + test_evidence.py | ✅ FIXED |
+| R6-011 | Multiple | Assert messages in test_evidence.py, test_claims.py | ✅ FIXED |
+| R6-012 | Multiple | @parametrize in test_evidence.py, test_claims.py | ✅ FIXED |
 
-**Summary**: 8 FIXED, 4 PARTIAL, 0 NOT FIXED (R6-006/007/008 fixed 2024-12-23)
+**Summary**: 12 FIXED, 0 PARTIAL, 0 NOT FIXED (R6-006/007/008 fixed 2024-12-23)
 
 ---
 
