@@ -44,13 +44,13 @@ logger = logging.getLogger(__name__)
 
 # Evidence tier priorities (from evidence_hierarchy.yaml)
 EVIDENCE_TIERS = {
-    "danish_guideline": 1000,
-    "nordic_guideline": 900,
-    "european_guideline": 850,
-    "international_guideline": 800,  # NICE, WHO
-    "systematic_review": 700,  # Cochrane
-    "practice_guideline": 650,
-    "rct": 500,
+    "systematic_review": 1000,
+    "rct": 900,
+    "international_guideline": 700,
+    "nordic_guideline": 500,
+    "danish_guideline": 400,
+    "local_protocol": 200,
+    "practice_guideline": 600,
     "observational": 300,
     "case_report": 150,
     "unclassified": 100,
@@ -161,7 +161,14 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
         """Get or create PubMed client lazily."""
         if self._pubmed is None:
             from procedurewriter.pipeline.pubmed import PubMedClient
-            self._pubmed = PubMedClient(self._get_http_client())
+            from procedurewriter.settings import settings
+
+            self._pubmed = PubMedClient(
+                self._get_http_client(),
+                tool=settings.ncbi_tool,
+                email=settings.ncbi_email,
+                api_key=settings.ncbi_api_key,
+            )
         return self._pubmed
 
     def execute(self, input_data: ResearcherInput) -> AgentResult[ResearcherOutput]:
@@ -206,6 +213,7 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
             logger.info(f"NICE API: {len(nice_sources)} sources")
 
             # Tier 3: PubMed systematic reviews (priority 700)
+            level1_absent = True
             systematic_sources = self._search_pubmed_systematic(
                 search_terms,
                 max_results=input_data.max_sources // 3
@@ -213,6 +221,8 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
             for src in systematic_sources:
                 src.evidence_tier = "systematic_review"
             all_sources.extend(systematic_sources)
+            if systematic_sources:
+                level1_absent = False
             logger.info(f"PubMed systematic: {len(systematic_sources)} sources")
 
             # Tier 4: Cochrane reviews via SerpAPI (priority 700)
@@ -234,6 +244,8 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                     max_results=remaining
                 )
                 all_sources.extend(general_sources)
+                if general_sources:
+                    level1_absent = False
                 logger.info(f"PubMed general: {len(general_sources)} sources")
 
             # Step 3: Rank all sources by relevance
@@ -246,11 +258,16 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
             # Limit to max_sources
             all_sources = all_sources[:input_data.max_sources]
 
+            evidence_flags: list[str] = []
+            if level1_absent:
+                evidence_flags.append("[LEVEL_1_EVIDENCE_ABSENT]")
+
             output = ResearcherOutput(
                 success=True,
                 sources=all_sources,
                 search_terms_used=search_terms,
                 total_results_found=len(all_sources),
+                evidence_flags=evidence_flags,
             )
 
             logger.info(f"Research complete: {len(all_sources)} total sources")
@@ -445,24 +462,38 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
         sources: list[SourceReference] = []
 
         try:
-            # Add systematic review filter to search
             for term in search_terms[:2]:
-                query = f"{term} AND (systematic review[pt] OR meta-analysis[pt])"
-
-                pmids, _ = self._get_pubmed_client().search(query, retmax=max_results)
+                pmids, _ = self._get_pubmed_client().search(term, retmax=max_results)
 
                 if pmids:
-                    articles = self._get_pubmed_client().fetch(pmids)
+                    fetched_articles = self._get_pubmed_client().fetch(pmids)
 
-                    for article in articles:
+                    for fetched in fetched_articles:
+                        art = fetched.article
+                        source_type = self._classify_publication_type(art.publication_types)
+                        full_text_available = None
+                        try:
+                            from procedurewriter.pipeline.fetcher import fetch_pmc_full_text
+
+                            full_text_available = bool(
+                                fetch_pmc_full_text(
+                                    self._get_http_client(),
+                                    pmid=art.pmid,
+                                    pmc_id=art.pmc_id,
+                                    doi=art.doi,
+                                )
+                            )
+                        except Exception:
+                            full_text_available = None
                         source = SourceReference(
-                            source_id=f"PMID_{article.get('pmid', '')}",
-                            title=article.get("title", ""),
-                            url=f"https://pubmed.ncbi.nlm.nih.gov/{article.get('pmid', '')}/",
-                            year=article.get("year"),
-                            authors=article.get("authors", []),
-                            abstract=article.get("abstract", "")[:500],
-                            source_type="systematic_review",
+                            source_id=f"PMID_{art.pmid}",
+                            title=art.title or "",
+                            url=f"https://pubmed.ncbi.nlm.nih.gov/{art.pmid}/",
+                            year=art.year,
+                            abstract=(art.abstract or "")[:500],
+                            source_type=source_type,
+                            evidence_tier=source_type,
+                            full_text_available=full_text_available,
                             relevance_score=0.7,
                         )
 
@@ -539,21 +570,37 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                 pmids, _ = self._get_pubmed_client().search(term, retmax=max_results // 2)
 
                 if pmids:
-                    articles = self._get_pubmed_client().fetch(pmids)
+                    fetched_articles = self._get_pubmed_client().fetch(pmids)
 
-                    for article in articles:
+                    for fetched in fetched_articles:
+                        art = fetched.article
                         # Classify evidence tier based on publication type
-                        pub_types = article.get("publication_types", [])
+                        pub_types = art.publication_types
                         source_type = self._classify_publication_type(pub_types)
+                        full_text_available = None
+                        try:
+                            from procedurewriter.pipeline.fetcher import fetch_pmc_full_text
+
+                            full_text_available = bool(
+                                fetch_pmc_full_text(
+                                    self._get_http_client(),
+                                    pmid=art.pmid,
+                                    pmc_id=art.pmc_id,
+                                    doi=art.doi,
+                                )
+                            )
+                        except Exception:
+                            full_text_available = None
 
                         source = SourceReference(
-                            source_id=f"PMID_{article.get('pmid', '')}",
-                            title=article.get("title", ""),
-                            url=f"https://pubmed.ncbi.nlm.nih.gov/{article.get('pmid', '')}/",
-                            year=article.get("year"),
-                            authors=article.get("authors", []),
-                            abstract=article.get("abstract", "")[:500],
+                            source_id=f"PMID_{art.pmid}",
+                            title=art.title or "",
+                            url=f"https://pubmed.ncbi.nlm.nih.gov/{art.pmid}/",
+                            year=art.year,
+                            abstract=(art.abstract or "")[:500],
                             source_type=source_type,
+                            evidence_tier=source_type,
+                            full_text_available=full_text_available,
                             relevance_score=0.5,
                         )
 

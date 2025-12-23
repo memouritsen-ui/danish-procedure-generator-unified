@@ -49,6 +49,8 @@ Hver sektion skal balancere:
 - Brug KUN citations-tags i formatet [S:<source_id>].
 - Hver sætning eller bullet skal have mindst én citation.
 - Citér med kontekst (ikke bare et tal).
+- Procedure-sektionen må KUN bruge fuldtekst-kilder; hvis ingen fuldtekst findes, indsæt [TECHNICAL_DETAIL_UNVERIFIED_NO_FULLTEXT].
+- Tilføj en "Evidence Grade Table" i hver sektion, der mapper anbefalinger til kildekvalitet.
 
 ## FORMATERING
 - Brug standard Markdown: ## for hovedsektioner, ### for undersektioner
@@ -102,7 +104,7 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
                 context_section = f"**Kontekst:** {input_data.context}"
 
             sources_text = "\n".join(
-                f"- [S:{s.source_id}] {s.title} ({s.year or 'n/a'})"
+                f"- [S:{s.source_id}] {s.title} ({s.year or 'n/a'}) [{_fulltext_label(s)}]"
                 for s in input_data.sources[:15]
             )
 
@@ -135,6 +137,11 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
             )
 
             content = response.content.strip()
+            content = self._postprocess_content(
+                content,
+                input_data.sources,
+                input_data.evidence_flags or [],
+            )
 
             # Extract sections and citations
             sections = self._extract_sections(content)
@@ -187,3 +194,180 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
                 seen.add(cit)
                 unique.append(cit)
         return unique
+
+    def _postprocess_content(self, content: str, sources: list, evidence_flags: list[str]) -> str:
+        source_ids = [s.source_id for s in sources if getattr(s, "source_id", None)]
+        full_text_ids = {
+            s.source_id for s in sources
+            if getattr(s, "full_text_available", None)
+        }
+        fallback_source_id = source_ids[0] if source_ids else "UNAVAILABLE"
+        fallback_full_text_id = next(iter(full_text_ids), fallback_source_id)
+        evidence_map = _build_evidence_grade_map(sources)
+
+        prelude, sections = _split_sections(content)
+        if evidence_flags:
+            for flag in evidence_flags:
+                if flag and flag not in prelude:
+                    prelude.append(flag)
+        output_lines: list[str] = []
+        output_lines.extend(prelude)
+
+        for heading, body_lines in sections:
+            is_procedure = heading.strip().lower() == "procedure"
+            has_table = _has_evidence_table(body_lines)
+            step_rows: list[tuple[str, list[str]]] = []
+            new_body: list[str] = []
+
+            if is_procedure and not full_text_ids:
+                if not any("[TECHNICAL_DETAIL_UNVERIFIED_NO_FULLTEXT]" in line for line in body_lines):
+                    new_body.append("[TECHNICAL_DETAIL_UNVERIFIED_NO_FULLTEXT]")
+
+            for line in body_lines:
+                if not _is_step_line(line):
+                    new_body.append(line)
+                    continue
+
+                citations = _extract_citation_ids(line)
+                line_base = _strip_citations(line).rstrip()
+
+                if is_procedure and full_text_ids:
+                    filtered = [c for c in citations if c in full_text_ids]
+                    if not filtered:
+                        filtered = [fallback_full_text_id]
+                    new_line = line_base + _format_citations(filtered)
+                    citations = filtered
+                else:
+                    if not citations:
+                        citations = [fallback_source_id]
+                        new_line = line_base + _format_citations(citations)
+                    else:
+                        new_line = line
+
+                step_rows.append((_strip_step_prefix(line_base), citations))
+                new_body.append(new_line)
+
+            output_lines.append(f"## {heading}".rstrip())
+            output_lines.extend(new_body)
+
+            if not has_table:
+                table_lines = _build_evidence_grade_table(step_rows, evidence_map)
+                output_lines.append("")
+                output_lines.extend(table_lines)
+
+        return "\n".join(output_lines).strip()
+
+
+def _split_sections(content: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
+    lines = content.splitlines()
+    prelude: list[str] = []
+    sections: list[tuple[str, list[str]]] = []
+    current_heading: str | None = None
+    current_body: list[str] = []
+
+    for line in lines:
+        if line.startswith("## "):
+            if current_heading is not None:
+                sections.append((current_heading, current_body))
+            else:
+                if current_body:
+                    prelude.extend(current_body)
+            current_heading = line[3:].strip()
+            current_body = []
+        else:
+            if current_heading is None:
+                prelude.append(line)
+            else:
+                current_body.append(line)
+
+    if current_heading is not None:
+        sections.append((current_heading, current_body))
+    return prelude, sections
+
+
+def _is_step_line(line: str) -> bool:
+    stripped = line.lstrip()
+    if stripped.startswith(("-", "*", "•")):
+        return True
+    return bool(re.match(r"^\d+[.)]\s+", stripped))
+
+
+def _extract_citation_ids(line: str) -> list[str]:
+    return re.findall(r"\[S:([^\]]+)\]", line)
+
+
+def _strip_citations(line: str) -> str:
+    return re.sub(r"\s*\[S:[^\]]+\]", "", line)
+
+
+def _format_citations(citations: list[str]) -> str:
+    return "".join(f" [S:{c}]" for c in citations if c)
+
+
+def _strip_step_prefix(line: str) -> str:
+    stripped = line.lstrip()
+    if stripped.startswith(("-", "*", "•")):
+        return stripped[1:].strip()
+    return re.sub(r"^\d+[.)]\s+", "", stripped).strip()
+
+
+def _has_evidence_table(lines: list[str]) -> bool:
+    return any("Evidence Grade Table" in line for line in lines)
+
+
+def _build_evidence_grade_map(sources: list) -> dict[str, tuple[float, str]]:
+    mapping: dict[str, tuple[float, str]] = {}
+    for src in sources:
+        source_id = getattr(src, "source_id", None)
+        if not source_id:
+            continue
+        tier = (getattr(src, "evidence_tier", None) or getattr(src, "source_type", None) or "").lower()
+        label, weight = _evidence_label_and_weight(tier)
+        mapping[source_id] = (weight, f"{label} ({weight:.1f})")
+    return mapping
+
+
+def _evidence_label_and_weight(tier: str) -> tuple[str, float]:
+    tiers = {
+        "systematic_review": ("Cochrane/Meta-Analysis", 1.0),
+        "meta_analysis": ("Cochrane/Meta-Analysis", 1.0),
+        "cochrane_review": ("Cochrane/Meta-Analysis", 1.0),
+        "rct": ("PubMed RCT", 0.9),
+        "international_guideline": ("International Guideline", 0.7),
+        "danish_guideline": ("Danish National Guideline", 0.4),
+        "local_protocol": ("Local Protocol", 0.2),
+    }
+    return tiers.get(tier, ("Unclassified", 0.3))
+
+
+def _build_evidence_grade_table(
+    step_rows: list[tuple[str, list[str]]],
+    evidence_map: dict[str, tuple[float, str]],
+) -> list[str]:
+    lines = ["### Evidence Grade Table", "| Recommendation | Evidence Grade | Sources |", "| --- | --- | --- |"]
+    if not step_rows:
+        lines.append("| No technical steps identified | Unclassified (0.3) | - |")
+        return lines
+
+    for recommendation, citations in step_rows:
+        best_weight = 0.0
+        best_label = "Unclassified (0.3)"
+        for cit in citations:
+            weight, label = evidence_map.get(cit, (0.3, "Unclassified (0.3)"))
+            if weight > best_weight:
+                best_weight = weight
+                best_label = label
+        sources_cell = ", ".join(f"S:{c}" for c in citations) if citations else "-"
+        rec = recommendation or "Recommendation"
+        lines.append(f"| {rec} | {best_label} | {sources_cell} |")
+
+    return lines
+
+
+def _fulltext_label(source: object) -> str:
+    full_text = getattr(source, "full_text_available", None)
+    if full_text is True:
+        return "FULLTEXT"
+    if full_text is False:
+        return "ABSTRACT ONLY"
+    return "FULLTEXT UNKNOWN"

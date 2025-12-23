@@ -34,6 +34,7 @@ class SourceReference(BaseModel):
     authors: list[str] = Field(default_factory=list)
     source_type: str | None = None  # Evidence type: danish_guideline, systematic_review, rct, etc.
     evidence_tier: str | None = None  # Evidence hierarchy tier
+    full_text_available: bool | None = None
 
 
 class ResearcherOutput(AgentOutput):
@@ -41,6 +42,7 @@ class ResearcherOutput(AgentOutput):
     sources: list[SourceReference] = Field(default_factory=list)
     search_terms_used: list[str] = Field(default_factory=list)
     total_results_found: int = 0
+    evidence_flags: list[str] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -78,6 +80,7 @@ class WriterInput(AgentInput):
     sources: list[SourceReference] = Field(description="Sources to cite")
     outline: list[str] | None = Field(default=None, description="Optional section outline")
     style_guide: str | None = Field(default=None, description="Writing style requirements")
+    evidence_flags: list[str] | None = Field(default=None, description="Evidence warning flags")
 
 
 class WriterOutput(AgentOutput):
@@ -86,6 +89,22 @@ class WriterOutput(AgentOutput):
     sections: list[str] = Field(default_factory=list, description="Section headings")
     citations_used: list[str] = Field(default_factory=list, description="Source IDs cited")
     word_count: int = 0
+
+
+# =============================================================================
+# Paradox Resolver Agent Models
+# =============================================================================
+
+class ParadoxResolverInput(AgentInput):
+    """Input for the Paradox Resolver agent."""
+    sources: list[SourceReference] = Field(description="Sources to compare")
+
+
+class ParadoxResolverOutput(AgentOutput):
+    """Output from the Paradox Resolver agent."""
+    conflicts_detected: bool = False
+    adaptation_note: str | None = None
+    compared_sources: list[str] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -156,6 +175,7 @@ class PipelineInput(BaseModel):
     outline: list[str] | None = Field(default=None, description="Section outline to enforce")
     style_guide: str | None = Field(default=None, description="Style guide text for writers/editors")
     evidence_summary: str | None = Field(default=None, description="Evidence synthesis to include in prompts")
+    evidence_flags: list[str] | None = Field(default=None, description="Evidence warning flags")
 
 
 class PipelineOutput(BaseModel):

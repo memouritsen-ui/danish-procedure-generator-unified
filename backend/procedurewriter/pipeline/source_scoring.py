@@ -448,13 +448,11 @@ def source_to_dict(source: Any) -> dict[str, Any]:
 
 # High-tier evidence levels that indicate authoritative sources
 HIGH_TIER_LEVELS = {
-    "danish_guideline",
-    "nordic_guideline",
-    "european_guideline",
-    "international_guideline",
     "systematic_review",
     "meta_analysis",
-    "practice_guideline",
+    "cochrane_review",
+    "rct",
+    "international_guideline",
 }
 
 

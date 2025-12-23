@@ -19,6 +19,7 @@ from procedurewriter.agents.base import AgentStats
 from procedurewriter.agents.editor import EditorAgent
 from procedurewriter.agents.models import (
     EditorInput,
+    ParadoxResolverInput,
     PipelineInput,
     PipelineOutput,
     QualityInput,
@@ -28,6 +29,7 @@ from procedurewriter.agents.models import (
     WriterInput,
 )
 from procedurewriter.agents.quality import QualityAgent
+from procedurewriter.agents.paradox_resolver import ParadoxResolverAgent
 from procedurewriter.agents.researcher import ResearcherAgent
 from procedurewriter.agents.validator import ValidatorAgent
 from procedurewriter.agents.writer import WriterAgent
@@ -105,6 +107,7 @@ class AgentOrchestrator:
 
         # Initialize agents
         self._researcher = ResearcherAgent(llm, model, pubmed_client)
+        self._paradox = ParadoxResolverAgent(llm, model)
         self._validator = ValidatorAgent(llm, model)
         self._writer = WriterAgent(llm, model)
         self._editor = EditorAgent(llm, model)
@@ -138,6 +141,7 @@ class AgentOrchestrator:
         logger.info(f"Starting pipeline for: {input_data.procedure_title}")
 
         try:
+            evidence_flags: list[str] = list(input_data.evidence_flags or [])
             # Step 1: Research (or use provided sources)
             if sources:
                 logger.info(f"Using {len(sources)} pre-fetched sources")
@@ -172,6 +176,9 @@ class AgentOrchestrator:
                     )
 
                 current_sources = research_result.output.sources
+                for flag in research_result.output.evidence_flags:
+                    if flag not in evidence_flags:
+                        evidence_flags.append(flag)
                 logger.info(f"Found {len(current_sources)} sources")
                 self._emit(EventType.SOURCES_FOUND, {
                     "count": len(current_sources),
@@ -183,6 +190,27 @@ class AgentOrchestrator:
             quality_score = 0
             stop_reason: str | None = None
             revision_suggestions: list[str] = []
+            adaptation_note: str | None = None
+
+            # Paradox resolution (international evidence vs Danish guidelines)
+            if current_sources:
+                self._emit(EventType.AGENT_START, {"agent": "ParadoxResolver"})
+                paradox_result = self._paradox.execute(
+                    ParadoxResolverInput(
+                        procedure_title=input_data.procedure_title,
+                        context=input_data.context,
+                        sources=current_sources,
+                    )
+                )
+                self._stats.add_agent_stats("ParadoxResolver", paradox_result.stats)
+                self._emit(EventType.AGENT_COMPLETE, {
+                    "agent": "ParadoxResolver",
+                    "success": paradox_result.output.success,
+                    "cost_usd": paradox_result.stats.cost_usd,
+                })
+
+                if paradox_result.output.success and paradox_result.output.adaptation_note:
+                    adaptation_note = paradox_result.output.adaptation_note
 
             for iteration in range(1, input_data.max_iterations + 1):
                 self._stats.iterations = iteration
@@ -210,6 +238,12 @@ class AgentOrchestrator:
                         + "\n\nRevision notes:\n- "
                         + "\n- ".join(revision_suggestions)
                     ).strip()
+                if adaptation_note:
+                    style_guide = (
+                        style_guide
+                        + "\n\nClinical Adaptation Note:\n"
+                        + adaptation_note
+                    ).strip()
 
                 writer_result = self._writer.execute(
                     WriterInput(
@@ -218,6 +252,7 @@ class AgentOrchestrator:
                         sources=current_sources,
                         outline=input_data.outline,
                         style_guide=style_guide or None,
+                        evidence_flags=evidence_flags or None,
                     )
                 )
                 self._stats.add_agent_stats(f"Writer_iter{iteration}", writer_result.stats)

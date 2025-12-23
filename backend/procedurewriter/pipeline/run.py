@@ -36,7 +36,7 @@ from procedurewriter.pipeline.evidence import (
     enforce_evidence_policy,
 )
 from procedurewriter.pipeline.evidence_hierarchy import EvidenceHierarchy
-from procedurewriter.pipeline.fetcher import CachedHttpClient
+from procedurewriter.pipeline.fetcher import CachedHttpClient, fetch_pmc_full_text
 from procedurewriter.pipeline.io import write_json, write_jsonl, write_text
 from procedurewriter.pipeline.library_search import LibrarySearchProvider
 from procedurewriter.pipeline.manifest import update_manifest_artifact, write_manifest
@@ -167,6 +167,9 @@ def source_record_to_reference(
         url=source.url,
         relevance_score=relevance_score,
         abstract_excerpt=abstract_excerpt,
+        source_type=source.kind,
+        evidence_tier=source.extra.get("evidence_level"),
+        full_text_available=source.extra.get("full_text_available"),
     )
 
 
@@ -308,6 +311,7 @@ def run_pipeline(
             extra["evidence_badge"] = evidence_level.badge
             extra["evidence_badge_color"] = evidence_level.badge_color
             extra["evidence_priority"] = evidence_level.priority
+            extra["full_text_available"] = True
 
             sources.append(
                 SourceRecord(
@@ -710,6 +714,7 @@ def run_pipeline(
                 outline=_author_guide_outline(author_guide) if isinstance(author_guide, dict) else None,
                 style_guide=_author_guide_style_text(author_guide) if isinstance(author_guide, dict) else None,
                 evidence_summary=evidence_summary_text,
+                evidence_flags=["[LEVEL_1_EVIDENCE_ABSENT]"] if "[LEVEL_1_EVIDENCE_ABSENT]" in warnings else None,
             )
 
             pipeline_result = orchestrator.run(
@@ -1631,6 +1636,7 @@ def _append_seed_url_sources(
                     "evidence_badge": seed_evidence_level.badge,
                     "evidence_badge_color": seed_evidence_level.badge_color,
                     "evidence_priority": seed_evidence_level.priority,
+                    "full_text_available": True,
                 },
             )
         )
@@ -1690,6 +1696,7 @@ def _append_international_sources(
         raw_bytes = resp.content
         raw_suffix = ".html"
         normalized_text = ""
+        used_abstract_fallback = False
 
         if raw_bytes[:4] == b"%PDF" or result.url.lower().endswith(".pdf"):
             raw_suffix = ".pdf"
@@ -1703,6 +1710,7 @@ def _append_international_sources(
         if not normalized_text:
             if result.abstract:
                 normalized_text = f"{result.title}\n\n{result.abstract}"
+                used_abstract_fallback = True
             else:
                 warnings.append(f"International source had no extractable text: {result.url}")
                 continue
@@ -1746,6 +1754,7 @@ def _append_international_sources(
                     "evidence_badge": evidence_level.badge,
                     "evidence_badge_color": evidence_level.badge_color,
                     "evidence_priority": evidence_level.priority,
+                    "full_text_available": not used_abstract_fallback,
                 },
             )
         )
@@ -2082,11 +2091,7 @@ def _expand_procedure_terms(
 def _build_pubmed_queries(*, expanded_terms: list[str]) -> list[str]:
     if not expanded_terms:
         return []
-    evidence_filter = '(guideline[pt] OR "practice guideline"[pt] OR systematic[sb] OR "systematic review"[pt] OR "meta-analysis"[pt])'
-    queries: list[str] = []
-    for t in expanded_terms:
-        queries.append(f"{t} {evidence_filter}")
-        queries.append(t)
+    queries = [t for t in expanded_terms if t and t.strip()]
 
     # Deduplicate queries while preserving order.
     q_seen: set[str] = set()
@@ -2303,6 +2308,7 @@ def _apply_wiley_tdm_fulltext(
                     "tdm_original_normalized_path": src.normalized_path,
                     "tdm_original_raw_sha256": src.raw_sha256,
                     "tdm_original_normalized_sha256": src.normalized_sha256,
+                    "full_text_available": True,
                 }
             )
 
@@ -2432,6 +2438,7 @@ def _apply_wiley_tdm_fulltext_client(
                     "tdm_original_normalized_path": src.normalized_path,
                     "tdm_original_raw_sha256": src.raw_sha256,
                     "tdm_original_normalized_sha256": src.normalized_sha256,
+                    "full_text_available": True,
                 }
             )
 
@@ -2586,6 +2593,7 @@ def _append_library_search_results(
                     "evidence_badge": library_evidence_level.badge,
                     "evidence_badge_color": library_evidence_level.badge_color,
                     "evidence_priority": library_evidence_level.priority,
+                    "full_text_available": True,
                 },
             )
         )
@@ -2641,6 +2649,7 @@ def _append_pubmed_search_results(
     seen_pmids: set[str] = set()
     pubmed_warnings: list[str] = []
     query_tokens = _tokenize_for_relevance(" ".join(expanded_terms))
+    found_level1 = False
 
     for q in queries:
         try:
@@ -2650,6 +2659,7 @@ def _append_pubmed_search_results(
             continue
         if not pmids:
             continue
+        found_level1 = True
         try:
             fetched_articles, fetch_resp = pubmed.fetch(pmids)
         except Exception as e:  # noqa: BLE001
@@ -2694,6 +2704,9 @@ def _append_pubmed_search_results(
             if _is_pubmed_review(c["fetched"].article.publication_types)
         )
 
+    if not found_level1 and "[LEVEL_1_EVIDENCE_ABSENT]" not in pubmed_warnings:
+        pubmed_warnings.append("[LEVEL_1_EVIDENCE_ABSENT]")
+
     candidates.sort(key=lambda c: (c["score"], c["relevance"], c["has_abstract"], c["year"]), reverse=True)
     selected = candidates[:12]
 
@@ -2707,11 +2720,36 @@ def _append_pubmed_search_results(
         source_id = make_source_id(source_n)
         source_n += 1
         normalized = normalize_pubmed(art.title, art.abstract, art.journal, art.year)
+        full_text_available = False
+        full_text_source = None
+        pmc_id = None
+        raw_bytes = fetched.raw_xml
+        raw_suffix = ".xml"
+        terms_note = "PubMed abstract/metadata. Tjek rettigheder for fuldtekst."
+        extraction_notes = f"PubMed via NCBI E-utilities. Search cache: {search_cache_path}"
+
+        try:
+            pmc_full_text = fetch_pmc_full_text(http, pmid=art.pmid, pmc_id=art.pmc_id, doi=art.doi)
+        except Exception as e:  # noqa: BLE001
+            pmc_full_text = None
+            pubmed_warnings.append(f"PMC full-text fetch failed for pmid={art.pmid}: {e}")
+
+        if pmc_full_text:
+            full_text_available = True
+            full_text_source = pmc_full_text.source
+            pmc_id = pmc_full_text.pmc_id
+            normalized = pmc_full_text.text
+            raw_bytes = pmc_full_text.raw_xml
+            raw_suffix = ".nxml"
+            terms_note = "PMC full-text (open access). Tjek rettigheder for anvendelse."
+            extraction_notes = (
+                f"PubMed metadata + PMC full-text. Search cache: {search_cache_path}"
+            )
         written = write_source_files(
             run_dir=run_dir,
             source_id=source_id,
-            raw_bytes=fetched.raw_xml,
-            raw_suffix=".xml",
+            raw_bytes=raw_bytes,
+            raw_suffix=raw_suffix,
             normalized_text=normalized,
         )
         # Classify evidence level for PubMed source
@@ -2732,8 +2770,8 @@ def _append_pubmed_search_results(
                 normalized_path=str(written.normalized_path),
                 raw_sha256=written.raw_sha256,
                 normalized_sha256=written.normalized_sha256,
-                extraction_notes=f"PubMed via NCBI E-utilities. Search cache: {search_cache_path}",
-                terms_licence_note="PubMed abstract/metadata. Tjek rettigheder for fuldtekst.",
+                extraction_notes=extraction_notes,
+                terms_licence_note=terms_note,
                 extra={
                     "search_query": q,
                     "publication_types": art.publication_types,
@@ -2741,6 +2779,9 @@ def _append_pubmed_search_results(
                     "evidence_badge": pubmed_evidence_level.badge,
                     "evidence_badge_color": pubmed_evidence_level.badge_color,
                     "evidence_priority": pubmed_evidence_level.priority,
+                    "full_text_available": full_text_available,
+                    "full_text_source": full_text_source,
+                    "pmc_id": pmc_id,
                 },
             )
         )

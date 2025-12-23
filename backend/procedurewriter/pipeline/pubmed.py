@@ -7,6 +7,7 @@ from xml.etree import ElementTree as ET
 from procedurewriter.pipeline.fetcher import CachedHttpClient, CachedResponse
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+LEVEL1_FILTER = '("Meta-Analysis"[ptyp] OR "Systematic Review"[ptyp] OR "Randomized Controlled Trial"[ptyp])'
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class PubMedArticle:
     journal: str | None
     year: int | None
     doi: str | None
+    pmc_id: str | None
     publication_types: list[str]
 
 
@@ -43,10 +45,11 @@ class PubMedClient:
 
     def search(self, query: str, *, retmax: int = 8) -> tuple[list[str], CachedResponse]:
         url = f"{EUTILS_BASE}/esearch.fcgi"
+        effective_query = _apply_level1_filter(query)
         params = {
             **self._common_params(),
             "db": "pubmed",
-            "term": query,
+            "term": effective_query,
             "retmode": "xml",
             "retmax": str(retmax),
         }
@@ -76,6 +79,10 @@ class PubMedClient:
             year_text = _findtext(article, ".//Article/Journal/JournalIssue/PubDate/Year")
             year = int(year_text) if year_text and year_text.isdigit() else None
             doi = _findtext(article, ".//ArticleIdList/ArticleId[@IdType='doi']")
+            pmc_id = (
+                _findtext(article, ".//ArticleIdList/ArticleId[@IdType='pmc']")
+                or _findtext(article, ".//ArticleIdList/ArticleId[@IdType='pmcid']")
+            )
             publication_types = _findall_texts(article, ".//Article/PublicationTypeList/PublicationType")
             raw_xml = ET.tostring(article, encoding="utf-8")
             articles.append(
@@ -87,6 +94,7 @@ class PubMedClient:
                         journal=journal,
                         year=year,
                         doi=doi,
+                        pmc_id=pmc_id,
                         publication_types=publication_types,
                     ),
                     raw_xml=raw_xml,
@@ -121,3 +129,18 @@ def _findall_texts(elem: ET.Element, path: str) -> list[str]:
         if n.text and n.text.strip():
             parts.append(n.text.strip())
     return parts
+
+
+def _apply_level1_filter(query: str) -> str:
+    if _has_level1_filter(query):
+        return query
+    return f"{query} AND {LEVEL1_FILTER}"
+
+
+def _has_level1_filter(query: str) -> bool:
+    lowered = query.lower()
+    return (
+        '"meta-analysis"[ptyp]' in lowered
+        or '"systematic review"[ptyp]' in lowered
+        or '"randomized controlled trial"[ptyp]' in lowered
+    )

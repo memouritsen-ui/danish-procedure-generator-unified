@@ -27,44 +27,52 @@ class EvidenceLevel:
 
 # Default evidence levels (used if config file is missing)
 _DEFAULT_LEVELS: dict[str, dict[str, Any]] = {
-    "danish_guideline": {
+    "systematic_review": {
         "priority": 1000,
-        "badge": "DK Guideline",
-        "badge_color": "#22c55e",
-        "description": "Dansk national retningslinje",
+        "badge": "Meta-Analysis",
+        "badge_color": "#f59e0b",
+        "description": "Meta-analyse eller systematisk review",
+        "pubmed_types": ["Systematic Review", "Meta-Analysis"],
     },
-    "nordic_guideline": {
+    "rct": {
         "priority": 900,
-        "badge": "Nordic",
-        "badge_color": "#3b82f6",
-        "description": "Nordisk retningslinje",
+        "badge": "RCT",
+        "badge_color": "#ec4899",
+        "description": "Randomiseret kontrolleret forsøg",
+        "pubmed_types": ["Randomized Controlled Trial"],
     },
     "international_guideline": {
-        "priority": 800,
+        "priority": 700,
         "badge": "Intl Guideline",
         "badge_color": "#06b6d4",
         "description": "International retningslinje",
     },
-    "systematic_review": {
-        "priority": 700,
-        "badge": "Syst Review",
-        "badge_color": "#f59e0b",
-        "description": "Systematisk review",
+    "nordic_guideline": {
+        "priority": 500,
+        "badge": "Nordic",
+        "badge_color": "#3b82f6",
+        "description": "Nordisk retningslinje",
+    },
+    "danish_guideline": {
+        "priority": 400,
+        "badge": "DK Guideline",
+        "badge_color": "#22c55e",
+        "description": "Dansk national retningslinje (kontekst)",
+    },
+    "local_protocol": {
+        "priority": 200,
+        "badge": "Local",
+        "badge_color": "#94a3b8",
+        "description": "Lokal protokol (logistik)",
     },
     "practice_guideline": {
-        "priority": 650,
+        "priority": 600,
         "badge": "Practice GL",
         "badge_color": "#84cc16",
         "description": "Practice guideline",
     },
-    "rct": {
-        "priority": 500,
-        "badge": "RCT",
-        "badge_color": "#ec4899",
-        "description": "Randomiseret kontrolleret forsøg",
-    },
     "unclassified": {
-        "priority": 100,  # Raised from 50 for more balanced scoring
+        "priority": 100,
         "badge": "Kilde",
         "badge_color": "#d1d5db",
         "description": "Uklassificeret kilde",

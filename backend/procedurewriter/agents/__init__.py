@@ -46,6 +46,8 @@ from procedurewriter.agents.models import (
     EditorInput,
     EditorOutput,
     EditSuggestion,
+    ParadoxResolverInput,
+    ParadoxResolverOutput,
     PipelineInput,
     PipelineOutput,
     QualityCriterion,
@@ -62,6 +64,7 @@ from procedurewriter.agents.models import (
 
 # Orchestrator
 from procedurewriter.agents.orchestrator import AgentOrchestrator, OrchestratorStats
+from procedurewriter.agents.paradox_resolver import ParadoxResolverAgent
 from procedurewriter.agents.quality import QualityAgent
 from procedurewriter.agents.researcher import ResearcherAgent
 from procedurewriter.agents.validator import ValidatorAgent
@@ -79,6 +82,8 @@ __all__ = [
     "EditSuggestion",
     "EditorInput",
     "EditorOutput",
+    "ParadoxResolverInput",
+    "ParadoxResolverOutput",
     "PipelineInput",
     "PipelineOutput",
     "QualityCriterion",
@@ -93,6 +98,7 @@ __all__ = [
     "WriterOutput",
     # Agents
     "EditorAgent",
+    "ParadoxResolverAgent",
     "QualityAgent",
     "ResearcherAgent",
     "ValidatorAgent",
