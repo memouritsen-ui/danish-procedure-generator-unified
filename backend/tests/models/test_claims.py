@@ -540,3 +540,223 @@ class TestClaimHelpers:
             confidence=0.8,
         )
         assert boundary.is_high_confidence is True
+
+
+# ============================================================================
+# R6-007: DANISH TEXT TESTS
+# ============================================================================
+
+class TestClaimDanishText:
+    """Tests for Danish medical procedure text handling.
+
+    R6-007: Comprehensive tests using real Danish medical text patterns.
+    Verifies proper handling of:
+    - Danish special characters (æ, ø, å, Æ, Ø, Å)
+    - Danish medical terminology
+    - Danish dosage formats
+    - Danish clinical warning patterns
+    """
+
+    # --- Named constants for Danish test data (R6-010) ---
+    DANISH_DOSE_TEXT = "benzyl-penicillin 100 mg/kg/døgn fordelt på 3 doser"
+    DANISH_WARNING_TEXT = "OBS: Høj risiko for anafylaksi ved penicillinallergi"
+    DANISH_CONTRAINDICATION_TEXT = "Kontraindiceret ved overfølsomhed over for penicillin"
+    DANISH_THRESHOLD_TEXT = "Behandles ved CRP > 100 mg/L eller temperatur ≥ 38,5°C"
+    DANISH_RECOMMENDATION_TEXT = "Anbefales ved mistænkt bakteriel infektion"
+    DANISH_ALGORITHM_TEXT = "Ved respirationssvigt: 1) Fri luftvej 2) Ilt 15L/min 3) Tilkald anæstesi"
+
+    def test_dose_claim_with_danish_characters(self):
+        """Should handle Danish dose text with special characters (æ, ø, å)."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        claim = Claim(
+            run_id="test-run-danish",
+            claim_type=ClaimType.DOSE,
+            text=self.DANISH_DOSE_TEXT,
+            normalized_value="100",
+            unit="mg/kg/døgn",
+            line_number=1,
+            confidence=0.9,
+        )
+
+        assert claim.text == self.DANISH_DOSE_TEXT, (
+            "Danish dose text should be preserved exactly"
+        )
+        assert "døgn" in claim.text, "Danish 'ø' character should be preserved"
+        assert claim.unit == "mg/kg/døgn", "Danish unit should be preserved"
+
+    def test_redflag_claim_with_danish_warning(self):
+        """Should handle Danish warning text with 'OBS' pattern."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        claim = Claim(
+            run_id="test-run-danish",
+            claim_type=ClaimType.RED_FLAG,
+            text=self.DANISH_WARNING_TEXT,
+            line_number=5,
+            confidence=0.95,
+        )
+
+        assert "OBS" in claim.text, "Danish warning marker should be preserved"
+        assert "Høj" in claim.text, "Danish 'ø' character should be preserved"
+        assert claim.claim_type == ClaimType.RED_FLAG
+
+    def test_contraindication_claim_danish(self):
+        """Should handle Danish contraindication text."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        claim = Claim(
+            run_id="test-run-danish",
+            claim_type=ClaimType.CONTRAINDICATION,
+            text=self.DANISH_CONTRAINDICATION_TEXT,
+            line_number=10,
+            confidence=0.88,
+        )
+
+        assert "Kontraindiceret" in claim.text, (
+            "Danish contraindication term should be preserved"
+        )
+        assert "overfølsomhed" in claim.text, (
+            "Danish 'ø' in 'overfølsomhed' should be preserved"
+        )
+
+    def test_threshold_claim_danish_comma_decimal(self):
+        """Should handle Danish decimal format (comma instead of period)."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        claim = Claim(
+            run_id="test-run-danish",
+            claim_type=ClaimType.THRESHOLD,
+            text=self.DANISH_THRESHOLD_TEXT,
+            normalized_value="CRP > 100 OR temp >= 38.5",
+            line_number=15,
+            confidence=0.85,
+        )
+
+        assert "38,5°C" in claim.text, (
+            "Danish comma decimal format should be preserved in original text"
+        )
+        assert "temperatur" in claim.text.lower(), (
+            "Danish 'temperatur' should be preserved"
+        )
+
+    def test_recommendation_claim_danish(self):
+        """Should handle Danish recommendation text with 'anbefales'."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        claim = Claim(
+            run_id="test-run-danish",
+            claim_type=ClaimType.RECOMMENDATION,
+            text=self.DANISH_RECOMMENDATION_TEXT,
+            line_number=20,
+            confidence=0.82,
+        )
+
+        assert "Anbefales" in claim.text, (
+            "Danish recommendation pattern should be preserved"
+        )
+        assert "mistænkt" in claim.text, (
+            "Danish 'æ' character should be preserved"
+        )
+
+    def test_algorithm_step_claim_danish(self):
+        """Should handle Danish algorithm text with numbered steps."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        claim = Claim(
+            run_id="test-run-danish",
+            claim_type=ClaimType.ALGORITHM_STEP,
+            text=self.DANISH_ALGORITHM_TEXT,
+            line_number=25,
+            confidence=0.9,
+        )
+
+        assert "respirationssvigt" in claim.text, (
+            "Danish compound medical term should be preserved"
+        )
+        assert "anæstesi" in claim.text, (
+            "Danish 'æ' in 'anæstesi' should be preserved"
+        )
+
+    @pytest.mark.parametrize(
+        "danish_text,expected_char",
+        [
+            ("Lægemiddel administreres hver 8. time", "æ"),
+            ("Patienten overvåges kontinuerligt", "å"),
+            ("Høj dosis kræver monitorering", "ø"),
+            ("ÆGTE medicinsk tekst", "Æ"),
+            ("ØJEBLIKKELIG intervention", "Ø"),
+            ("ÅND FRIT under behandling", "Å"),
+        ],
+        ids=["ae_lower", "aa_lower", "oe_lower", "AE_upper", "OE_upper", "AA_upper"],
+    )
+    def test_danish_special_characters_parametrized(
+        self,
+        danish_text: str,
+        expected_char: str,
+    ):
+        """Verify all Danish special characters are preserved (R6-012: parametrize)."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        claim = Claim(
+            run_id="test-run-danish",
+            claim_type=ClaimType.DOSE,
+            text=danish_text,
+            line_number=1,
+            confidence=0.9,
+        )
+
+        assert expected_char in claim.text, (
+            f"Danish character '{expected_char}' should be preserved in claim text"
+        )
+
+    def test_danish_text_serialization_roundtrip(self):
+        """Danish text should survive model_dump/model_validate roundtrip."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        original = Claim(
+            run_id="test-run-danish",
+            claim_type=ClaimType.DOSE,
+            text="Dosis: 50 mg/kg/døgn fordelt på 3 doser",
+            normalized_value="50",
+            unit="mg/kg/døgn",
+            line_number=1,
+            confidence=0.9,
+        )
+
+        # Roundtrip: model -> dict -> model
+        data = original.model_dump()
+        reconstructed = Claim.model_validate(data)
+
+        assert reconstructed.text == original.text, (
+            "Danish text should survive serialization roundtrip"
+        )
+        assert reconstructed.unit == original.unit, (
+            "Danish unit should survive serialization roundtrip"
+        )
+
+    def test_danish_text_db_roundtrip(self):
+        """Danish text should survive database roundtrip."""
+        from procedurewriter.models.claims import Claim, ClaimType
+
+        original = Claim(
+            run_id="test-run-danish",
+            claim_type=ClaimType.RED_FLAG,
+            text="Særlig opmærksomhed ved ældre patienter med nedsat nyrefunktion",
+            line_number=1,
+            confidence=0.88,
+        )
+
+        # Roundtrip: model -> DB row -> model
+        row = original.to_db_row()
+        reconstructed = Claim.from_db_row(row)
+
+        assert reconstructed.text == original.text, (
+            "Danish text should survive database roundtrip"
+        )
+        assert "ældre" in reconstructed.text, (
+            "Danish 'æ' should survive database roundtrip"
+        )
+        assert "opmærksomhed" in reconstructed.text, (
+            "Danish 'ø' should survive database roundtrip"
+        )

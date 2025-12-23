@@ -1981,15 +1981,15 @@ class TestChunkStage:
 | R6-003 | `test_db.py` | Split to `test_db_*.py` - all use tmp_path | ✅ FIXED |
 | R6-004 | `test_pipeline.py` | `tests/test_pipeline.py` - has error path tests | ✅ FIXED |
 | R6-005 | `test_models.py` | Split to `tests/models/test_*.py` - has edge cases | ✅ FIXED |
-| R6-006 | `test_evidence.py` | `tests/test_evidence.py` - uses inline data, not factories | ❌ NOT FIXED |
-| R6-007 | `test_claims.py` | `tests/claims/` has Danish, `tests/models/test_claims.py` lacks it | ⚠️ PARTIAL |
-| R6-008 | `conftest.py` | `tests/conftest.py` - 10 lines, no shared fixtures | ❌ NOT FIXED |
-| R6-009 | Multiple | Some files have docstrings, some don't | ⚠️ PARTIAL |
-| R6-010 | Multiple | Magic numbers present (100, 1000 in mocks) | ❌ NOT FIXED |
-| R6-011 | Multiple | Most asserts lack error messages | ❌ NOT FIXED |
-| R6-012 | Multiple | Only 1/60+ files uses @pytest.mark.parametrize | ❌ NOT FIXED |
+| R6-006 | `test_evidence.py` | Uses fixtures from conftest.py + snippet_factory | ✅ FIXED |
+| R6-007 | `test_claims.py` | `tests/models/test_claims.py` - 14 Danish text tests added | ✅ FIXED |
+| R6-008 | `conftest.py` | Shared fixtures: snippets, markdown, temp_db, factory | ✅ FIXED |
+| R6-009 | Multiple | test_evidence.py, test_claims.py have docstrings | ⚠️ PARTIAL |
+| R6-010 | Multiple | Constants in conftest.py + test_evidence.py | ⚠️ PARTIAL |
+| R6-011 | Multiple | Assert messages in test_evidence.py, test_claims.py | ⚠️ PARTIAL |
+| R6-012 | Multiple | @parametrize in test_evidence.py, test_claims.py | ⚠️ PARTIAL |
 
-**Summary**: 5 FIXED, 2 PARTIAL, 5 NOT FIXED (R6-002 fixed 2024-12-23)
+**Summary**: 8 FIXED, 4 PARTIAL, 0 NOT FIXED (R6-006/007/008 fixed 2024-12-23)
 
 ---
 
