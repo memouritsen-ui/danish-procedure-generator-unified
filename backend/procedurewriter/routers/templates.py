@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from procedurewriter.settings import settings
 from procedurewriter.templates import (
@@ -31,11 +31,31 @@ class CreateTemplateRequest(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     config: dict[str, Any]
 
+    @field_validator("config")
+    @classmethod
+    def validate_config_keys(cls, v: dict[str, Any]) -> dict[str, Any]:
+        """Validate that all config keys are <= 100 characters."""
+        for key in v:
+            if len(key) > 100:
+                raise ValueError(f"Config key '{key[:50]}...' exceeds max length of 100 characters")
+        return v
+
 
 class UpdateTemplateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[\w\s\-æøåÆØÅ]+$")
     description: str | None = Field(default=None, max_length=500)
     config: dict[str, Any] | None = None
+
+    @field_validator("config")
+    @classmethod
+    def validate_config_keys(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Validate that all config keys are <= 100 characters."""
+        if v is None:
+            return v
+        for key in v:
+            if len(key) > 100:
+                raise ValueError(f"Config key '{key[:50]}...' exceeds max length of 100 characters")
+        return v
 
 
 # --- Template Endpoints ---

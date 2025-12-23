@@ -1259,18 +1259,18 @@ cd backend && pytest tests/api/test_upload.py -v
 
 ## R3-003 through R3-012: Validation Fixes
 
-| ID | File | Issue | Fix |
-|----|------|-------|-----|
-| R3-003 | `schemas.py:67` | procedure_name unbounded | `Field(min_length=1, max_length=200)` |
-| R3-004 | `schemas.py:89` | source_url unbounded | `Field(max_length=2000)` |
-| R3-005 | `models/claims.py:34` | claim_text unbounded | `Field(max_length=10000)` |
-| R3-006 | `models/evidence.py:45` | chunk_text unbounded | `Field(max_length=50000)` |
-| R3-007 | `models/issues.py:23` | severity enum not validated | `@validator` for IssueCode |
-| R3-008 | `routers/runs.py:56` | run_id not validated as UUID | `UUID4` type hint |
-| R3-009 | `routers/protocols.py:78` | page_size unbounded | `Query(ge=1, le=100, default=20)` |
-| R3-010 | `routers/templates.py:34` | template_name allows special chars | `Field(pattern=r"^[a-zA-Z0-9_-]+$")` |
-| R3-011 | `pipeline/run.py:123` | config dict unbounded | `Field(max_length=100)` for keys |
-| R3-012 | `db.py:456` | heartbeat_at_utc not validated | ISO8601 format validator |
+| ID | File | Issue | Fix | Status |
+|----|------|-------|-----|--------|
+| R3-003 | `schemas.py:9,22,34` | procedure unbounded | `Field(min_length=1, max_length=200)` | ✅ DONE |
+| R3-004 | `schemas.py:59` | source_url unbounded | `Field(max_length=2000)` | ✅ DONE |
+| R3-005 | `models/claims.py:59` | claim_text unbounded | `Field(max_length=10000)` | ✅ DONE |
+| R3-006 | `models/evidence.py:52` | chunk_text unbounded | `Field(max_length=50000)` | ✅ DONE |
+| R3-007 | `models/issues.py:21,34,125` | severity enum not validated | `IssueSeverity(str, Enum)` | ✅ DONE |
+| R3-008 | `routers/runs.py:236+` | run_id not validated as UUID | `pattern=r"^[a-f0-9]{32}$"` | ✅ DONE |
+| R3-009 | N/A | page_size unbounded | N/A | ⚠️ NOT IMPLEMENTED - `routers/protocols.py` does not exist; protocols in `main.py` have no pagination |
+| R3-010 | `routers/templates.py:30,36` | template_name allows special chars | `Field(pattern=r"^[\w\s\-æøåÆØÅ]+$")` | ✅ DONE |
+| R3-011 | `routers/templates.py:34-41,49-58` | config dict unbounded | `@field_validator` for key length ≤100 | ✅ DONE |
+| R3-012 | `db.py:17-27,722` | heartbeat_at_utc not validated | `validate_iso8601()` helper | ✅ DONE |
 
 ### VERIFY ALL VALIDATION
 ```bash

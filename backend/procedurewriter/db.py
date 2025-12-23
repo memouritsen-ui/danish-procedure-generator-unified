@@ -14,6 +14,19 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
+def validate_iso8601(value: str | None) -> str | None:
+    """Validate that a string is a valid ISO8601 datetime, return None if invalid."""
+    if value is None:
+        return None
+    try:
+        # Try parsing as ISO8601 format
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return value
+    except (ValueError, AttributeError):
+        # Invalid format - return None instead of corrupt data
+        return None
+
+
 def _connect(db_path: Path) -> sqlite3.Connection:
     """Create a database connection with proper configuration.
 
@@ -706,7 +719,7 @@ def _row_to_run(row: sqlite3.Row) -> RunRow:
         attempts=row["attempts"] if "attempts" in keys and row["attempts"] is not None else 0,
         locked_by=row["locked_by"] if "locked_by" in keys else None,
         locked_at_utc=row["locked_at_utc"] if "locked_at_utc" in keys else None,
-        heartbeat_at_utc=row["heartbeat_at_utc"] if "heartbeat_at_utc" in keys else None,
+        heartbeat_at_utc=validate_iso8601(row["heartbeat_at_utc"]) if "heartbeat_at_utc" in keys else None,
         ack_required=bool(row["ack_required"]) if "ack_required" in keys and row["ack_required"] is not None else False,
         ack_details=ack_details,
         ack_note=row["ack_note"] if "ack_note" in keys else None,

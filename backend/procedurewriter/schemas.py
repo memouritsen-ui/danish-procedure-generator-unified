@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class WriteRequest(BaseModel):
-    procedure: str = Field(min_length=1)
+    procedure: str = Field(min_length=1, max_length=200)
     context: str | None = None
     template_id: str | None = None
 
@@ -19,7 +19,7 @@ class RunSummary(BaseModel):
     run_id: str
     created_at_utc: str
     updated_at_utc: str
-    procedure: str = Field(max_length=500)
+    procedure: str = Field(max_length=200)
     status: str
     ack_required: bool = False
     quality_score: int | None = Field(default=None, ge=0, le=10)
@@ -31,7 +31,7 @@ class RunDetail(BaseModel):
     run_id: str
     created_at_utc: str
     updated_at_utc: str
-    procedure: str = Field(max_length=500)
+    procedure: str = Field(max_length=200)
     context: str | None
     status: str
     error: str | None
