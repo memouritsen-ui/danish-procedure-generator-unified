@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import queue
 import re
 from pathlib import Path
 from typing import Any
@@ -262,7 +263,8 @@ def api_run(
                 w = runtime.get("warnings")
                 if isinstance(w, list):
                     warnings = [str(x) for x in w]
-        except Exception:
+        except (FileNotFoundError, json.JSONDecodeError, OSError, KeyError, TypeError):
+            # Manifest missing, corrupt, or malformed - continue without warnings
             warnings = None
 
     return RunDetail(
@@ -659,7 +661,7 @@ async def api_events(
         return StreamingResponse(empty_stream(), media_type="text/event-stream")
 
     # Subscribe to event stream
-    queue = emitter.subscribe()
+    event_queue = emitter.subscribe()
 
     async def event_stream():
         try:
@@ -667,9 +669,9 @@ async def api_events(
                 # Poll the queue with a small timeout to allow cancellation
                 try:
                     event = await anyio.to_thread.run_sync(
-                        lambda: queue.get(timeout=0.1)
+                        lambda: event_queue.get(timeout=0.1)
                     )
-                except Exception:
+                except queue.Empty:
                     # Timeout - continue polling
                     continue
 
@@ -679,7 +681,7 @@ async def api_events(
 
                 yield event.to_sse()
         finally:
-            emitter.unsubscribe(queue)
+            emitter.unsubscribe(event_queue)
 
     return StreamingResponse(
         event_stream(),

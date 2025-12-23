@@ -154,7 +154,8 @@ def source_record_to_reference(
             norm_text = Path(normalized_path).read_text(encoding="utf-8")
             # Take first 500 chars as excerpt
             abstract_excerpt = norm_text[:500] if norm_text else None
-    except Exception:
+    except (FileNotFoundError, OSError, UnicodeDecodeError):
+        # File missing, unreadable, or encoding issue - continue without excerpt
         pass
 
     return SourceReference(
@@ -1833,7 +1834,8 @@ def _format_meta_analysis_summary(
         lines.append(
             f"GRADE-sammenfatning: {synthesis.grade_summary} (sikkerhed: {synthesis.certainty_level}). {cite}".strip()
         )
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
+        # Synthesis object missing expected attributes or wrong format
         lines.append(f"Meta-analyse opsummering kunne ikke formateres. {cite}".strip())
     return lines
 

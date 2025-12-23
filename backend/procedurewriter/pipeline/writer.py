@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from procedurewriter.pipeline.text_units import CitationValidationError
 from procedurewriter.pipeline.types import Snippet, SourceRecord
+
+logger = logging.getLogger(__name__)
 
 _citation_id_re = re.compile(r"\[S:([^\]]+)\]")
 _citation_tag_re = re.compile(r"\[S:[^\]]+\]")
@@ -140,7 +143,9 @@ def write_procedure_markdown(
             allow_fallback_citations=allow_fallback_citations,
             quantitative_evidence_context=quantitative_evidence_context,
         )
-    except Exception:
+    except (OSError, ValueError, RuntimeError, TimeoutError) as e:
+        # LLM sectioned write failed - fallback to simple LLM write
+        logger.warning("Sectioned LLM write failed, falling back to simple LLM: %s", e)
         try:
             return _write_llm(
                 procedure=procedure,
@@ -156,7 +161,9 @@ def write_procedure_markdown(
                 ollama_base_url=ollama_base_url,
                 quantitative_evidence_context=quantitative_evidence_context,
             )
-        except Exception:
+        except (OSError, ValueError, RuntimeError, TimeoutError) as e2:
+            # Both LLM methods failed - fallback to template
+            logger.warning("Simple LLM write failed, falling back to template: %s", e2)
             return _write_template(procedure=procedure, context=context, author_guide=author_guide, citations=citation_pool, sources=sources)
 
 

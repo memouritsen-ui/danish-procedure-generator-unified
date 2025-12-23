@@ -221,7 +221,8 @@ def _extract_json_from_response(response_text: str) -> dict[str, Any] | None:
                     "explanation": explanation,
                     "relevant_quote": "",
                 }
-        except Exception:
+        except (ValueError, AttributeError, IndexError):
+            # Regex extraction failed - fall through to warning
             pass
 
     logger.warning("Failed to extract JSON from verification response: %s", text[:200])

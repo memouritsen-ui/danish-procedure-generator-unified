@@ -315,7 +315,8 @@ class OllamaProvider(LLMProvider):
             with httpx.Client(timeout=5.0) as client:
                 response = client.get(f"{self._base_url}/api/tags")
                 self._available = response.status_code == 200
-        except Exception:
+        except (httpx.HTTPError, OSError):
+            # Ollama server unavailable or network error
             self._available = False
 
         return self._available

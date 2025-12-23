@@ -79,7 +79,8 @@ class LibrarySearchProvider:
                         "SELECT COUNT(*) FROM documents LIMIT 1"
                     )
                     cursor.fetchone()
-            except Exception:
+            except sqlite3.Error:
+                # Database unavailable, missing, or tables don't exist
                 self._available = False
 
         return self._available

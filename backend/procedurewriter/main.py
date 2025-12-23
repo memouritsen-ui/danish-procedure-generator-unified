@@ -5,6 +5,7 @@ import contextlib
 import json
 import logging
 import os
+import sqlite3
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -244,7 +245,8 @@ def health_check(request: Request) -> dict:
         with _connect(settings.db_path) as conn:
             conn.execute("SELECT 1").fetchone()
             db_ok = True
-    except Exception:
+    except sqlite3.Error:
+        # Database unavailable or corrupted
         pass
 
     if not db_ok:

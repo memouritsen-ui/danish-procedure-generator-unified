@@ -108,8 +108,9 @@ def retrieve(
                 run_index_dir=run_index_dir,
                 openai_api_key=openai_api_key,
             )
-        except Exception:
-            pass
+        except (OSError, ValueError, RuntimeError) as e:
+            # Embeddings failed - fallback to BM25
+            logger.warning("Embeddings retrieval failed, falling back to BM25: %s", e)
 
     return _retrieve_bm25(query, snippets, top_k=top_k)
 
