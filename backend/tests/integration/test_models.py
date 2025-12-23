@@ -41,10 +41,28 @@ def test_db():
         yield db_path
 
 
+def _create_test_run(db_path: Path, run_id: str) -> None:
+    """Helper to create a test run record in the database."""
+    from datetime import datetime, UTC
+    now = datetime.now(UTC).isoformat()
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO runs (
+                run_id, created_at_utc, updated_at_utc, procedure, context,
+                status, run_dir, procedure_normalized
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (run_id, now, now, "Test Procedure", None, "QUEUED", "/tmp/test", "test_procedure"),
+        )
+
+
 @pytest.fixture
-def run_id():
-    """Generate a unique run ID for tests."""
-    return str(uuid4())
+def run_id(test_db):
+    """Generate a unique run ID and create the corresponding run record."""
+    rid = str(uuid4())
+    _create_test_run(test_db, rid)
+    return rid
 
 
 class TestClaimWorkflow:

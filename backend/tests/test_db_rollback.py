@@ -35,6 +35,21 @@ def _table_exists(db_path: Path, table_name: str) -> bool:
         return result is not None
 
 
+def _create_test_run(conn, run_id: str) -> None:
+    """Helper to create a test run record (for FK constraint satisfaction)."""
+    from datetime import datetime, UTC
+    now = datetime.now(UTC).isoformat()
+    conn.execute(
+        """
+        INSERT INTO runs (
+            run_id, created_at_utc, updated_at_utc, procedure, context,
+            status, run_dir, procedure_normalized
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (run_id, now, now, "Test Procedure", None, "QUEUED", "/tmp/test", "test_procedure"),
+    )
+
+
 def _get_table_list(db_path: Path) -> list[str]:
     """Get all table names in the database."""
     with _connect(db_path) as conn:
@@ -198,8 +213,10 @@ class TestRollbackWithData:
         from procedurewriter.db import rollback_claim_system
         from uuid import uuid4
 
+        run_id = str(uuid4())
         # Insert test data
         with _connect(test_db) as conn:
+            _create_test_run(conn, run_id)
             conn.execute(
                 """
                 INSERT INTO claims (
@@ -209,7 +226,7 @@ class TestRollbackWithData:
                 """,
                 (
                     str(uuid4()),
-                    str(uuid4()),
+                    run_id,
                     "dose",
                     "Test claim",
                     "[]",

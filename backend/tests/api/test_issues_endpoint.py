@@ -301,6 +301,22 @@ class TestGetIssues:
         with _connect(db_path) as conn:
             _create_run(conn, run_id, runs_dir)
 
+            # Create the claim first (FK constraint requires this)
+            from datetime import datetime, UTC
+            now = datetime.now(UTC).isoformat()
+            conn.execute(
+                """
+                INSERT INTO claims (
+                    id, run_id, claim_type, text, normalized_value, unit,
+                    source_refs_json, line_number, confidence, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(claim_id), run_id, "dose", "Test claim text",
+                    "10", "mg", "[]", 1, 0.95, now
+                ),
+            )
+
             issue = Issue(
                 run_id=run_id,
                 code=IssueCode.DOSE_WITHOUT_EVIDENCE,

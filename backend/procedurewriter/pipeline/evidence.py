@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from procedurewriter.pipeline.gps import SentenceType, classify_sentence_type
 from procedurewriter.pipeline.text_units import CitedSentence, iter_cited_sentences
 from procedurewriter.pipeline.types import Snippet
 
@@ -97,30 +98,60 @@ def build_evidence_report(
     supported = 0
     unsupported = 0
     contradicted = 0
+    gps_count = 0
+
     for sent in iter_cited_sentences(markdown_text):
-        item = _score_sentence(
-            sent,
-            index=index,
-            min_overlap=min_overlap,
-            min_bm25_score=min_bm25_score,
-            min_overlap_ratio=min_overlap_ratio,
-            verification=verification_lookup.get(sent.line_no),
-        )
-        if item.get("contradicted"):
-            contradicted += 1
-            unsupported += 1
-        elif item["supported"]:
+        # Classify sentence type using GRADE GPS criteria
+        sentence_type = classify_sentence_type(sent.text)
+
+        # GPS sentences are exempt from evidence requirements
+        if sentence_type == SentenceType.GPS:
+            gps_count += 1
+            item = {
+                "line_no": sent.line_no,
+                "text": sent.text,
+                "clean_text": _clean_sentence_text(sent.text),
+                "citations": list(sent.citations),
+                "supported": True,  # GPS are always "supported" (exempt)
+                "contradicted": False,
+                "verification_status": None,
+                "sentence_type": sentence_type.value,
+                "gps_exempt": True,
+                "gps_rationale": "Good Practice Statement - inverse test: negation would be absurd",
+                "matches": [],  # No BM25 matching needed
+            }
             supported += 1
         else:
-            unsupported += 1
+            # Non-GPS sentences require normal evidence verification
+            item = _score_sentence(
+                sent,
+                index=index,
+                min_overlap=min_overlap,
+                min_bm25_score=min_bm25_score,
+                min_overlap_ratio=min_overlap_ratio,
+                verification=verification_lookup.get(sent.line_no),
+            )
+            # Add sentence type to output
+            item["sentence_type"] = sentence_type.value
+            item["gps_exempt"] = False
+
+            if item.get("contradicted"):
+                contradicted += 1
+                unsupported += 1
+            elif item["supported"]:
+                supported += 1
+            else:
+                unsupported += 1
+
         items.append(item)
 
     return {
-        "version": 2,  # Bumped version for enhanced scoring
+        "version": 3,  # Bumped for GPS classification support
         "sentence_count": len(items),
         "supported_count": supported,
         "unsupported_count": unsupported,
         "contradicted_count": contradicted,
+        "gps_count": gps_count,  # NEW: Good Practice Statements (exempt from evidence)
         "thresholds": {
             "min_overlap": min_overlap,
             "min_bm25_score": min_bm25_score,
@@ -133,13 +164,16 @@ def build_evidence_report(
 def enforce_evidence_policy(report: dict[str, Any], *, policy: str) -> None:
     """Enforce evidence policy based on report results.
 
+    GPS (Good Practice Statements) are exempt from evidence requirements per
+    GRADE methodology - they don't count toward unsupported claims.
+
     Args:
         report: Evidence report from build_evidence_report()
         policy: Policy level - 'strict', 'warn', or 'off'
 
     Raises:
         EvidencePolicyError: When strict policy fails due to unsupported or
-                            contradicted claims
+                            contradicted claims (excluding GPS)
     """
     p = (policy or "").strip().lower()
     if p in {"", "off", "warn"}:
@@ -147,13 +181,10 @@ def enforce_evidence_policy(report: dict[str, Any], *, policy: str) -> None:
     if p != "strict":
         return
 
-    unsupported = int(report.get("unsupported_count") or 0)
-    contradicted = int(report.get("contradicted_count") or 0)
-
-    if unsupported <= 0 and contradicted <= 0:
-        return
-
+    # Count unsupported sentences, EXCLUDING GPS (which are exempt)
     sentences = report.get("sentences")
+    non_gps_unsupported = 0
+    contradicted = 0
     unsupported_examples: list[str] = []
     contradicted_examples: list[str] = []
 
@@ -161,13 +192,29 @@ def enforce_evidence_policy(report: dict[str, Any], *, policy: str) -> None:
         for s in sentences:
             if not isinstance(s, dict):
                 continue
+
+            # GPS sentences are exempt from evidence requirements
+            if s.get("gps_exempt"):
+                continue
+
             line_no = s.get("line_no")
             text = str(s.get("text") or "").strip()
+            sentence_type = s.get("sentence_type", "unknown")
 
             if s.get("contradicted"):
-                contradicted_examples.append(f"Line {line_no} [CONTRADICTED]: {text[:140]}")
+                contradicted += 1
+                contradicted_examples.append(
+                    f"Line {line_no} [CONTRADICTED] ({sentence_type}): {text[:140]}"
+                )
             elif s.get("supported") is not True:
-                unsupported_examples.append(f"Line {line_no}: {text[:160]}")
+                non_gps_unsupported += 1
+                unsupported_examples.append(
+                    f"Line {line_no} ({sentence_type}): {text[:160]}"
+                )
+
+    # No issues if all non-GPS sentences are supported
+    if non_gps_unsupported <= 0 and contradicted <= 0:
+        return
 
     # Build error message with contradicted claims first (higher priority)
     error_parts: list[str] = []
@@ -176,10 +223,14 @@ def enforce_evidence_policy(report: dict[str, Any], *, policy: str) -> None:
         if contradicted_examples:
             error_parts.append("\n".join(contradicted_examples[:4]))
 
-    if unsupported > 0:
-        error_parts.append(f"{unsupported - contradicted} unsupported sentences")
+    if non_gps_unsupported > 0:
+        error_parts.append(f"{non_gps_unsupported} unsupported sentences (excluding GPS)")
         if unsupported_examples:
             error_parts.append("\n".join(unsupported_examples[:4]))
+
+    gps_count = int(report.get("gps_count") or 0)
+    if gps_count > 0:
+        error_parts.append(f"Note: {gps_count} GPS statements were exempt from evidence check")
 
     raise EvidencePolicyError(
         "Evidence policy STRICT failed:\n"

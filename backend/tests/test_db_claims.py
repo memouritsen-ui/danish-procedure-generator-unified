@@ -30,6 +30,21 @@ def test_db():
         yield db_path
 
 
+def _create_test_run(conn: sqlite3.Connection, run_id: str) -> None:
+    """Helper to create a test run record (for FK constraint satisfaction)."""
+    from datetime import datetime, UTC
+    now = datetime.now(UTC).isoformat()
+    conn.execute(
+        """
+        INSERT INTO runs (
+            run_id, created_at_utc, updated_at_utc, procedure, context,
+            status, run_dir, procedure_normalized
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (run_id, now, now, "Test Procedure", None, "QUEUED", "/tmp/test", "test_procedure"),
+    )
+
+
 class TestClaimsTable:
     """Tests for claims table schema and operations."""
 
@@ -76,6 +91,7 @@ class TestClaimsTable:
         run_id = str(uuid4())
 
         with _connect(test_db) as conn:
+            _create_test_run(conn, run_id)
             conn.execute(
                 """
                 INSERT INTO claims (
@@ -111,6 +127,7 @@ class TestClaimsTable:
         run_id = str(uuid4())
 
         with _connect(test_db) as conn:
+            _create_test_run(conn, run_id)
             # Insert multiple claims for same run
             for i in range(3):
                 conn.execute(
@@ -173,6 +190,7 @@ class TestEvidenceChunksTable:
         run_id = str(uuid4())
 
         with _connect(test_db) as conn:
+            _create_test_run(conn, run_id)
             conn.execute(
                 """
                 INSERT INTO evidence_chunks (
@@ -228,10 +246,29 @@ class TestClaimEvidenceLinksTable:
     def test_insert_link(self, test_db):
         """Should be able to insert a claim-evidence link."""
         link_id = str(uuid4())
+        run_id = str(uuid4())
         claim_id = str(uuid4())
         chunk_id = str(uuid4())
 
         with _connect(test_db) as conn:
+            # Create dependencies first (FK constraints)
+            _create_test_run(conn, run_id)
+            conn.execute(
+                """
+                INSERT INTO claims (id, run_id, claim_type, text, source_refs_json,
+                    line_number, confidence, created_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (claim_id, run_id, "dose", "test claim", "[]", 1, 0.9, "2024-12-22T00:00:00Z"),
+            )
+            conn.execute(
+                """
+                INSERT INTO evidence_chunks (id, run_id, source_id, text, chunk_index,
+                    start_char, end_char, metadata_json, created_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (chunk_id, run_id, "SRC001", "evidence text", 0, 0, 100, "{}", "2024-12-22T00:00:00Z"),
+            )
             conn.execute(
                 """
                 INSERT INTO claim_evidence_links (
@@ -307,6 +344,7 @@ class TestIssuesTable:
         run_id = str(uuid4())
 
         with _connect(test_db) as conn:
+            _create_test_run(conn, run_id)
             conn.execute(
                 """
                 INSERT INTO issues (
@@ -340,6 +378,7 @@ class TestIssuesTable:
         run_id = str(uuid4())
 
         with _connect(test_db) as conn:
+            _create_test_run(conn, run_id)
             # Insert resolved and unresolved issues
             for i, resolved in enumerate([0, 1, 0, 0]):
                 conn.execute(
@@ -414,6 +453,7 @@ class TestGatesTable:
         run_id = str(uuid4())
 
         with _connect(test_db) as conn:
+            _create_test_run(conn, run_id)
             conn.execute(
                 """
                 INSERT INTO gates (
@@ -448,6 +488,7 @@ class TestGatesTable:
         run_id = str(uuid4())
 
         with _connect(test_db) as conn:
+            _create_test_run(conn, run_id)
             # Insert S0, S1, and Final gates
             for gate_type in ["s0_safety", "s1_quality", "final"]:
                 conn.execute(

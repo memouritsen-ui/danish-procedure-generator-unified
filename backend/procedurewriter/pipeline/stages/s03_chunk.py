@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 # Default chunk configuration
 DEFAULT_CHUNK_SIZE = 1000  # characters
 DEFAULT_CHUNK_OVERLAP = 100  # characters
+MIN_CHUNK_SIZE = 50  # Minimum allowed chunk size
+MAX_CHUNKS_PER_SOURCE = 10000  # Safety limit to prevent infinite loops
+
+
+class ChunkingParameterError(ValueError):
+    """Raised when chunking parameters are invalid."""
+
+    pass
 
 
 @dataclass
@@ -179,6 +187,10 @@ class ChunkStage(PipelineStage[ChunkInput, ChunkOutput]):
         Uses paragraph-based chunking when possible, falls back to
         character-based chunking for content without paragraph breaks.
 
+        CRITICAL: Validates parameters to prevent infinite loops:
+        - chunk_size must be >= MIN_CHUNK_SIZE
+        - chunk_overlap must be >= 0 and < chunk_size
+
         Args:
             content: Text content to chunk
             source: Source metadata
@@ -188,7 +200,26 @@ class ChunkStage(PipelineStage[ChunkInput, ChunkOutput]):
 
         Returns:
             List of EvidenceChunk objects
+
+        Raises:
+            ChunkingParameterError: If parameters would cause infinite loop
         """
+        # CRITICAL: Parameter validation to prevent infinite loops
+        if chunk_size < MIN_CHUNK_SIZE:
+            raise ChunkingParameterError(
+                f"chunk_size ({chunk_size}) must be >= {MIN_CHUNK_SIZE}. "
+                "Smaller values risk infinite loops or excessive chunks."
+            )
+        if chunk_overlap < 0:
+            raise ChunkingParameterError(
+                f"chunk_overlap ({chunk_overlap}) must be >= 0."
+            )
+        if chunk_overlap >= chunk_size:
+            raise ChunkingParameterError(
+                f"chunk_overlap ({chunk_overlap}) must be < chunk_size ({chunk_size}). "
+                "Otherwise chunking will never progress."
+            )
+
         chunks: list[EvidenceChunk] = []
 
         # If content is shorter than chunk size, return as single chunk
@@ -310,12 +341,38 @@ class ChunkStage(PipelineStage[ChunkInput, ChunkOutput]):
         chunk_size: int,
         chunk_overlap: int,
     ) -> list[EvidenceChunk]:
-        """Chunk content by character count with overlap."""
+        """Chunk content by character count with overlap.
+
+        CRITICAL: Has multiple safeguards against infinite loops:
+        1. Parameter validation in _split_into_chunks (chunk_overlap < chunk_size)
+        2. Guaranteed forward progress (new_start > start)
+        3. Maximum chunks limit (MAX_CHUNKS_PER_SOURCE)
+        """
         chunks: list[EvidenceChunk] = []
         chunk_index = 0
         start = 0
+        prev_start = -1  # Track previous start to detect no progress
 
         while start < len(content):
+            # Safety check: Ensure we're making forward progress
+            if start <= prev_start:
+                logger.error(
+                    f"Chunking not progressing: start={start}, prev_start={prev_start}. "
+                    f"Forcing forward to prevent infinite loop."
+                )
+                start = prev_start + max(1, chunk_size - chunk_overlap)
+                if start >= len(content):
+                    break
+
+            # Safety check: Maximum chunks limit
+            if chunk_index >= MAX_CHUNKS_PER_SOURCE:
+                logger.warning(
+                    f"Hit MAX_CHUNKS_PER_SOURCE ({MAX_CHUNKS_PER_SOURCE}) for "
+                    f"source {source.source_id}. Truncating."
+                )
+                break
+
+            prev_start = start
             end = min(start + chunk_size, len(content))
 
             # Try to break at word boundary
@@ -344,11 +401,16 @@ class ChunkStage(PipelineStage[ChunkInput, ChunkOutput]):
                 )
                 chunk_index += 1
 
-            # Move start forward, accounting for overlap
-            start = end - chunk_overlap if chunk_overlap > 0 else end
+            # Calculate next start position
+            # CRITICAL: Always ensure forward progress
+            effective_advance = chunk_size - chunk_overlap
+            new_start = start + effective_advance
 
-            # Prevent infinite loop if overlap >= chunk_size
-            if start <= chunks[-1].start_char if chunks else False:
-                start = end
+            # Guarantee forward progress even if effective_advance somehow <= 0
+            # (shouldn't happen due to validation, but defense-in-depth)
+            if new_start <= start:
+                new_start = end  # Jump to end of current chunk
+
+            start = new_start
 
         return chunks

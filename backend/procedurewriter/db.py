@@ -15,9 +15,25 @@ def utc_now_iso() -> str:
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
+    """Create a database connection with proper configuration.
+
+    CRITICAL: This function enables foreign key enforcement. SQLite disables
+    foreign keys by default - they must be enabled per-connection. Without
+    this, all FOREIGN KEY constraints in the schema are decorative only.
+
+    Also sets a reasonable timeout for concurrent access scenarios and
+    IMMEDIATE isolation level to prevent race conditions by acquiring
+    a RESERVED lock at transaction start.
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(
+        str(db_path),
+        timeout=30.0,
+        isolation_level="IMMEDIATE"  # Acquire write lock at BEGIN
+    )
     conn.row_factory = sqlite3.Row
+    # CRITICAL: Enable foreign key enforcement (disabled by default in SQLite)
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -551,49 +567,70 @@ def create_run(
     version_note: str | None = None,
     template_id: str | None = None,
 ) -> None:
+    """Create a new run record with proper version numbering.
+
+    CRITICAL: Version number calculation and insertion are done in a single
+    atomic transaction using BEGIN IMMEDIATE to prevent race conditions.
+    Without this, concurrent create_run calls could get duplicate version
+    numbers (classic TOCTOU vulnerability).
+
+    The BEGIN IMMEDIATE acquires a RESERVED lock immediately, preventing
+    other writers from modifying the table until we COMMIT.
+    """
     now = utc_now_iso()
     procedure_normalized = normalize_procedure_name(procedure)
 
-    # Calculate version number
-    version_number = 1
-    if parent_run_id:
-        # Get parent's version and increment
-        with _connect(db_path) as conn:
-            row = conn.execute(
-                "SELECT version_number FROM runs WHERE run_id = ?",
-                (parent_run_id,),
-            ).fetchone()
-            if row and row["version_number"]:
-                version_number = row["version_number"] + 1
-    else:
-        # Check for existing versions with same normalized procedure name
-        with _connect(db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT MAX(version_number) as max_version FROM runs
-                WHERE procedure_normalized = ? AND status = 'DONE'
-                """,
-                (procedure_normalized,),
-            ).fetchone()
-            if row and row["max_version"]:
-                version_number = row["max_version"] + 1
-
     with _connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO runs(
-                run_id, created_at_utc, updated_at_utc, procedure, context,
-                status, error, run_dir, parent_run_id, version_number,
-                version_note, procedure_normalized, template_id
+        # BEGIN IMMEDIATE acquires write lock before any reads
+        # This prevents race condition between SELECT and INSERT
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            # Calculate version number within the same transaction
+            version_number = 1
+            if parent_run_id:
+                # Get parent's version and increment
+                row = conn.execute(
+                    "SELECT version_number FROM runs WHERE run_id = ?",
+                    (parent_run_id,),
+                ).fetchone()
+                if row and row["version_number"]:
+                    version_number = row["version_number"] + 1
+            else:
+                # Check for existing versions with same normalized procedure name
+                # CRITICAL: We use ALL runs (not just DONE) to ensure uniqueness
+                # This prevents duplicate version numbers when multiple runs are
+                # created concurrently. Each run gets a unique version number
+                # regardless of status.
+                row = conn.execute(
+                    """
+                    SELECT COALESCE(MAX(version_number), 0) + 1 as next_version
+                    FROM runs
+                    WHERE procedure_normalized = ?
+                    """,
+                    (procedure_normalized,),
+                ).fetchone()
+                version_number = row["next_version"]
+
+            # Insert within the same transaction - no race window
+            conn.execute(
+                """
+                INSERT INTO runs(
+                    run_id, created_at_utc, updated_at_utc, procedure, context,
+                    status, error, run_dir, parent_run_id, version_number,
+                    version_note, procedure_normalized, template_id
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id, now, now, procedure, context, "QUEUED", None,
+                    str(run_dir), parent_run_id, version_number, version_note,
+                    procedure_normalized, template_id,
+                ),
             )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                run_id, now, now, procedure, context, "QUEUED", None,
-                str(run_dir), parent_run_id, version_number, version_note,
-                procedure_normalized, template_id,
-            ),
-        )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
 
 
 def update_run_status(
@@ -724,41 +761,63 @@ def claim_next_run(
 ) -> RunRow | None:
     """Claim the next queued run for processing.
 
+    CRITICAL: This uses BEGIN IMMEDIATE for atomic read-modify-write, plus
+    a defense-in-depth check in the UPDATE WHERE clause to ensure the row
+    is still QUEUED. If another worker somehow claimed it, rows_affected=0
+    and we retry with the next QUEUED run.
+
     Marks the run as RUNNING and sets lock/heartbeat metadata.
     """
     now = utc_now_iso()
     with _connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute(
-            """
-            SELECT * FROM runs
-            WHERE status = 'QUEUED'
-              AND (attempts < ? OR attempts IS NULL)
-            ORDER BY created_at_utc ASC
-            LIMIT 1
-            """,
-            (max_attempts,),
-        ).fetchone()
-        if row is None:
-            conn.execute("COMMIT")
-            return None
-        run_id = row["run_id"]
-        attempts = (row["attempts"] or 0) + 1
-        conn.execute(
-            """
-            UPDATE runs
-            SET updated_at_utc = ?,
-                status = 'RUNNING',
-                attempts = ?,
-                locked_by = ?,
-                locked_at_utc = ?,
-                heartbeat_at_utc = ?
-            WHERE run_id = ?
-            """,
-            (now, attempts, worker_id, now, now, run_id),
-        )
-        conn.execute("COMMIT")
-    return get_run(db_path, run_id)
+        try:
+            # Keep trying until we successfully claim a run or none are available
+            while True:
+                row = conn.execute(
+                    """
+                    SELECT * FROM runs
+                    WHERE status = 'QUEUED'
+                      AND (attempts < ? OR attempts IS NULL)
+                    ORDER BY created_at_utc ASC
+                    LIMIT 1
+                    """,
+                    (max_attempts,),
+                ).fetchone()
+                if row is None:
+                    conn.execute("COMMIT")
+                    return None
+
+                run_id = row["run_id"]
+                attempts = (row["attempts"] or 0) + 1
+
+                # CRITICAL: Include status check in WHERE clause for defense-in-depth.
+                # Even though BEGIN IMMEDIATE should prevent concurrent claims,
+                # this guards against edge cases and provides audit clarity.
+                cursor = conn.execute(
+                    """
+                    UPDATE runs
+                    SET updated_at_utc = ?,
+                        status = 'RUNNING',
+                        attempts = ?,
+                        locked_by = ?,
+                        locked_at_utc = ?,
+                        heartbeat_at_utc = ?
+                    WHERE run_id = ?
+                      AND status = 'QUEUED'
+                    """,
+                    (now, attempts, worker_id, now, now, run_id),
+                )
+
+                if cursor.rowcount == 1:
+                    # Successfully claimed
+                    conn.execute("COMMIT")
+                    return get_run(db_path, run_id)
+                # Row was claimed by someone else (shouldn't happen with BEGIN IMMEDIATE,
+                # but defense-in-depth). Loop to try next queued run.
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
 
 
 def update_run_heartbeat(db_path: Path, *, run_id: str, worker_id: str) -> None:
@@ -799,49 +858,77 @@ def mark_stale_runs(
     stale_after_s: int,
     max_attempts: int = 3,
 ) -> int:
-    """Mark stale RUNNING runs as QUEUED (or FAILED if max attempts reached)."""
-    now = datetime.now(UTC)
+    """Mark stale RUNNING runs as QUEUED (or FAILED if max attempts reached).
+
+    CRITICAL: This uses an atomic approach to avoid TOCTOU vulnerability.
+    Instead of SELECT-then-UPDATE (where heartbeat could change between),
+    we perform the entire staleness check and update in SQL within an
+    IMMEDIATE transaction.
+
+    The UPDATE includes a heartbeat check in its WHERE clause to ensure
+    we only mark runs that are STILL stale at update time.
+    """
+    now_iso = utc_now_iso()
+    now_ts = datetime.now(UTC).isoformat()
     updated = 0
+
     with _connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT run_id, attempts, locked_at_utc, heartbeat_at_utc
-            FROM runs
-            WHERE status = 'RUNNING'
-            """
-        ).fetchall()
-        for row in rows:
-            heartbeat = row["heartbeat_at_utc"] or row["locked_at_utc"]
-            if not heartbeat:
-                continue
-            try:
-                last_seen = datetime.fromisoformat(heartbeat)
-            except ValueError:
-                continue
-            age_s = (now - last_seen).total_seconds()
-            if age_s < stale_after_s:
-                continue
-            attempts = row["attempts"] or 0
-            status = "FAILED" if attempts >= max_attempts else "QUEUED"
-            error = (
-                "Run marked failed due to stale worker lock."
-                if status == "FAILED"
-                else None
-            )
-            conn.execute(
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            # First: Mark runs as FAILED if they're stale AND max attempts reached
+            # The heartbeat staleness check is done IN SQL to avoid TOCTOU
+            cursor = conn.execute(
                 """
                 UPDATE runs
                 SET updated_at_utc = ?,
-                    status = ?,
-                    error = ?,
+                    status = 'FAILED',
+                    error = 'Run marked failed due to stale worker lock.',
                     locked_by = NULL,
                     locked_at_utc = NULL,
                     heartbeat_at_utc = NULL
-                WHERE run_id = ?
+                WHERE status = 'RUNNING'
+                  AND attempts >= ?
+                  AND (
+                      (heartbeat_at_utc IS NOT NULL
+                       AND (julianday(?) - julianday(heartbeat_at_utc)) * 86400 >= ?)
+                      OR
+                      (heartbeat_at_utc IS NULL AND locked_at_utc IS NOT NULL
+                       AND (julianday(?) - julianday(locked_at_utc)) * 86400 >= ?)
+                  )
                 """,
-                (utc_now_iso(), status, error, row["run_id"]),
+                (now_iso, max_attempts, now_ts, stale_after_s, now_ts, stale_after_s),
             )
-            updated += 1
+            updated += cursor.rowcount
+
+            # Second: Mark remaining stale runs as QUEUED (under max attempts)
+            cursor = conn.execute(
+                """
+                UPDATE runs
+                SET updated_at_utc = ?,
+                    status = 'QUEUED',
+                    error = NULL,
+                    locked_by = NULL,
+                    locked_at_utc = NULL,
+                    heartbeat_at_utc = NULL
+                WHERE status = 'RUNNING'
+                  AND (attempts < ? OR attempts IS NULL)
+                  AND (
+                      (heartbeat_at_utc IS NOT NULL
+                       AND (julianday(?) - julianday(heartbeat_at_utc)) * 86400 >= ?)
+                      OR
+                      (heartbeat_at_utc IS NULL AND locked_at_utc IS NOT NULL
+                       AND (julianday(?) - julianday(locked_at_utc)) * 86400 >= ?)
+                  )
+                """,
+                (now_iso, max_attempts, now_ts, stale_after_s, now_ts, stale_after_s),
+            )
+            updated += cursor.rowcount
+
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
     return updated
 
 

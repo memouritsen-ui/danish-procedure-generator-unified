@@ -14,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from procedurewriter.db import _connect
+
 
 @dataclass
 class SectionConfig:
@@ -94,14 +96,11 @@ def list_templates(db_path: Path) -> list[Template]:
 
     Returns templates ordered by: default first, then alphabetically by name.
     """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.execute(
-        "SELECT * FROM templates ORDER BY is_default DESC, name ASC"
-    )
-    rows = cursor.fetchall()
-    conn.close()
-
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT * FROM templates ORDER BY is_default DESC, name ASC"
+        )
+        rows = cursor.fetchall()
     return [_row_to_template(row) for row in rows]
 
 
@@ -115,14 +114,12 @@ def get_template(db_path: Path, template_id: str) -> Template | None:
     Returns:
         Template if found, None otherwise.
     """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.execute(
-        "SELECT * FROM templates WHERE template_id = ?",
-        (template_id,),
-    )
-    row = cursor.fetchone()
-    conn.close()
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT * FROM templates WHERE template_id = ?",
+            (template_id,),
+        )
+        row = cursor.fetchone()
 
     if not row:
         return None
@@ -136,13 +133,11 @@ def get_default_template(db_path: Path) -> Template | None:
     Returns:
         The default template if one exists, None otherwise.
     """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.execute(
-        "SELECT * FROM templates WHERE is_default = TRUE LIMIT 1"
-    )
-    row = cursor.fetchone()
-    conn.close()
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT * FROM templates WHERE is_default = TRUE LIMIT 1"
+        )
+        row = cursor.fetchone()
 
     if not row:
         return None
@@ -170,18 +165,17 @@ def create_template(
     template_id = str(uuid.uuid4())[:8]
     now = datetime.utcnow().isoformat() + "Z"
 
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        """
-        INSERT INTO templates
-        (template_id, name, description, created_at_utc, updated_at_utc,
-         is_default, is_system, config_json)
-        VALUES (?, ?, ?, ?, ?, FALSE, FALSE, ?)
-        """,
-        (template_id, name, description, now, now, _serialize_config(config)),
-    )
-    conn.commit()
-    conn.close()
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO templates
+            (template_id, name, description, created_at_utc, updated_at_utc,
+             is_default, is_system, config_json)
+            VALUES (?, ?, ?, ?, ?, FALSE, FALSE, ?)
+            """,
+            (template_id, name, description, now, now, _serialize_config(config)),
+        )
+        conn.commit()
 
     return template_id
 
@@ -216,7 +210,6 @@ def update_template(
         raise ValueError("Cannot modify system templates")
 
     now = datetime.utcnow().isoformat() + "Z"
-    conn = sqlite3.connect(db_path)
 
     updates = ["updated_at_utc = ?"]
     values: list[Any] = [now]
@@ -235,12 +228,12 @@ def update_template(
 
     values.append(template_id)
 
-    conn.execute(
-        f"UPDATE templates SET {', '.join(updates)} WHERE template_id = ?",
-        values,
-    )
-    conn.commit()
-    conn.close()
+    with _connect(db_path) as conn:
+        conn.execute(
+            f"UPDATE templates SET {', '.join(updates)} WHERE template_id = ?",
+            values,
+        )
+        conn.commit()
 
     return True
 
@@ -265,10 +258,9 @@ def delete_template(db_path: Path, template_id: str) -> bool:
     if template.is_system:
         raise ValueError("Cannot delete system templates")
 
-    conn = sqlite3.connect(db_path)
-    conn.execute("DELETE FROM templates WHERE template_id = ?", (template_id,))
-    conn.commit()
-    conn.close()
+    with _connect(db_path) as conn:
+        conn.execute("DELETE FROM templates WHERE template_id = ?", (template_id,))
+        conn.commit()
 
     return True
 
@@ -289,16 +281,15 @@ def set_default_template(db_path: Path, template_id: str) -> bool:
     if not template:
         return False
 
-    conn = sqlite3.connect(db_path)
-    # Clear existing default
-    conn.execute("UPDATE templates SET is_default = FALSE")
-    # Set new default
-    conn.execute(
-        "UPDATE templates SET is_default = TRUE WHERE template_id = ?",
-        (template_id,),
-    )
-    conn.commit()
-    conn.close()
+    with _connect(db_path) as conn:
+        # Clear existing default
+        conn.execute("UPDATE templates SET is_default = FALSE")
+        # Set new default
+        conn.execute(
+            "UPDATE templates SET is_default = TRUE WHERE template_id = ?",
+            (template_id,),
+        )
+        conn.commit()
 
     return True
 
