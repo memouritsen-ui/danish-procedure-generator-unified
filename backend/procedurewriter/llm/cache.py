@@ -60,13 +60,14 @@ class CacheStats:
 
 class LLMCache:
     """
-    File-based LLM response cache using SQLite.
+    File-based LLM response cache using SQLite with LRU eviction.
 
     Features:
     - Content-addressable storage (hash-based keys)
     - Persistent across sessions
     - Thread-safe (SQLite handles locking)
     - Stats tracking for monitoring
+    - R7-002: LRU eviction when max_entries exceeded
 
     Usage:
         cache = LLMCache(cache_dir=Path("./cache"))
@@ -81,12 +82,16 @@ class LLMCache:
         return response
     """
 
-    def __init__(self, cache_dir: Path | None = None) -> None:
+    # R7-002: Default max entries before LRU eviction
+    DEFAULT_MAX_ENTRIES = 10000
+
+    def __init__(self, cache_dir: Path | None = None, max_entries: int | None = None) -> None:
         """
         Initialize cache with optional custom directory.
 
         Args:
             cache_dir: Directory for cache storage. Defaults to ~/.cache/procedurewriter/llm
+            max_entries: Maximum entries before LRU eviction (R7-002). Defaults to 10000.
         """
         if cache_dir is None:
             cache_dir = Path.home() / ".cache" / "procedurewriter" / "llm"
@@ -95,6 +100,7 @@ class LLMCache:
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._db_path = self._cache_dir / "cache.db"
         self._stats = CacheStats()
+        self._max_entries = max_entries or self.DEFAULT_MAX_ENTRIES
         self._init_db()
 
     def _init_db(self) -> None:
@@ -107,10 +113,18 @@ class LLMCache:
                     created_at REAL NOT NULL,
                     model TEXT,
                     input_tokens INTEGER DEFAULT 0,
-                    output_tokens INTEGER DEFAULT 0
+                    output_tokens INTEGER DEFAULT 0,
+                    last_accessed REAL  -- R7-002: For LRU eviction
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_cache_model ON cache(model)")
+            # R7-002: Index for efficient LRU eviction
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_cache_last_accessed ON cache(last_accessed)")
+            # Migrate existing rows that don't have last_accessed
+            conn.execute("""
+                UPDATE cache SET last_accessed = created_at
+                WHERE last_accessed IS NULL
+            """)
             conn.commit()
 
     def get(self, key: str) -> dict[str, Any] | None:
@@ -130,9 +144,16 @@ class LLMCache:
             )
             row = cursor.fetchone()
 
-        if row is None:
-            self._stats.misses += 1
-            return None
+            if row is None:
+                self._stats.misses += 1
+                return None
+
+            # R7-002: Update last_accessed for LRU tracking
+            conn.execute(
+                "UPDATE cache SET last_accessed = ? WHERE key = ?",
+                (time.time(), key),
+            )
+            conn.commit()
 
         self._stats.hits += 1
         return json.loads(row[0])
@@ -146,22 +167,45 @@ class LLMCache:
             response: Response dict to cache
 
         Overwrites existing entries with same key.
+        R7-002: Evicts least recently used entries when max_entries exceeded.
         """
+        now = time.time()
         with sqlite3.connect(self._db_path) as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO cache (key, response, created_at, model, input_tokens, output_tokens)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO cache (key, response, created_at, model, input_tokens, output_tokens, last_accessed)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
                     json.dumps(response, ensure_ascii=False),
-                    time.time(),
+                    now,
                     response.get("model"),
                     response.get("input_tokens", 0),
                     response.get("output_tokens", 0),
+                    now,  # R7-002: Set initial last_accessed
                 ),
             )
+
+            # R7-002: Evict oldest entries if over limit
+            cursor = conn.execute("SELECT COUNT(*) FROM cache")
+            count = cursor.fetchone()[0]
+
+            if count > self._max_entries:
+                # Delete 10% of oldest entries to avoid frequent evictions
+                evict_count = max(1, count - int(self._max_entries * 0.9))
+                conn.execute(
+                    """
+                    DELETE FROM cache WHERE key IN (
+                        SELECT key FROM cache
+                        ORDER BY last_accessed ASC
+                        LIMIT ?
+                    )
+                    """,
+                    (evict_count,),
+                )
+                logger.info(f"R7-002: Evicted {evict_count} LRU cache entries")
+
             conn.commit()
 
     def get_stats(self) -> dict[str, int | float]:

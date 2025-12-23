@@ -35,15 +35,25 @@ class CostSummary:
     total_cost_usd: float = 0.0
     call_count: int = 0
     entries: list[CostEntry] = field(default_factory=list)
+    # R7-012: Maximum entries to retain (oldest are dropped)
+    max_entries: int = 10000
 
     def add_entry(self, entry: CostEntry) -> None:
-        """Add a cost entry to the summary."""
+        """Add a cost entry to the summary.
+
+        R7-012: Rotates oldest entries when max_entries exceeded.
+        """
         self.total_input_tokens += entry.input_tokens
         self.total_output_tokens += entry.output_tokens
         self.total_tokens += entry.total_tokens
         self.total_cost_usd += entry.cost_usd
         self.call_count += 1
         self.entries.append(entry)
+
+        # R7-012: Rotate oldest entries if over limit
+        if len(self.entries) > self.max_entries:
+            # Keep only the most recent entries
+            self.entries = self.entries[-self.max_entries:]
 
     def to_dict(self) -> dict:
         """Convert summary to dictionary."""
