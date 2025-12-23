@@ -147,11 +147,12 @@ cd backend && source .venv/bin/activate && pytest tests/ -x -q
 | Phase | Name | Status | Tasks |
 |-------|------|--------|-------|
 | P0 | Validation | COMPLETE | Claim extraction feasibility proven |
-| P1 | Data Models | IN PROGRESS | Pydantic models, SQLite migrations |
-| P2 | Pipeline Stages | PENDING | 11-stage implementation |
-| P3 | Claim System | PENDING | Extraction, binding, normalization |
-| P4 | Eval Suite | PENDING | Lints, gates, issue tracking |
-| P5 | API & Bundle | PENDING | New endpoints, ZIP packaging |
+| P1 | Data Models | COMPLETE | Pydantic models, SQLite migrations |
+| P2 | Pipeline Stages | COMPLETE | 11-stage implementation |
+| P3 | Claim System | COMPLETE | Extraction, binding, normalization |
+| P4 | Eval Suite | COMPLETE | Lints, gates, issue tracking |
+| P5 | API & Bundle | IN PROGRESS | New endpoints, ZIP packaging |
+| P6 | GPS Classification | PLANNED | GRADE-aligned evidence exemptions |
 
 ---
 
@@ -260,6 +261,65 @@ Before writing ANY Phase 1 code, these questions needed answers:
 2. Use `Skill(superpowers:systematic-debugging)`
 3. Fix root cause, not symptom
 4. If you've changed the same file 3+ times, you're doing it wrong
+
+---
+
+## PHASE 6: GPS CLASSIFICATION DESIGN
+
+**Problem Statement**:
+The current evidence policy fails on valid procedures because ALL sentences are treated equally. A procedural statement like "Vurder patientens luftveje" (Assess the patient's airway) is held to the same BM25 text-matching standard as a therapeutic claim like "Giv adrenalin 0,3 mg IM."
+
+**GRADE Methodology Context**:
+Per GRADE (Grading of Recommendations, Assessment, Development and Evaluation), some statements should be "Good Practice Statements" (GPS) - explicitly UNGRADED because evidence review would be "poor use of time."
+
+### GPS vs Evidence-Required Claims
+
+| Type | Example | Evidence Requirement |
+|------|---------|---------------------|
+| **GPS** | "Vurder patientens luftveje" | EXEMPT - inverse sounds absurd |
+| **THERAPEUTIC** | "Giv adrenalin 0,3 mg IM" | REQUIRED - specific dose/drug |
+| **PROGNOSTIC** | "Mortalitet reduceres med 50%" | REQUIRED - outcome claim |
+| **DIAGNOSTIC** | "Diagnose baseret på SpO2 < 92%" | REQUIRED - threshold claim |
+
+### The "Inverse Test"
+
+The core GPS criterion: **If the opposite statement sounds absurd, it's a GPS.**
+
+| Statement | Inverse | Verdict |
+|-----------|---------|---------|
+| "Vurder luftveje" | "Vurder IKKE luftveje" | ABSURD → GPS |
+| "Giv 0,3 mg adrenalin" | "Giv IKKE 0,3 mg adrenalin" | VALID (could give different dose) → NOT GPS |
+| "Dokumenter behandlingen" | "Dokumenter IKKE behandlingen" | ABSURD → GPS |
+
+### Implementation Strategy
+
+**Option B (Selected)**: GRADE-Aligned GPS Exemption
+- Add sentence classification: GPS, THERAPEUTIC, PROGNOSTIC, DIAGNOSTIC, PROCEDURAL
+- GPS sentences marked `gps_exempt: true`, skip BM25 scoring
+- `enforce_evidence_policy()` excludes GPS from unsupported count
+- ~90 lines of code across 2 files
+
+### GPS Detection Signals (Danish)
+
+```python
+# Procedural verbs that indicate GPS
+GPS_VERB_PATTERNS = [
+    r"^(?:vurder|tjek|observer|mål|kontroller|dokumenter|kommuniker)",
+    r"(?:sikr|overvåg|bed om|informer|henvis)",
+]
+
+# Signals that indicate evidence-required claims
+NON_GPS_PATTERNS = [
+    r"\d+\s*(?:mg|ml|mcg|µg|g|kg|mmol|IE|enheder)",  # Dosages
+    r"(?:adrenalin|epinefrin|salbutamol|prednisolon)",  # Named drugs
+    r"(?:risiko|prognose|mortalitet|overlevelse)",  # Outcome claims
+]
+```
+
+### Expected Outcome
+
+**Before GPS**: "Akut astma" procedure fails STRICT policy with "10 unsupported sentences"
+**After GPS**: Same procedure passes - procedural statements exempt, drug claims still verified
 
 ---
 

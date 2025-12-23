@@ -1,6 +1,6 @@
 ---
 name: guideline-integration-checklist
-enabled: true
+enabled: false
 event: stop
 pattern: .*
 action: warn

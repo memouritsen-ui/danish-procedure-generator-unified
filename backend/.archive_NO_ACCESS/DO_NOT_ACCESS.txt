@@ -1,0 +1,42 @@
+================================================================================
+                    ARCHIVED DOCUMENTATION - DO NOT ACCESS
+================================================================================
+
+This directory contains archived project documentation.
+
+STATUS: ARCHIVED
+DATE: 2024-12-23
+REASON: User requested removal and archival
+
+--------------------------------------------------------------------------------
+                              CONTENTS
+--------------------------------------------------------------------------------
+
+From backend/.claude/:
+  - BUILD.md                        (Master build control document)
+  - STATE.md                        (Project state tracking)
+  - TASKS.md                        (Task checklist)
+  - REMEDIATION.md                  (92 bug fixes documentation)
+  - FIX_PLAN_GPS_META_ANALYSIS.md   (GPS classification plan)
+
+From project root:
+  - CLAUDE.md                       (Project instructions)
+  - ARCHITECTURE.md                 (System architecture)
+  - IMPLEMENTATION_PLAN.md          (Implementation plan)
+  - AGENTS.md                       (Agent documentation)
+
+--------------------------------------------------------------------------------
+                              WARNING
+--------------------------------------------------------------------------------
+
+These files are ARCHIVED and should NOT be used for:
+  - New session initialization
+  - Task tracking
+  - Project state management
+
+If you need to restore these documents, move them back to their original
+locations:
+  - .claude/ files -> backend/.claude/
+  - Root files -> project root
+
+================================================================================

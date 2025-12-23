@@ -351,14 +351,44 @@ git add . && git commit -m "feat: P#-###: [description]"
 
 ---
 
+## REMEDIATION DOCUMENTATION
+
+**CREATED**: 2024-12-23
+**LOCATION**: `backend/.claude/REMEDIATION.md`
+**PURPOSE**: Irrefutable step-by-step fixes for 92 non-security issues
+
+This document contains:
+- **92 issues** organized into 7 phases (R1-R7)
+- **BEFORE/AFTER** code for every fix
+- **DO NOT** sections showing anti-patterns that won't work
+- **VERIFY** commands to confirm each fix
+- **COMMIT** commands for each phase
+
+### Remediation Phases
+
+| Phase | Name | Issues | Priority |
+|-------|------|--------|----------|
+| R1 | Database Race Conditions | 8 | CRITICAL |
+| R2 | Error Handling | 14 | CRITICAL |
+| R3 | Data Validation | 12 | HIGH |
+| R4 | Pipeline Stage Fixes | 18 | HIGH |
+| R5 | API Endpoint Hardening | 15 | MEDIUM |
+| R6 | Test Quality | 12 | MEDIUM |
+| R7 | Resource Management | 13 | LOW |
+
+**To start remediation**: Read REMEDIATION.md and follow Phase R1 exactly.
+
+---
+
 ## NEXT SESSION CHECKLIST
 
 When starting a new session:
 1. [ ] Read this STATE.md
 2. [ ] Read TASKS.md for current task
-3. [ ] Run `pytest tests/ -x -q` to verify test status
-4. [ ] Check git status for uncommitted changes
-5. [ ] Continue from current task
+3. [ ] **IF DOING REMEDIATION**: Read REMEDIATION.md
+4. [ ] Run `pytest tests/ -x -q` to verify test status
+5. [ ] Check git status for uncommitted changes
+6. [ ] Continue from current task
 
 ---
 
