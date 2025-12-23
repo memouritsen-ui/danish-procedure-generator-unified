@@ -52,6 +52,12 @@ class ChunkInput:
     emitter: EventEmitter | None = None
 
 
+class ChunkingError(Exception):
+    """Raised when too many sources fail during chunking."""
+
+    pass
+
+
 @dataclass
 class ChunkOutput:
     """Output from the Chunk stage."""
@@ -62,6 +68,7 @@ class ChunkOutput:
     chunks: list[EvidenceChunk]
     total_chunks: int
     sources_processed: int = 0
+    failed_sources: list[str] = field(default_factory=list)
 
 
 class ChunkStage(PipelineStage[ChunkInput, ChunkOutput]):
@@ -95,6 +102,7 @@ class ChunkStage(PipelineStage[ChunkInput, ChunkOutput]):
 
         all_chunks: list[EvidenceChunk] = []
         sources_processed = 0
+        failed_sources: list[str] = []
 
         for source in input_data.sources:
             try:
@@ -116,7 +124,25 @@ class ChunkStage(PipelineStage[ChunkInput, ChunkOutput]):
                     sources_processed += 1
 
             except Exception as e:
-                logger.warning(f"Error processing source {source.source_id}: {e}")
+                logger.error(
+                    f"FATAL: Error chunking source {source.source_id}: {e}",
+                    exc_info=True
+                )
+                failed_sources.append(source.source_id)
+
+        # Fail if too many sources failed (>20% threshold)
+        if input_data.sources:
+            failure_rate = len(failed_sources) / len(input_data.sources)
+            if failure_rate > 0.2:
+                raise ChunkingError(
+                    f"Too many sources failed chunking: {len(failed_sources)}/{len(input_data.sources)} "
+                    f"({failure_rate:.1%}). Failed: {failed_sources[:5]}..."
+                )
+
+        if failed_sources:
+            logger.warning(
+                f"Chunking completed with {len(failed_sources)} failures: {failed_sources}"
+            )
 
         logger.info(
             f"Created {len(all_chunks)} chunks from {sources_processed} sources"
@@ -129,6 +155,7 @@ class ChunkStage(PipelineStage[ChunkInput, ChunkOutput]):
             chunks=all_chunks,
             total_chunks=len(all_chunks),
             sources_processed=sources_processed,
+            failed_sources=failed_sources,
         )
 
     def _read_source_content(

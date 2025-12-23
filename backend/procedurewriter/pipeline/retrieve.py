@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 import math
 import re
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from procedurewriter.pipeline.io import write_json
 from procedurewriter.pipeline.types import Snippet, SourceRecord
@@ -69,8 +71,10 @@ def build_snippets(sources: list[SourceRecord]) -> list[Snippet]:
                     loc["kind"] = str(kind)
                 level = b.get("level")
                 if level is not None:
-                    with suppress(Exception):
+                    try:
                         loc["level"] = int(level)
+                    except (ValueError, TypeError) as e:
+                        logger.debug(f"Could not parse level '{level}': {e}")
                 snippets.append(Snippet(source_id=src.source_id, text=t, location=loc))
             continue
 

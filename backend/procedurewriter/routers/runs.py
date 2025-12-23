@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -13,6 +14,54 @@ import anyio
 from anthropic import AsyncAnthropic
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_read_json(path: Path, description: str = "JSON file") -> dict[str, Any]:
+    """Safely read and parse a JSON file with proper error handling.
+
+    Args:
+        path: Path to the JSON file.
+        description: Human-readable description for error messages.
+
+    Returns:
+        Parsed JSON as a dictionary.
+
+    Raises:
+        HTTPException: With appropriate status code and detail.
+    """
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"{description} not available")
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        logger.error(f"Encoding error reading {path}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"{description} has invalid encoding"
+        ) from e
+    except OSError as e:
+        logger.error(f"Error reading {path}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read {description}"
+        ) from e
+
+    try:
+        obj = json.loads(content)
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parse error in {path}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"{description} has invalid JSON at line {e.lineno}, col {e.colno}"
+        ) from e
+
+    if not isinstance(obj, dict):
+        raise HTTPException(status_code=500, detail=f"Invalid {description} format")
+
+    return obj
 
 from procedurewriter.db import (
     _connect,
@@ -337,12 +386,7 @@ def api_evidence(run_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Run not found")
     run_dir = Path(run.run_dir)
     path = run_dir / "evidence_report.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Evidence report not available")
-    obj = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(obj, dict):
-        raise HTTPException(status_code=500, detail="Invalid evidence report")
-    return obj
+    return _safe_read_json(path, "Evidence report")
 
 
 @router.get("/{run_id}/evidence-notes")
@@ -363,12 +407,7 @@ def api_evidence_notes(run_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Run not found")
     run_dir = Path(run.run_dir)
     path = run_dir / "evidence_notes.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Evidence notes not available")
-    obj = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(obj, dict):
-        raise HTTPException(status_code=500, detail="Invalid evidence notes format")
-    return obj
+    return _safe_read_json(path, "Evidence notes")
 
 
 @router.post("/{run_id}/verify-evidence")
@@ -474,10 +513,7 @@ def api_get_evidence_verification(run_id: str) -> dict[str, Any]:
             detail="Evidence verification not available. POST to this endpoint to run verification.",
         )
 
-    obj = json.loads(verification_path.read_text(encoding="utf-8"))
-    if not isinstance(obj, dict):
-        raise HTTPException(status_code=500, detail="Invalid verification data")
-    return obj
+    return _safe_read_json(verification_path, "Evidence verification")
 
 
 @router.get("/{run_id}/bundle")
@@ -522,10 +558,25 @@ def api_source_scores(run_id: str) -> dict[str, Any]:
     if not scores_path.exists():
         return {"run_id": run_id, "scores": [], "message": "Scores not available for this run"}
     try:
-        scores = json.loads(scores_path.read_text(encoding="utf-8"))
+        content = scores_path.read_text(encoding="utf-8")
+        scores = json.loads(content)
         return {"run_id": run_id, "count": len(scores), "scores": scores}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read scores: {e}") from e
+    except UnicodeDecodeError as e:
+        logger.error(f"Encoding error reading {scores_path}: {e}")
+        raise HTTPException(
+            status_code=500, detail="Source scores file has invalid encoding"
+        ) from e
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parse error in {scores_path}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Source scores has invalid JSON at line {e.lineno}"
+        ) from e
+    except OSError as e:
+        logger.error(f"Error reading {scores_path}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read source scores: {e}"
+        ) from e
 
 
 @router.get("/{run_id}/events")

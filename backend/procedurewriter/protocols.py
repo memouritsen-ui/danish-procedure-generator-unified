@@ -184,8 +184,15 @@ def get_protocol(db_path: Path, protocol_id: str, load_text: bool = False) -> Pr
 
     normalized_text = None
     if load_text and row["normalized_path"]:
-        with contextlib.suppress(Exception):
-            normalized_text = Path(row["normalized_path"]).read_text(encoding="utf-8")
+        path = Path(row["normalized_path"])
+        try:
+            normalized_text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.warning(f"Normalized file missing: {path}")
+        except PermissionError:
+            logger.warning(f"Permission denied reading: {path}")
+        except UnicodeDecodeError as e:
+            logger.warning(f"Encoding error in {path}: {e}")
 
     return _row_to_protocol(row, normalized_text)
 

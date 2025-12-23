@@ -13,10 +13,13 @@ The binder:
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 from procedurewriter.models.claims import Claim
 from procedurewriter.models.evidence import (
@@ -26,6 +29,12 @@ from procedurewriter.models.evidence import (
 )
 
 if TYPE_CHECKING:
+    pass
+
+
+class EmbeddingError(Exception):
+    """Raised when embedding generation fails."""
+
     pass
 
 
@@ -159,7 +168,13 @@ class EvidenceBinder:
         # Get embeddings if provider is available
         embeddings: dict[str, list[float]] = {}
         if self.embedding_provider and claims and chunks:
-            embeddings = self._get_embeddings(claims, chunks)
+            try:
+                embeddings = self._get_embeddings(claims, chunks)
+            except EmbeddingError as e:
+                logger.warning(
+                    f"Embedding failed, falling back to keyword binding: {e}"
+                )
+                # Continue with empty embeddings - keyword binding will be used
 
         for claim in claims:
             claim_embedding = embeddings.get(f"claim_{claim.id}")
@@ -233,9 +248,11 @@ class EvidenceBinder:
         try:
             embedding_vectors = self.embedding_provider.get_embeddings(texts)
             return dict(zip(text_ids, embedding_vectors))
-        except Exception:
-            # Fall back to empty if embedding fails
-            return {}
+        except Exception as e:
+            logger.error(f"Embedding generation failed: {e}", exc_info=True)
+            raise EmbeddingError(
+                f"Failed to generate embeddings for {len(texts)} texts: {e}"
+            ) from e
 
     def _bind_claim(
         self,
