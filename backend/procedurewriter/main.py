@@ -124,6 +124,15 @@ app.include_router(styles_router.router)
 app.include_router(templates_router.router)
 
 
+@app.get("/health")
+def health_check() -> dict:
+    """Simple health check endpoint for load balancers and monitoring.
+
+    Returns 200 if the service is running. For detailed status, use /api/status.
+    """
+    return {"status": "healthy"}
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     settings.runs_dir.mkdir(parents=True, exist_ok=True)
