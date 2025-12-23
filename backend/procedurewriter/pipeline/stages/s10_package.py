@@ -12,6 +12,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -223,7 +225,9 @@ class PackageReleaseStage(PipelineStage[PackageReleaseInput, PackageReleaseOutpu
         files: list[Path],
         manifest_path: Path,
     ) -> Path:
-        """Create the ZIP bundle.
+        """Create the ZIP bundle atomically.
+
+        R4-018: Uses temp file + rename pattern to prevent partial ZIP on failure.
 
         Args:
             run_dir: The run directory
@@ -236,12 +240,27 @@ class PackageReleaseStage(PipelineStage[PackageReleaseInput, PackageReleaseOutpu
         """
         bundle_path = run_dir / f"release_{run_id}.zip"
 
-        with zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            # Add all collected files
-            for file_path in files:
-                zf.write(file_path, file_path.name)
+        # R4-018: Write to temp file first, rename on success for atomicity
+        fd, temp_path = tempfile.mkstemp(suffix=".zip", dir=run_dir)
+        try:
+            os.close(fd)  # Close the file descriptor, we'll open it with zipfile
 
-            # Add manifest
-            zf.write(manifest_path, manifest_path.name)
+            with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                # Add all collected files
+                for file_path in files:
+                    zf.write(file_path, file_path.name)
+
+                # Add manifest
+                zf.write(manifest_path, manifest_path.name)
+
+            # Atomic rename on success (same filesystem)
+            os.replace(temp_path, bundle_path)
+            logger.debug(f"R4-018: Atomically created ZIP bundle at {bundle_path}")
+
+        except Exception:
+            # Clean up temp file on failure
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
 
         return bundle_path

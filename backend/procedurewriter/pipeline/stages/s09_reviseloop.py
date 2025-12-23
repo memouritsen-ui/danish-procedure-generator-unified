@@ -39,6 +39,7 @@ class ReviseLoopInput:
     gates: list[Gate]
     iteration: int = 1
     emitter: "EventEmitter | None" = None
+    score_history: list[int] = field(default_factory=list)  # R4-017: Track issue count history
 
 
 @dataclass
@@ -55,6 +56,8 @@ class ReviseLoopOutput:
     max_iterations_reached: bool
     can_proceed: bool
     revision_guidance: list[str] = field(default_factory=list)
+    score_history: list[int] = field(default_factory=list)  # R4-017: Issue count history
+    improvement_stalled: bool = False  # R4-017: True if no improvement detected
 
 
 class ReviseLoopStage(PipelineStage[ReviseLoopInput, ReviseLoopOutput]):
@@ -92,6 +95,23 @@ class ReviseLoopStage(PipelineStage[ReviseLoopInput, ReviseLoopOutput]):
         # Check if we've reached max iterations
         max_iterations_reached = input_data.iteration >= MAX_ITERATIONS
 
+        # R4-017: Track score history (total blocking issues)
+        current_score = sum(
+            1 for i in input_data.issues
+            if i.severity in (IssueSeverity.S0, IssueSeverity.S1)
+        )
+        score_history = list(input_data.score_history) + [current_score]
+
+        # R4-017: Detect improvement stalling
+        improvement_stalled = False
+        if len(score_history) >= 2:
+            # Stalled if score is same or worse than previous iteration
+            if score_history[-1] >= score_history[-2]:
+                improvement_stalled = True
+                logger.warning(
+                    f"R4-017: No improvement detected (scores: {score_history})"
+                )
+
         # Determine if we need revision
         if all_gates_pass:
             # Gates pass - proceed to Package
@@ -101,14 +121,19 @@ class ReviseLoopStage(PipelineStage[ReviseLoopInput, ReviseLoopOutput]):
             logger.info(
                 f"All gates passed at iteration {input_data.iteration}, proceeding to Package"
             )
-        elif max_iterations_reached:
-            # Max iterations reached - stop revising, proceed with warnings
+        elif max_iterations_reached or improvement_stalled:
+            # R4-017: Stop if stalled OR max iterations reached
             needs_revision = False
             can_proceed = True  # Proceed anyway with warnings
             revision_guidance = self._generate_guidance(input_data.issues)
-            logger.warning(
-                f"Max iterations ({MAX_ITERATIONS}) reached with issues, proceeding anyway"
-            )
+            if improvement_stalled:
+                logger.warning(
+                    f"R4-017: Improvement stalled at iteration {input_data.iteration}, proceeding anyway"
+                )
+            else:
+                logger.warning(
+                    f"Max iterations ({MAX_ITERATIONS}) reached with issues, proceeding anyway"
+                )
         else:
             # Gates fail and iterations remain - request revision
             needs_revision = True
@@ -129,6 +154,8 @@ class ReviseLoopStage(PipelineStage[ReviseLoopInput, ReviseLoopOutput]):
             max_iterations_reached=max_iterations_reached,
             can_proceed=can_proceed,
             revision_guidance=revision_guidance,
+            score_history=score_history,  # R4-017
+            improvement_stalled=improvement_stalled,  # R4-017
         )
 
     def _generate_guidance(self, issues: list[Issue]) -> list[str]:

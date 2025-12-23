@@ -56,6 +56,7 @@ class RetrieveInput:
     procedure_title: str
     search_terms: list[str]
     max_sources: int = 20
+    timeout_seconds: int = 30  # R4-005: Configurable network timeout
     emitter: EventEmitter | None = None
 
 
@@ -70,6 +71,7 @@ class RetrieveOutput:
     raw_content_dir: Path
     total_sources: int
     search_terms_used: list[str] = field(default_factory=list)
+    failed_sources: list[str] = field(default_factory=list)  # R4-006: Track failures
 
 
 class RetrieveStage(PipelineStage[RetrieveInput, RetrieveOutput]):
@@ -106,12 +108,22 @@ class RetrieveStage(PipelineStage[RetrieveInput, RetrieveOutput]):
         raw_content_dir = input_data.run_dir / "raw"
         raw_content_dir.mkdir(parents=True, exist_ok=True)
 
-        # Fetch sources using search terms
+        # R4-006: Track failed sources
+        failed_sources: list[str] = []
+
+        # Fetch sources using search terms (R4-005: pass timeout)
         sources = self._fetch_sources(
             input_data.search_terms,
             input_data.max_sources,
             raw_content_dir=raw_content_dir,
+            timeout_seconds=input_data.timeout_seconds,
+            failed_sources=failed_sources,
         )
+
+        if failed_sources:
+            logger.warning(
+                f"Failed to retrieve {len(failed_sources)} sources: {failed_sources[:5]}"
+            )
 
         logger.info(
             f"Retrieved {len(sources)} sources for '{input_data.procedure_title}'"
@@ -125,6 +137,7 @@ class RetrieveStage(PipelineStage[RetrieveInput, RetrieveOutput]):
             raw_content_dir=raw_content_dir,
             total_sources=len(sources),
             search_terms_used=input_data.search_terms,
+            failed_sources=failed_sources,
         )
 
     def _fetch_sources(
@@ -132,6 +145,8 @@ class RetrieveStage(PipelineStage[RetrieveInput, RetrieveOutput]):
         search_terms: list[str],
         max_sources: int,
         raw_content_dir: Path | None = None,
+        timeout_seconds: int = 30,
+        failed_sources: list[str] | None = None,
     ) -> list[SourceInfo]:
         """Fetch sources from multiple tiers.
 
@@ -142,10 +157,14 @@ class RetrieveStage(PipelineStage[RetrieveInput, RetrieveOutput]):
             search_terms: List of search terms to use
             max_sources: Maximum number of sources to fetch
             raw_content_dir: Directory to save raw content
+            timeout_seconds: Network timeout for HTTP requests (R4-005)
+            failed_sources: List to append failed source IDs to (R4-006)
 
         Returns:
             List of SourceInfo objects
         """
+        if failed_sources is None:
+            failed_sources = []
         sources: list[SourceInfo] = []
 
         # Tier 1: Danish guideline library

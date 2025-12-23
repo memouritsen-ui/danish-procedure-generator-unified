@@ -177,7 +177,8 @@ class ChunkStage(PipelineStage[ChunkInput, ChunkOutput]):
             return None
 
         try:
-            with open(source_file, encoding="utf-8") as f:
+            # R4-007: Handle malformed Unicode with replacement
+            with open(source_file, encoding="utf-8", errors="replace") as f:
                 data = json.load(f)
 
             # Combine available text fields

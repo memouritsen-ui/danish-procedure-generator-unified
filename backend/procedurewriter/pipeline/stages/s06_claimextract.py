@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -206,18 +207,25 @@ Extract all verifiable medical claims from this procedure. Return as JSON array.
             max_tokens=16000,  # GPT-5.x needs headroom for reasoning tokens
         )
 
-        # Parse JSON response
+        # Parse JSON response with R4-012 timeout-safe regex
         try:
             # Try to extract JSON from response
             content_text = response.content.strip()
 
-            # Handle markdown code blocks
+            # R4-012: Use simple string operations instead of complex regex to avoid timeout
+            # Handle markdown code blocks safely
             if "```json" in content_text:
-                content_text = content_text.split("```json")[1].split("```")[0]
+                start = content_text.find("```json") + 7
+                end = content_text.find("```", start)
+                if end > start:
+                    content_text = content_text[start:end]
             elif "```" in content_text:
-                content_text = content_text.split("```")[1].split("```")[0]
+                start = content_text.find("```") + 3
+                end = content_text.find("```", start)
+                if end > start:
+                    content_text = content_text[start:end]
 
-            claims_data = json.loads(content_text)
+            claims_data = json.loads(content_text.strip())
 
             if not isinstance(claims_data, list):
                 logger.warning("LLM returned non-list response")
@@ -241,9 +249,10 @@ Extract all verifiable medical claims from this procedure. Return as JSON array.
             run_id: Pipeline run ID
 
         Returns:
-            List of Claim objects
+            List of Claim objects (deduplicated per R4-013)
         """
         claims: list[Claim] = []
+        seen_texts: set[str] = set()  # R4-013: Deduplicate by normalized text
 
         for raw in raw_claims:
             try:
@@ -255,11 +264,20 @@ Extract all verifiable medical claims from this procedure. Return as JSON array.
                     logger.warning(f"Unknown claim type: {claim_type_str}")
                     claim_type = ClaimType.RECOMMENDATION  # Default
 
+                claim_text = raw.get("text", "")
+
+                # R4-013: Deduplicate overlapping claims by normalized text
+                normalized_text = claim_text.lower().strip()
+                if normalized_text in seen_texts:
+                    logger.debug(f"R4-013: Skipping duplicate claim: {claim_text[:50]}...")
+                    continue
+                seen_texts.add(normalized_text)
+
                 # Build Claim object
                 claim = Claim(
                     run_id=run_id,
                     claim_type=claim_type,
-                    text=raw.get("text", ""),
+                    text=claim_text,
                     normalized_value=raw.get("normalized_value"),
                     unit=raw.get("unit"),
                     source_refs=raw.get("source_refs", []),

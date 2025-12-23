@@ -10,6 +10,7 @@ The EvidenceNotes stage processes chunks using LLM:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -88,6 +89,7 @@ class EvidenceNotesOutput:
     total_notes: int
     chunks_processed: int = 0
     chunks_failed: int = 0
+    failed_chunks: list[str] = field(default_factory=list)  # R4-009: Track which chunks failed
 
 
 class EvidenceNotesStage(PipelineStage[EvidenceNotesInput, EvidenceNotesOutput]):
@@ -140,31 +142,53 @@ class EvidenceNotesStage(PipelineStage[EvidenceNotesInput, EvidenceNotesOutput])
         notes: list[EvidenceNote] = []
         chunks_processed = 0
         chunks_failed = 0
+        failed_chunks: list[str] = []  # R4-009: Track failed chunk IDs
 
         for i, chunk in enumerate(input_data.chunks):
-            try:
-                # Generate note for this chunk
-                note = self._generate_note(
-                    chunk=chunk,
-                    procedure_title=input_data.procedure_title,
-                    model=input_data.model,
-                )
-                notes.append(note)
-                chunks_processed += 1
+            # R4-008: Retry with exponential backoff for LLM timeout/failures
+            max_retries = 3
+            retry_delay = 1.0  # seconds
 
-                # Emit progress update
-                if input_data.emitter is not None and (i + 1) % 5 == 0:
-                    input_data.emitter.emit(
-                        EventType.PROGRESS,
-                        {
-                            "message": f"Processed {i + 1}/{len(input_data.chunks)} chunks",
-                            "stage": "evidencenotes",
-                        },
+            for attempt in range(max_retries):
+                try:
+                    # Generate note for this chunk
+                    note = self._generate_note(
+                        chunk=chunk,
+                        procedure_title=input_data.procedure_title,
+                        model=input_data.model,
                     )
+                    notes.append(note)
+                    chunks_processed += 1
+                    break  # Success, exit retry loop
 
-            except Exception as e:
-                logger.warning(f"Error generating note for chunk {chunk.id}: {e}")
-                chunks_failed += 1
+                except (TimeoutError, ConnectionError) as e:
+                    # R4-008: Retryable errors - use exponential backoff
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Retry {attempt + 1}/{max_retries} for chunk {chunk.id}: {e}"
+                        )
+                        time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                    else:
+                        logger.error(f"Failed after {max_retries} retries for chunk {chunk.id}: {e}")
+                        chunks_failed += 1
+                        failed_chunks.append(str(chunk.id))  # R4-009
+
+                except Exception as e:
+                    # Non-retryable error
+                    logger.warning(f"Error generating note for chunk {chunk.id}: {e}")
+                    chunks_failed += 1
+                    failed_chunks.append(str(chunk.id))  # R4-009
+                    break
+
+            # Emit progress update
+            if input_data.emitter is not None and (i + 1) % 5 == 0:
+                input_data.emitter.emit(
+                    EventType.PROGRESS,
+                    {
+                        "message": f"Processed {i + 1}/{len(input_data.chunks)} chunks",
+                        "stage": "evidencenotes",
+                    },
+                )
 
         logger.info(
             f"Generated {len(notes)} notes from {chunks_processed} chunks "
@@ -179,6 +203,7 @@ class EvidenceNotesStage(PipelineStage[EvidenceNotesInput, EvidenceNotesOutput])
             total_notes=len(notes),
             chunks_processed=chunks_processed,
             chunks_failed=chunks_failed,
+            failed_chunks=failed_chunks,  # R4-009
         )
 
     def _generate_note(

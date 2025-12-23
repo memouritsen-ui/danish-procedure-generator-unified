@@ -72,6 +72,12 @@ class DraftInput:
     emitter: "EventEmitter | None" = None
 
 
+class TemplateNotFoundError(Exception):
+    """R4-010: Raised when required template is not found."""
+
+    pass
+
+
 @dataclass
 class DraftOutput:
     """Output from the Draft stage."""
@@ -85,6 +91,7 @@ class DraftOutput:
     word_count: int = 0
     success: bool = True
     error: str | None = None
+    missing_sections: list[str] = field(default_factory=list)  # R4-011: Track missing sections
 
 
 class DraftStage(PipelineStage[DraftInput, DraftOutput]):
@@ -169,6 +176,16 @@ class DraftStage(PipelineStage[DraftInput, DraftOutput]):
             # Save draft to file
             self._save_draft(input_data.run_dir, result.output.content_markdown)
 
+            # R4-011: Check for missing sections from outline
+            expected_sections = set(input_data.outline or DEFAULT_OUTLINE)
+            generated_sections = set(result.output.sections)
+            missing_sections = list(expected_sections - generated_sections)
+
+            if missing_sections:
+                logger.warning(
+                    f"R4-011: Missing {len(missing_sections)} expected sections: {missing_sections}"
+                )
+
             logger.info(
                 f"Generated draft with {result.output.word_count} words, "
                 f"{len(result.output.sections)} sections"
@@ -183,6 +200,7 @@ class DraftStage(PipelineStage[DraftInput, DraftOutput]):
                 citations_used=result.output.citations_used,
                 word_count=result.output.word_count,
                 success=True,
+                missing_sections=missing_sections,  # R4-011
             )
 
         except Exception as e:

@@ -81,7 +81,25 @@ class BootstrapStage(PipelineStage[BootstrapInput, BootstrapOutput]):
 
         Returns:
             Bootstrap output with loaded configs and run_dir
+
+        Raises:
+            ValueError: If required input fields are missing or invalid (R4-003)
         """
+        # R4-003: Input validation
+        if not input_data:
+            raise ValueError("BootstrapInput is required")
+
+        if not input_data.run_id:
+            raise ValueError("run_id is required and cannot be empty")
+
+        if not input_data.run_id.replace("-", "").replace("_", "").isalnum():
+            raise ValueError(
+                f"run_id must be alphanumeric (with optional - or _): {input_data.run_id}"
+            )
+
+        if not input_data.runs_dir:
+            raise ValueError("runs_dir is required")
+
         # Create run directory and subdirectories
         run_dir = input_data.runs_dir / input_data.run_id
         (run_dir / "raw").mkdir(parents=True, exist_ok=True)

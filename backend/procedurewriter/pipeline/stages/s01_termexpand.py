@@ -204,7 +204,17 @@ class TermExpandStage(PipelineStage[TermExpandInput, TermExpandOutput]):
 
         Returns:
             TermExpand output with expanded search terms
+
+        Raises:
+            ValueError: If procedure_title is empty (R4-004)
         """
+        # R4-004: Validate input - empty procedure_title not allowed
+        if not input_data.procedure_title or not input_data.procedure_title.strip():
+            raise ValueError(
+                "procedure_title is required and cannot be empty. "
+                "Cannot expand terms without a procedure name."
+            )
+
         # Emit progress event if emitter provided
         if input_data.emitter is not None:
             input_data.emitter.emit(
@@ -213,7 +223,7 @@ class TermExpandStage(PipelineStage[TermExpandInput, TermExpandOutput]):
             )
 
         # Start with original Danish terms
-        danish_terms: list[str] = [input_data.procedure_title]
+        danish_terms: list[str] = [input_data.procedure_title.strip()]
         english_terms: list[str] = []
         mesh_terms: list[str] = []
 

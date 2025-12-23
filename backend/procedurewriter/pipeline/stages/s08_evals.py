@@ -36,6 +36,12 @@ S0_CLAIM_TYPES = {
 }
 
 
+class S0SafetyError(Exception):
+    """R4-015: Raised when S0 safety issues are found and fail_on_s0 is True."""
+
+    pass
+
+
 @dataclass
 class EvalsInput:
     """Input for the Evals stage."""
@@ -47,6 +53,7 @@ class EvalsInput:
     links: list[ClaimEvidenceLink]
     unbound_claims: list[Claim]
     emitter: "EventEmitter | None" = None
+    fail_on_s0: bool = False  # R4-015: Option to fail pipeline on S0 issues
 
 
 @dataclass
@@ -104,6 +111,14 @@ class EvalsStage(PipelineStage[EvalsInput, EvalsOutput]):
         logger.info(
             f"Found {len(issues)} issues: {s0_count} S0, {s1_count} S1, {s2_count} S2"
         )
+
+        # R4-015: Fail immediately if S0 issues found and fail_on_s0 is True
+        if input_data.fail_on_s0 and s0_count > 0:
+            s0_issues = [i for i in issues if i.severity == IssueSeverity.S0]
+            raise S0SafetyError(
+                f"R4-015: Pipeline stopped due to {s0_count} S0 safety issues: "
+                f"{[i.message[:50] for i in s0_issues[:3]]}"
+            )
 
         # Evaluate gates
         gates = self._evaluate_gates(
