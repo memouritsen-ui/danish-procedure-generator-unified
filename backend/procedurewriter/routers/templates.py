@@ -146,9 +146,12 @@ def api_update_template(template_id: str, request: UpdateTemplateRequest) -> dic
     return {"status": "updated"}
 
 
-@router.delete("/{template_id}")
-def api_delete_template(template_id: str) -> dict[str, Any]:
-    """Delete a template."""
+@router.delete("/{template_id}", status_code=204)
+def api_delete_template(template_id: str) -> None:
+    """Delete a template.
+
+    Returns 204 No Content on success per REST conventions (R5-007).
+    """
     try:
         success = delete_template(settings.db_path, template_id)
     except ValueError as e:
@@ -157,7 +160,7 @@ def api_delete_template(template_id: str) -> dict[str, Any]:
     if not success:
         raise HTTPException(status_code=404, detail="Template not found")
 
-    return {"status": "deleted"}
+    return None
 
 
 @router.post("/{template_id}/set-default")

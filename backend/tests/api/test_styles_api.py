@@ -102,9 +102,9 @@ def test_delete_style(test_client) -> None:
     )
     style_id = create_response.json()["id"]
 
-    # Delete it
+    # Delete it - returns 204 No Content (R5-007)
     response = test_client.delete(f"/api/styles/{style_id}")
-    assert response.status_code == 200
+    assert response.status_code == 204
 
     # Verify it's gone
     get_response = test_client.get(f"/api/styles/{style_id}")

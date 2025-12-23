@@ -207,13 +207,16 @@ def api_update_style(style_id: str, request: UpdateStyleRequest) -> dict[str, An
     return StyleProfile.from_db_dict(profile).to_db_dict()
 
 
-@router.delete("/{style_id}")
-def api_delete_style(style_id: str) -> dict[str, str]:
-    """Delete a style profile."""
+@router.delete("/{style_id}", status_code=204)
+def api_delete_style(style_id: str) -> None:
+    """Delete a style profile.
+
+    Returns 204 No Content on success per REST conventions (R5-007).
+    """
     success = delete_style_profile(settings.db_path, style_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Style profile {style_id} not found")
-    return {"status": "deleted", "id": style_id}
+    return None
 
 
 @router.post("/{style_id}/set-default")
