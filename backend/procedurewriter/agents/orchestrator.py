@@ -33,6 +33,17 @@ from procedurewriter.agents.validator import ValidatorAgent
 from procedurewriter.agents.writer import WriterAgent
 from procedurewriter.pipeline.events import EventEmitter, EventType
 
+# Import provider-specific exceptions with fallbacks
+try:
+    from openai import APIError as OpenAIError
+except ImportError:
+    OpenAIError = type(None)  # type: ignore[misc,assignment]
+
+try:
+    from anthropic import APIError as AnthropicError
+except ImportError:
+    AnthropicError = type(None)  # type: ignore[misc,assignment]
+
 if TYPE_CHECKING:
     from procedurewriter.llm.providers import LLMProvider
 
@@ -372,8 +383,9 @@ class AgentOrchestrator:
                 quality_loop_stop_reason=stop_reason,
             )
 
-        except Exception as e:
-            logger.exception(f"Pipeline failed: {e}")
+        except (OpenAIError, AnthropicError, OSError, KeyError, AttributeError, TypeError) as e:
+            # LLM API, network, or response parsing errors - return failure output
+            logger.error(f"Pipeline failed: {e}")
             self._emit(EventType.ERROR, {
                 "stage": "pipeline",
                 "error": str(e),

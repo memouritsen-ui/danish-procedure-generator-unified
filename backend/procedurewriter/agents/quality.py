@@ -17,6 +17,18 @@ from typing import TYPE_CHECKING
 from procedurewriter.agents.base import AgentResult, BaseAgent
 from procedurewriter.agents.models import QualityCriterion, QualityInput, QualityOutput
 
+# Import provider-specific exceptions with fallbacks for when SDK not installed
+# This allows catching API errors without importing the full SDK
+try:
+    from openai import APIError as OpenAIError
+except ImportError:
+    OpenAIError = type(None)  # type: ignore[misc,assignment]
+
+try:
+    from anthropic import APIError as AnthropicError
+except ImportError:
+    AnthropicError = type(None)  # type: ignore[misc,assignment]
+
 if TYPE_CHECKING:
     pass
 
@@ -217,9 +229,10 @@ class QualityAgent(BaseAgent[QualityInput, QualityOutput]):
                         max_parse_retries + 1, e
                     )
 
-            except Exception as e:
-                # Non-retryable errors (API, network, etc.)
-                logger.exception("Quality evaluation failed: %s", e)
+            except (OpenAIError, AnthropicError, OSError) as e:
+                # LLM API or network errors - return failure output
+                # OSError covers: ConnectionError, TimeoutError, etc.
+                logger.error("LLM/network error during quality evaluation: %s", e)
                 output = QualityOutput(
                     success=False,
                     error=str(e),
@@ -230,6 +243,11 @@ class QualityAgent(BaseAgent[QualityInput, QualityOutput]):
                     ready_for_publication=False,
                 )
                 return AgentResult(output=output, stats=self.get_stats())
+            except Exception as e:
+                # Unexpected error - log and re-raise to expose bugs
+                # (TypeError, ValueError, AttributeError indicate programming errors)
+                logger.exception("Unexpected error during quality evaluation: %s", e)
+                raise
 
         # All parsing retries exhausted
         output = QualityOutput(

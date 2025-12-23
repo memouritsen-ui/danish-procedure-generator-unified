@@ -15,6 +15,17 @@ from typing import TYPE_CHECKING
 from procedurewriter.agents.base import AgentResult, BaseAgent
 from procedurewriter.agents.models import WriterInput, WriterOutput
 
+# Import provider-specific exceptions with fallbacks
+try:
+    from openai import APIError as OpenAIError
+except ImportError:
+    OpenAIError = type(None)  # type: ignore[misc,assignment]
+
+try:
+    from anthropic import APIError as AnthropicError
+except ImportError:
+    AnthropicError = type(None)  # type: ignore[misc,assignment]
+
 if TYPE_CHECKING:
     pass
 
@@ -138,7 +149,10 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
                 word_count=word_count,
             )
 
-        except Exception as e:
+        except (OpenAIError, AnthropicError, OSError, KeyError, AttributeError, TypeError) as e:
+            # LLM API, network, or response parsing errors - return failure output
+            import logging
+            logging.getLogger(__name__).error(f"Writer failed: {e}")
             output = WriterOutput(
                 success=False,
                 error=str(e),

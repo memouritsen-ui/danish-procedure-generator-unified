@@ -178,6 +178,7 @@ Reply ONLY with valid JSON."""
             
             data = json.loads(content)
             return RawStatsExtraction(**data)
-        except Exception as e:
+        except (json.JSONDecodeError, TypeError, ValueError, KeyError) as e:
+            # Parsing errors - return default (no outcome found)
             logger.error(f"Failed to parse stats extraction: {e}")
             return RawStatsExtraction(outcome_found=False)

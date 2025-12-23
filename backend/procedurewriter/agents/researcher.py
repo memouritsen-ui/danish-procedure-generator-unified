@@ -21,6 +21,22 @@ from typing import TYPE_CHECKING, Any
 from procedurewriter.agents.base import AgentResult, BaseAgent
 from procedurewriter.agents.models import ResearcherInput, ResearcherOutput, SourceReference
 
+# Import provider-specific exceptions with fallbacks
+try:
+    from openai import APIError as OpenAIError
+except ImportError:
+    OpenAIError = type(None)  # type: ignore[misc,assignment]
+
+try:
+    from anthropic import APIError as AnthropicError
+except ImportError:
+    AnthropicError = type(None)  # type: ignore[misc,assignment]
+
+try:
+    from httpx import HTTPStatusError
+except ImportError:
+    HTTPStatusError = type(None)  # type: ignore[misc,assignment]
+
 if TYPE_CHECKING:
     from procedurewriter.llm.providers import LLMProvider
 
@@ -239,8 +255,9 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
 
             logger.info(f"Research complete: {len(all_sources)} total sources")
 
-        except Exception as e:
-            logger.exception(f"Research failed: {e}")
+        except (OpenAIError, AnthropicError, HTTPStatusError, OSError) as e:
+            # LLM API, HTTP, or network errors - return failure output
+            logger.error(f"Research failed with LLM/network error: {e}")
             output = ResearcherOutput(
                 success=False,
                 error=str(e),
@@ -248,6 +265,10 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                 search_terms_used=search_terms if 'search_terms' in locals() else [],
                 total_results_found=0,
             )
+        except Exception as e:
+            # Unexpected error - log and re-raise to expose bugs
+            logger.exception(f"Unexpected error during research: {e}")
+            raise
 
         return AgentResult(output=output, stats=self.get_stats())
 
@@ -357,7 +378,8 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                 except IOError:
                     continue
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, HTTPStatusError) as e:
+            # File I/O, HTTP, or JSON parsing errors - return partial results
             logger.warning(f"Danish library search error: {e}")
 
         return sources[:10]  # Limit Danish sources
@@ -406,7 +428,8 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                     if not any(s.source_id == source.source_id for s in sources):
                         sources.append(source)
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, HTTPStatusError) as e:
+            # Network, HTTP, or response parsing errors - return partial results
             logger.warning(f"NICE API search error: {e}")
 
         return sources[:8]
@@ -446,7 +469,8 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                         if not any(s.source_id == source.source_id for s in sources):
                             sources.append(source)
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, HTTPStatusError) as e:
+            # Network, HTTP, or response parsing errors - return partial results
             logger.warning(f"PubMed systematic search error: {e}")
 
         return sources[:max_results]
@@ -494,7 +518,8 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                     if not any(s.source_id == source.source_id for s in sources):
                         sources.append(source)
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, HTTPStatusError) as e:
+            # Network, HTTP, or response parsing errors - return partial results
             logger.warning(f"Cochrane search error: {e}")
 
         return sources[:max_results]
@@ -535,7 +560,8 @@ class ResearcherAgent(BaseAgent[ResearcherInput, ResearcherOutput]):
                         if not any(s.source_id == source.source_id for s in sources):
                             sources.append(source)
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, HTTPStatusError) as e:
+            # Network, HTTP, or response parsing errors - return partial results
             logger.warning(f"PubMed general search error: {e}")
 
         return sources[:max_results]

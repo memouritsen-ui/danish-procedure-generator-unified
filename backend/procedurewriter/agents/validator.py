@@ -16,6 +16,17 @@ from typing import TYPE_CHECKING
 from procedurewriter.agents.base import AgentResult, BaseAgent
 from procedurewriter.agents.models import ClaimValidation, ValidatorInput, ValidatorOutput
 
+# Import provider-specific exceptions with fallbacks
+try:
+    from openai import APIError as OpenAIError
+except ImportError:
+    OpenAIError = type(None)  # type: ignore[misc,assignment]
+
+try:
+    from anthropic import APIError as AnthropicError
+except ImportError:
+    AnthropicError = type(None)  # type: ignore[misc,assignment]
+
 if TYPE_CHECKING:
     pass
 
@@ -134,7 +145,10 @@ class ValidatorAgent(BaseAgent[ValidatorInput, ValidatorOutput]):
                 unsupported_count=unsupported,
             )
 
-        except Exception as e:
+        except (OpenAIError, AnthropicError, OSError, json.JSONDecodeError, KeyError, AttributeError, TypeError) as e:
+            # LLM API, network, or response parsing errors - return failure output
+            import logging
+            logging.getLogger(__name__).error(f"Validator failed: {e}")
             output = ValidatorOutput(
                 success=False,
                 error=str(e),
