@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +84,67 @@ from procedurewriter.schemas import (
 )
 from procedurewriter.settings import settings
 from procedurewriter.worker import run_worker
-app = FastAPI(title="Akut procedure writer", version="0.1.0")
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Manage application startup and shutdown lifecycle.
+
+    R5-014: Log startup errors
+    R5-015: Cleanup on shutdown
+    """
+    # Startup
+    try:
+        logger.info("Starting Procedure Writer API...")
+        settings.runs_dir.mkdir(parents=True, exist_ok=True)
+        settings.cache_dir.mkdir(parents=True, exist_ok=True)
+        settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+        (settings.resolved_data_dir / "index").mkdir(parents=True, exist_ok=True)
+        init_db(settings.db_path)
+        # Fail fast if encryption key is missing
+        get_or_create_key()
+        logger.info("Database initialized, encryption key ready")
+
+        # Start background worker loop if enabled
+        worker_task = None
+        stop_event = None
+        if settings.queue_start_worker_on_startup:
+            stop_event = asyncio.Event()
+            app.state.worker_stop_event = stop_event
+            worker_task = asyncio.create_task(
+                run_worker(settings=settings, stop_event=stop_event)
+            )
+            app.state.worker_task = worker_task
+            logger.info("Background worker started")
+
+        logger.info("Procedure Writer API started successfully")
+    except Exception as e:
+        logger.error(f"FATAL: Startup failed: {e}", exc_info=True)
+        raise
+
+    yield  # Application runs here
+
+    # Shutdown
+    logger.info("Shutting down Procedure Writer API...")
+    try:
+        stop_event = getattr(app.state, "worker_stop_event", None)
+        task = getattr(app.state, "worker_task", None)
+        if stop_event is not None:
+            stop_event.set()
+            logger.info("Worker stop signal sent")
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            logger.info("Worker task cancelled")
+        logger.info("Shutdown complete")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}", exc_info=True)
+
+
+app = FastAPI(title="Akut procedure writer", version="0.1.0", lifespan=lifespan)
 
 _OPENAI_SECRET_NAME = "openai_api_key"
 _ANTHROPIC_SECRET_NAME = "anthropic_api_key"
@@ -133,34 +196,7 @@ def health_check() -> dict:
     return {"status": "healthy"}
 
 
-@app.on_event("startup")
-async def _startup() -> None:
-    settings.runs_dir.mkdir(parents=True, exist_ok=True)
-    settings.cache_dir.mkdir(parents=True, exist_ok=True)
-    settings.uploads_dir.mkdir(parents=True, exist_ok=True)
-    (settings.resolved_data_dir / "index").mkdir(parents=True, exist_ok=True)
-    init_db(settings.db_path)
-    # Fail fast if encryption key is missing
-    get_or_create_key()
-    # Start background worker loop if enabled
-    if settings.queue_start_worker_on_startup:
-        stop_event = asyncio.Event()
-        app.state.worker_stop_event = stop_event
-        app.state.worker_task = asyncio.create_task(
-            run_worker(settings=settings, stop_event=stop_event)
-        )
-
-
-@app.on_event("shutdown")
-async def _shutdown() -> None:
-    stop_event = getattr(app.state, "worker_stop_event", None)
-    task = getattr(app.state, "worker_task", None)
-    if stop_event is not None:
-        stop_event.set()
-    if task is not None:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+# Startup/shutdown now handled by lifespan context manager (R5-014, R5-015)
 
 
 @app.get("/api/status", response_model=AppStatus)
